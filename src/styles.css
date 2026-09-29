@@ -142,3 +142,95 @@
     color: var(--color-foreground);
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Sprout! Tiny Tag Arena — game design tokens.
+ * These are the single source of truth for the game's visual language so it
+ * can be reproduced in a real engine (Babylon.js) later.
+ * ------------------------------------------------------------------------ */
+
+:root {
+  /* brand */
+  --sprout-ink: oklch(0.34 0.07 152);          /* dark green text */
+  --sprout-ink-soft: oklch(0.52 0.05 152);
+  --sprout-accent: oklch(0.72 0.19 45);        /* orange / coral */
+  --sprout-accent-2: oklch(0.66 0.21 25);      /* deep coral */
+  --sprout-cyan: oklch(0.78 0.14 210);
+  --sprout-lime: oklch(0.82 0.18 135);
+  --sprout-danger: oklch(0.62 0.23 25);
+
+  /* hud surfaces */
+  --hud-surface: oklch(0.99 0.012 95 / 0.86);
+  --hud-surface-solid: oklch(0.99 0.012 95);
+  --hud-surface-dark: oklch(0.34 0.07 152 / 0.82);
+  --hud-border: oklch(1 0 0 / 0.65);
+
+  /* radii / shadows / sizes */
+  --hud-radius: 1.25rem;
+  --hud-radius-sm: 0.875rem;
+  --hud-pad: 0.75rem;
+  --hud-shadow: 0 10px 24px -8px oklch(0.34 0.07 152 / 0.35), 0 2px 0 0 oklch(1 0 0 / 0.5) inset;
+  --hud-shadow-soft: 0 8px 20px -10px oklch(0.34 0.07 152 / 0.45);
+  --btn-ability: 4rem;
+  --btn-ability-primary: 5rem;
+  --joystick-size: 8.5rem;
+}
+
+@theme inline {
+  --color-sprout-ink: var(--sprout-ink);
+  --color-sprout-ink-soft: var(--sprout-ink-soft);
+  --color-sprout-accent: var(--sprout-accent);
+  --color-sprout-accent-2: var(--sprout-accent-2);
+  --color-sprout-cyan: var(--sprout-cyan);
+  --color-sprout-lime: var(--sprout-lime);
+  --color-sprout-danger: var(--sprout-danger);
+  --color-hud-surface: var(--hud-surface);
+  --color-hud-surface-solid: var(--hud-surface-solid);
+  --color-hud-surface-dark: var(--hud-surface-dark);
+  --color-hud-border: var(--hud-border);
+  --radius-hud: var(--hud-radius);
+  --radius-hud-sm: var(--hud-radius-sm);
+  --font-display: "Fredoka", "Nunito", ui-rounded, system-ui, sans-serif;
+  --font-body: "Nunito", ui-rounded, system-ui, sans-serif;
+}
+
+@utility hud-card {
+  background: var(--hud-surface);
+  border: 1.5px solid var(--hud-border);
+  border-radius: var(--hud-radius);
+  box-shadow: var(--hud-shadow);
+  backdrop-filter: blur(10px);
+}
+
+@utility hud-card-dark {
+  background: var(--hud-surface-dark);
+  border: 1.5px solid oklch(1 0 0 / 0.18);
+  border-radius: var(--hud-radius);
+  box-shadow: var(--hud-shadow-soft);
+  backdrop-filter: blur(10px);
+}
+
+@utility hud-shadow-soft {
+  box-shadow: var(--hud-shadow-soft);
+}
+
+@layer base {
+  body {
+    font-family: var(--font-body);
+    overscroll-behavior: none;
+  }
+}
+
+@keyframes sprout-pop {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes sprout-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+@keyframes sprout-flash {
+  0% { opacity: 0.75; }
+  100% { opacity: 0; }
+}
