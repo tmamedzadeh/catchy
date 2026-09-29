@@ -37,7 +37,7 @@ export const PALETTES: Palette[] = [
     build: 0.93,
   },
   {
-    shirt: "#a濃6bff".replace("濃", ""),
+    shirt: "#a06bff",
     pants: "#6739c4",
     shoes: "#3f1f7d",
     skin: "#d9a074",
