@@ -220,7 +220,7 @@ export function Character({ index }: { index: number }) {
         <meshBasicMaterial color="#5b4326" transparent opacity={0.28} />
       </mesh>
 
-      <group ref={body} position={[0, 0, 0]} scale={p.build * 1.35}>
+      <group ref={body} position={[0, 0, 0]} scale={p.build * 1.5}>
         {/* legs */}
         <group ref={legL} position={[0.13, 0.62, 0]}>
           <mesh position={[0, -0.24, 0]} material={pantsMat} castShadow>

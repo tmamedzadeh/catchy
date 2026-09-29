@@ -129,19 +129,19 @@ export function TargetBeacon() {
     const pulse = (t % 1.4) / 1.4;
     const ring = g.children[0] as THREE.Mesh;
     ring.scale.setScalar(0.6 + pulse * 2.2);
-    (ring.material as THREE.MeshBasicMaterial).opacity = 0.5 * (1 - pulse);
+    (ring.material as THREE.MeshBasicMaterial).opacity = 0.85 * (1 - pulse);
     const beam = g.children[1] as THREE.Mesh;
-    (beam.material as THREE.MeshBasicMaterial).opacity = 0.16 + Math.sin(t * 3) * 0.05;
+    (beam.material as THREE.MeshBasicMaterial).opacity = 0.3 + Math.sin(t * 3) * 0.07;
   });
 
   return (
     <group ref={ref}>
       <mesh rotation-x={-Math.PI / 2} position={[0, 0.11, 0]}>
-        <ringGeometry args={[0.8, 1.0, 28]} />
+        <ringGeometry args={[0.85, 1.15, 28]} />
         <meshBasicMaterial color="#ff9a3d" transparent opacity={0.5} side={THREE.DoubleSide} />
       </mesh>
-      <mesh position={[0, 3, 0]}>
-        <cylinderGeometry args={[0.55, 0.9, 6, 16, 1, true]} />
+      <mesh position={[0, 3.5, 0]}>
+        <cylinderGeometry args={[0.7, 1.15, 7, 18, 1, true]} />
         <meshBasicMaterial
           color="#ffb347"
           transparent
