@@ -20,7 +20,7 @@ export function SkyDome() {
         uniforms: {
           top: { value: new THREE.Color("#3ea8f5") },
           mid: { value: new THREE.Color("#a8e2ff") },
-          bottom: { value: new THREE.Color("#ffe6b8") },
+          bottom: { value: new THREE.Color("#d8f0c2") },
         },
         vertexShader: /* glsl */ `
           varying float vH;

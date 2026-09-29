@@ -205,7 +205,7 @@ export function Character({ index }: { index: number }) {
       {/* selection / contact ring */}
       {highlight && (
         <mesh ref={ring} rotation-x={-Math.PI / 2} position={[0, 0.09, 0]}>
-          <ringGeometry args={[0.42, 0.56, 28]} />
+          <ringGeometry args={[0.58, 0.74, 28]} />
           <meshBasicMaterial
             color={isPlayer ? "#38e6ff" : p.accent}
             transparent
@@ -216,11 +216,11 @@ export function Character({ index }: { index: number }) {
       )}
       {/* soft contact shadow */}
       <mesh rotation-x={-Math.PI / 2} position={[0, 0.08, 0]}>
-        <circleGeometry args={[0.42, 20]} />
+        <circleGeometry args={[0.55, 20]} />
         <meshBasicMaterial color="#5b4326" transparent opacity={0.28} />
       </mesh>
 
-      <group ref={body} position={[0, 0, 0]} scale={p.build}>
+      <group ref={body} position={[0, 0, 0]} scale={p.build * 1.35}>
         {/* legs */}
         <group ref={legL} position={[0.13, 0.62, 0]}>
           <mesh position={[0, -0.24, 0]} material={pantsMat} castShadow>

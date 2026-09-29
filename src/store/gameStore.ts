@@ -25,7 +25,7 @@ type Store = {
   restart: () => void;
 };
 
-export const CAM_DEFAULTS = { height: 21, angle: 58 };
+export const CAM_DEFAULTS = { height: 16, angle: 54 };
 
 export const useGameStore = create<Store>((set, get) => ({
   camHeight: CAM_DEFAULTS.height,
