@@ -151,7 +151,9 @@ export function HUD() {
     restart,
   } = useGameStore();
 
-  const [panel, setPanel] = useState(true);
+  const [panel, setPanel] = useState(
+    typeof window === "undefined" ? true : window.innerWidth >= 640,
+  );
   const [flash, setFlash] = useState(0);
   useEffect(() => {
     if (state === "capture") setFlash((f) => f + 1);
@@ -194,7 +196,7 @@ export function HUD() {
             <div className="font-display text-base font-semibold text-sprout-ink sm:text-lg">
               Sprout!
             </div>
-            <div className="mt-0.5 font-display text-[0.6rem] tracking-[0.18em] text-sprout-ink-soft uppercase sm:text-[0.65rem]">
+            <div className="mt-0.5 hidden font-display text-[0.6rem] tracking-[0.18em] text-sprout-ink-soft uppercase min-[420px]:block sm:text-[0.65rem]">
               Tiny Tag Arena
             </div>
           </div>
@@ -402,7 +404,7 @@ export function HUD() {
       </div>
 
       {/* hint */}
-      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 font-display text-[0.65rem] tracking-wide text-white/75 uppercase">
+      <div className="absolute bottom-2 left-1/2 hidden -translate-x-1/2 font-display sm:block text-[0.65rem] tracking-wide text-white/75 uppercase">
         Drag the stick or use W A S D · catch all the runners
       </div>
     </div>

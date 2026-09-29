@@ -19,8 +19,11 @@ export function FollowCamera() {
     const rad = (camAngle * Math.PI) / 180;
     const dist = camHeight / Math.tan(rad);
 
-    const zoom = state === "capture" ? 0.72 : 1;
-    const h = camHeight * (state === "capture" ? 0.8 : 1);
+    // portrait screens see less width, so pull back to keep the arena readable
+    const aspect = (camera as THREE.PerspectiveCamera).aspect ?? 1.6;
+    const portrait = aspect < 1 ? 1.45 : aspect < 1.4 ? 1.15 : 1;
+    const zoom = (state === "capture" ? 0.72 : 1) * portrait;
+    const h = camHeight * (state === "capture" ? 0.8 : 1) * portrait;
 
     // trail behind the player's heading
     const back = PLAYER.heading + Math.PI;

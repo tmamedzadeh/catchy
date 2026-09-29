@@ -234,3 +234,12 @@
   0% { opacity: 0.75; }
   100% { opacity: 0; }
 }
+
+@media (max-width: 640px) {
+  :root {
+    --joystick-size: 6.5rem;
+    --btn-ability: 3.25rem;
+    --btn-ability-primary: 4.25rem;
+    --hud-radius: 1rem;
+  }
+}
