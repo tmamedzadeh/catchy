@@ -21,7 +21,22 @@ export function Director() {
     const frozen = s.state === "capture" || s.state === "timeup";
 
     s.tick(dt);
-    const target = step(dt, inputVector(), frozen);
+
+    // make the stick/keys camera-relative: up always runs away from the camera
+    const raw = inputVector();
+    let input: { x: number; z: number } | null = null;
+    if (raw) {
+      const f = new THREE.Vector3();
+      camera.getWorldDirection(f);
+      f.y = 0;
+      f.normalize();
+      const r = new THREE.Vector3(-f.z, 0, f.x);
+      input = {
+        x: r.x * raw.x + f.x * -raw.z,
+        z: r.z * raw.x + f.z * -raw.z,
+      };
+    }
+    const target = step(dt, input, frozen);
 
     if (!s.manualState) {
       if (s.state === "capture" || s.state === "after") {
