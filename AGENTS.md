@@ -8,3 +8,9 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+## Sprout! Tiny Tag Arena
+- The game screen is real 3D via React Three Fiber on a client-only route (`ssr: false`), because the Canvas and its browser APIs cannot render on the server.
+- Character/agent motion lives in `src/lib/sprout/*` as plain mutable state read inside `useFrame`; React state (`src/store/gameStore.ts`) only holds HUD-visible values, to keep the 60fps loop free of re-renders.
+- World layout, props and tuning constants live in `src/lib/sprout/config.ts`, and the HUD visual language is tokenised in `src/styles.css`, so both can be reproduced in another engine later.
+- 3D props are CC0 Kenney kits under `public/models/<kit>/` with each kit keeping its own `Textures/` folder, since the GLBs reference `Textures/colormap.png` relatively.
