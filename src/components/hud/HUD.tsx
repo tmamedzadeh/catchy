@@ -148,6 +148,8 @@ export function HUD() {
     setState,
     setManualState,
     manualState,
+    autopilot,
+    setAutopilot,
     restart,
   } = useGameStore();
 
@@ -397,6 +399,31 @@ export function HUD() {
                 >
                   Auto
                 </button>
+              </div>
+            </div>
+
+            <div className="pt-1">
+              <div className="mb-1.5 font-display text-[0.7rem] tracking-wide text-sprout-ink-soft uppercase">
+                Control
+              </div>
+              <div className="flex gap-1.5">
+                {([
+                  { id: true, label: "Auto" },
+                  { id: false, label: "Manual" },
+                ] as const).map((o) => (
+                  <button
+                    key={o.label}
+                    onClick={() => setAutopilot(o.id)}
+                    className="pointer-events-auto flex-1 rounded-full px-2.5 py-1 font-display text-[0.68rem] transition-colors"
+                    style={
+                      autopilot === o.id
+                        ? { background: "var(--sprout-accent)", color: "white" }
+                        : { background: "oklch(0.34 0.07 152 / 0.08)", color: "var(--sprout-ink)" }
+                    }
+                  >
+                    {o.label}
+                  </button>
+                ))}
               </div>
             </div>
           </div>

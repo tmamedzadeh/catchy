@@ -75,7 +75,12 @@ export function respawn(a: Agent) {
 }
 
 /** input: normalised joystick / keyboard vector, or null for auto-chase. */
-export function step(dt: number, input: { x: number; z: number } | null, frozen: boolean) {
+export function step(
+  dt: number,
+  input: { x: number; z: number } | null,
+  frozen: boolean,
+  autopilot = true,
+) {
   const target = nearestRunner();
 
   // -- player ---------------------------------------------------------------
@@ -85,7 +90,7 @@ export function step(dt: number, input: { x: number; z: number } | null, frozen:
     if (input && (input.x !== 0 || input.z !== 0)) {
       px.v = input.x * 2.2;
       pz.v = input.z * 2.2;
-    } else if (target) {
+    } else if (target && autopilot) {
       const dx = target.agent.x - PLAYER.x;
       const dz = target.agent.z - PLAYER.z;
       const d = Math.hypot(dx, dz) || 1;

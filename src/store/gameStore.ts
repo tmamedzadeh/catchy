@@ -14,6 +14,9 @@ type Store = {
   setState: (s: GameState) => void;
   manualState: boolean;
   setManualState: (v: boolean) => void;
+  /** when false the player only moves from joystick / keys */
+  autopilot: boolean;
+  setAutopilot: (v: boolean) => void;
 
   caught: number;
   time: number;
@@ -38,6 +41,8 @@ export const useGameStore = create<Store>((set, get) => ({
   setState: (s) => set({ state: s }),
   manualState: false,
   setManualState: (v) => set({ manualState: v }),
+  autopilot: true,
+  setAutopilot: (v) => set({ autopilot: v }),
 
   caught: 0,
   time: 45,
