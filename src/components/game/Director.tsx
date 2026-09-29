@@ -36,7 +36,7 @@ export function Director() {
         z: r.z * raw.x + f.z * -raw.z,
       };
     }
-    const target = step(dt, input, frozen);
+    const target = step(dt, input, frozen, s.autopilot);
 
     if (!s.manualState) {
       if (s.state === "capture" || s.state === "after") {
