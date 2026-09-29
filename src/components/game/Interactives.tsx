@@ -54,13 +54,15 @@ function TrapObject({ t }: { t: Trap }) {
             <meshStandardMaterial color="#7b4a3c" roughness={0.9} />
           </mesh>
           <group ref={g}>
-            {[
-              [0, 0],
-              [0.55, 0.3],
-              [-0.5, 0.45],
-              [0.25, -0.6],
-              [-0.6, -0.3],
-            ].map(([x, z], i) => (
+            {(
+              [
+                [0, 0],
+                [0.55, 0.3],
+                [-0.5, 0.45],
+                [0.25, -0.6],
+                [-0.6, -0.3],
+              ] as [number, number][]
+            ).map(([x, z], i) => (
               <mesh key={i} position={[x, 0.45, z]} castShadow>
                 <coneGeometry args={[0.16, 0.8, 8]} />
                 <meshStandardMaterial color="#e6e9ef" metalness={0.5} roughness={0.25} />
