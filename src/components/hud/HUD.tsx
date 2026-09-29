@@ -10,6 +10,36 @@ const STATES: { id: GameState; label: string }[] = [
   { id: "timeup", label: "Time up" },
 ];
 
+
+const Icon = {
+  leaf: (
+    <svg viewBox="0 0 24 24" className="size-5" fill="none">
+      <path d="M12 21c0-6 3-10 8-12-1 8-4 11-8 12Z" fill="#fff" opacity=".95" />
+      <path d="M12 21C7 19 4 14 4 8c6 1 8 6 8 13Z" fill="#fff" opacity=".7" />
+    </svg>
+  ),
+  clock: (
+    <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+      <circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" />
+    </svg>
+  ),
+  eye: (
+    <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" /><circle cx="12" cy="12" r="3" />
+    </svg>
+  ),
+  bolt: (
+    <svg viewBox="0 0 24 24" className="size-6" fill="currentColor">
+      <path d="M13.5 2 5 13.5h5L9.5 22 19 10h-5.5L13.5 2Z" />
+    </svg>
+  ),
+  hands: (
+    <svg viewBox="0 0 24 24" className="size-7" fill="currentColor">
+      <path d="M12 20.5s-7.5-4.4-7.5-9.4A4.1 4.1 0 0 1 12 8.8a4.1 4.1 0 0 1 7.5 2.3c0 5-7.5 9.4-7.5 9.4Z" />
+    </svg>
+  ),
+};
+
 function fmt(t: number) {
   const m = Math.floor(t / 60);
   const s = Math.floor(t % 60);
@@ -17,12 +47,12 @@ function fmt(t: number) {
 }
 
 function Ability({
-  glyph,
+  icon,
   label,
   primary,
   cooldown,
 }: {
-  glyph: string;
+  icon: React.ReactNode;
   label: string;
   primary?: boolean;
   cooldown?: string;
@@ -49,7 +79,7 @@ function Ability({
         color: primary ? "white" : undefined,
       }}
     >
-      <span className={primary ? "text-2xl" : "text-xl"}>{glyph}</span>
+      <span className="grid place-items-center">{icon}</span>
       {cooldown && (
         <span className="absolute -top-1 -right-1 rounded-full bg-sprout-ink px-1.5 py-0.5 font-display text-[0.6rem] text-white">
           {cooldown}
@@ -158,7 +188,7 @@ export function HUD() {
               boxShadow: "inset 0 -3px 0 oklch(0.5 0.15 150 / 0.45)",
             }}
           >
-            🌱
+            {Icon.leaf}
           </div>
           <div className="leading-none">
             <div className="font-display text-base font-semibold text-sprout-ink sm:text-lg">
@@ -173,7 +203,7 @@ export function HUD() {
           className="hud-card flex items-center gap-1.5 px-3 py-2 sm:px-3.5 sm:py-2.5"
           style={time < 10 ? { animation: "sprout-pulse 1s infinite" } : undefined}
         >
-          <span className="text-sm">⏱</span>
+          <span className="text-sprout-accent-2">{Icon.clock}</span>
           <span className="font-display text-lg tabular-nums text-sprout-ink sm:text-xl">
             {fmt(time)}
           </span>
@@ -206,12 +236,14 @@ export function HUD() {
             boxShadow: "inset 0 0 0 2px oklch(1 0 0 / 0.8)",
           }}
         >
-          <div
-            className="text-2xl transition-transform duration-150 sm:text-3xl"
+          <svg
+            viewBox="0 0 24 24"
+            className="size-8 transition-transform duration-150 sm:size-9"
             style={{ transform: `rotate(${bearing}rad)` }}
+            fill="currentColor"
           >
-            <span className="block text-sprout-accent-2">➤</span>
-          </div>
+            <path d="M12 3.2 18.4 19 12 15.4 5.6 19 12 3.2Z" className="text-sprout-accent-2" fill="currentColor" />
+          </svg>
         </div>
         <div className="font-display text-base text-sprout-ink tabular-nums sm:text-lg">
           {Math.round(distance)} m
@@ -241,7 +273,7 @@ export function HUD() {
               animation: "sprout-pop 320ms ease-out",
             }}
           >
-            TAG! 💕
+            TAG!
           </div>
         )}
         {state === "after" && (
@@ -289,18 +321,18 @@ export function HUD() {
 
       {/* bottom-right: abilities */}
       <div className="absolute right-5 bottom-5 flex items-end gap-3 sm:right-8 sm:bottom-8 sm:gap-4">
-        <Ability glyph="👀" label="Scan" cooldown="8" />
-        <Ability glyph="⚡" label="Dash" cooldown="3" />
-        <Ability glyph="🤗" label="Grab" primary />
+        <Ability icon={Icon.eye} label="Scan" cooldown="8" />
+        <Ability icon={Icon.bolt} label="Dash" cooldown="3" />
+        <Ability icon={Icon.hands} label="Grab" primary />
       </div>
 
       {/* prototype / debug controls */}
-      <div className="absolute right-4 bottom-32 w-[13.5rem] sm:right-6 sm:bottom-36">
+      <div className="absolute top-24 left-4 w-[13.5rem] sm:top-28 sm:left-6">
         <button
           onClick={() => setPanel((p) => !p)}
-          className="hud-card pointer-events-auto mb-2 ml-auto flex items-center gap-1.5 px-3 py-1.5 font-display text-[0.7rem] tracking-wide text-sprout-ink uppercase"
+          className="hud-card pointer-events-auto mb-2 flex items-center gap-1.5 px-3 py-1.5 font-display text-[0.7rem] tracking-wide text-sprout-ink uppercase"
         >
-          🎛 Prototype {panel ? "▾" : "▸"}
+          Prototype {panel ? "▾" : "▸"}
         </button>
         {panel && (
           <div className="hud-card space-y-3 p-3.5">
