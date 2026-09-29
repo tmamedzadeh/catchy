@@ -124,8 +124,8 @@ function Hair({ p }: { p: Palette }) {
 
 /** Stylised cartoon humanoid, ~1.75 units tall, fully procedural. */
 export function Character({ index }: { index: number }) {
-  const p = PALETTES[index];
-  const agent = AGENTS[index];
+  const p = PALETTES[index]!;
+  const agent = AGENTS[index]!;
   const isPlayer = agent.role === "player";
 
   const root = useRef<THREE.Group>(null);

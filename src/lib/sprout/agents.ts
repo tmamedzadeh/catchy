@@ -23,7 +23,7 @@ export const AGENTS: Agent[] = [
   { id: "c", role: "runner", x: 17, z: 6, vx: 0, vz: 0, heading: -2, speed: 0, phase: 4.1, hidden: 0 },
 ];
 
-export const PLAYER = AGENTS[0];
+export const PLAYER = AGENTS[0]!;
 export const RUNNERS = AGENTS.slice(1);
 
 const PLAYER_SPEED = 9.2;

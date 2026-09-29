@@ -70,7 +70,7 @@ function garden(x: number, z: number, spread = 2.2, seed = 1) {
   const flowers = ["flower_redA", "flower_purpleB", "flower_yellowA"];
   for (let i = 0; i < 3; i++) {
     add(
-      bushes[Math.floor(rnd() * bushes.length)],
+      bushes[Math.floor(rnd() * bushes.length)]!,
       x + (rnd() - 0.5) * spread,
       z + (rnd() - 0.5) * spread,
       rnd() * 6.28,
@@ -79,7 +79,7 @@ function garden(x: number, z: number, spread = 2.2, seed = 1) {
   }
   for (let i = 0; i < 3; i++) {
     add(
-      flowers[Math.floor(rnd() * flowers.length)],
+      flowers[Math.floor(rnd() * flowers.length)]!,
       x + (rnd() - 0.5) * spread * 1.4,
       z + (rnd() - 0.5) * spread * 1.4,
       rnd() * 6.28,

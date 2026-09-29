@@ -22,7 +22,7 @@ export function Dust() {
     if (!g) return;
     data.forEach((d, i) => {
       const m = g.children[i] as THREE.Mesh;
-      const a = AGENTS[d.ai];
+      const a = AGENTS[d.ai]!;
       d.life -= dt;
       if (d.life <= 0) {
         d.life = 0.8;
