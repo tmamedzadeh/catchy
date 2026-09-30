@@ -11,15 +11,15 @@ import { Director } from "./Director";
 export function Scene() {
   return (
     <>
-      <fog attach="fog" args={["#cfe9ff", 80, 190]} />
+      <fog attach="fog" args={["#ffd9b0", 70, 180]} />
       <SkyDome />
 
-      <hemisphereLight args={["#bfe0ff", "#b2864f", 0.45]} />
+      <hemisphereLight args={["#9fe8ff", "#c07a45", 0.55]} />
       <ambientLight intensity={0.18} color="#fff4de" />
       <directionalLight
         position={[26, 34, 16]}
-        intensity={2.9}
-        color="#fff1cf"
+        intensity={3.4}
+        color="#ffe2b0"
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
@@ -32,7 +32,7 @@ export function Scene() {
         shadow-camera-far={110}
       />
       {/* cool bounce from the opposite side */}
-      <directionalLight position={[-20, 16, -24]} intensity={0.35} color="#a9d8ff" />
+      <directionalLight position={[-20, 16, -24]} intensity={0.6} color="#2ee6d6" />
 
       <Environment resolution={64}>
         <Lightformer intensity={2.2} position={[0, 8, 0]} scale={[12, 12, 1]} color="#fff3d6" />

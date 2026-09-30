@@ -3,11 +3,11 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { ARENA } from "@/lib/sprout/config";
 
-const SAND = "#e2ad6b";
-const SAND_DARK = "#d69f5f";
-const GRASS = "#63b93f";
-const GRASS_DARK = "#4f9c37";
-const STONE = "#cfc3ac";
+const SAND = "#f2b36e";
+const SAND_DARK = "#e89a55";
+const GRASS = "#4fcf5a";
+const GRASS_DARK = "#35b04c";
+const STONE = "#f4efe6";
 const ROCK = "#9c8f7c";
 
 /** Soft radial-gradient sky dome. */
@@ -18,9 +18,9 @@ export function SkyDome() {
         side: THREE.BackSide,
         depthWrite: false,
         uniforms: {
-          top: { value: new THREE.Color("#3ea8f5") },
-          mid: { value: new THREE.Color("#a8e2ff") },
-          bottom: { value: new THREE.Color("#d8f0c2") },
+          top: { value: new THREE.Color("#1a7fe0") },
+          mid: { value: new THREE.Color("#7fe3f0") },
+          bottom: { value: new THREE.Color("#ffcf9e") },
         },
         vertexShader: /* glsl */ `
           varying float vH;
@@ -152,6 +152,23 @@ export function Arena() {
         <ringGeometry args={[R - 0.55, R + 0.35, 72]} />
         <meshStandardMaterial color="#e6dcc6" roughness={0.85} side={THREE.DoubleSide} />
       </mesh>
+
+      {/* neon glow strip on the rim */}
+      <mesh position={[0, ARENA.rimHeight + 0.04, 0]} rotation-x={-Math.PI / 2}>
+        <ringGeometry args={[R - 0.62, R - 0.42, 96]} />
+        <meshBasicMaterial color="#2ee6d6" toneMapped={false} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh position={[0, ARENA.rimHeight * 0.55, 0]}>
+        <cylinderGeometry args={[R - 0.5, R - 0.5, 0.14, 96, 1, true]} />
+        <meshBasicMaterial color="#ff6b3d" toneMapped={false} side={THREE.DoubleSide} />
+      </mesh>
+      {/* centre court markings */}
+      {[9, 9.25, 17, 17.2].map((r, i) => (
+        <mesh key={`m${i}`} rotation-x={-Math.PI / 2} position={[2, 0.075, -1]}>
+          <ringGeometry args={[r, r + 0.12, 96]} />
+          <meshBasicMaterial color="#ffffff" transparent opacity={0.35} depthWrite={false} />
+        </mesh>
+      ))}
 
       <Fountain />
     </group>
