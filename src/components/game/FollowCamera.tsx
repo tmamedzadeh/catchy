@@ -38,9 +38,9 @@ export function FollowCamera() {
     pos.current.lerp(new THREE.Vector3(tx, h, tz), k);
     look.current.lerp(
       new THREE.Vector3(
-        PLAYER.x + Math.sin(PLAYER.heading) * 3,
+        PLAYER.x,
         lookY,
-        PLAYER.z + Math.cos(PLAYER.heading) * 3,
+        PLAYER.z,
       ),
       k,
     );
