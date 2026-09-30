@@ -1,5 +1,11 @@
 import { create } from "zustand";
-import { PLAYER, resetSimulation } from "@/lib/sprout/agents";
+import {
+  PLAYER,
+  cancelPlayerDash,
+  resetPlayerDash,
+  resetSimulation,
+  type DashState,
+} from "@/lib/sprout/agents";
 import { clearInput } from "@/lib/sprout/input";
 import { GAME_CONFIG } from "@/lib/sprout/config";
 
@@ -53,6 +59,8 @@ type Store = {
   playerSpeed: number;
   runners: Telemetry["runners"];
   restartCount: number;
+  dashStatus: DashState;
+  setDashStatus: (status: DashState) => void;
   setTelemetry: (telemetry: Telemetry) => void;
   tick: (dt: number) => void;
   addCatch: () => void;
@@ -82,16 +90,32 @@ export const useGameStore = create<Store>((set, get) => ({
   resetCamera: () => set({ camHeight: CAM_DEFAULTS.height, camAngle: CAM_DEFAULTS.angle }),
 
   state: "chase",
-  setState: (state) => set({ state }),
+  setState: (state) => {
+    if (state !== "chase" && PLAYER.dashState === "active") cancelPlayerDash();
+    set({ state, dashStatus: PLAYER.dashState });
+  },
   capture: null,
-  beginCapture: (capture) => set({ state: "capture", capture }),
-  enterAfter: () => set({ state: "after" }),
+  beginCapture: (capture) => {
+    cancelPlayerDash();
+    set({ state: "capture", capture, dashStatus: PLAYER.dashState });
+  },
+  enterAfter: () => {
+    cancelPlayerDash();
+    set({ state: "after", dashStatus: PLAYER.dashState });
+  },
   finishCapture: () =>
-    set((state) => ({ state: state.time <= 0 ? "timeup" : "chase", capture: null })),
+    set((state) => ({
+      state: state.time <= 0 ? "timeup" : "chase",
+      capture: null,
+      dashStatus: PLAYER.dashState,
+    })),
   caught: 0,
   time: GAME_CONFIG.roundSeconds,
   ...initialTelemetry,
   restartCount: 0,
+  dashStatus: "ready",
+  setDashStatus: (status) =>
+    set((state) => (state.dashStatus === status ? state : { dashStatus: status })),
   setTelemetry: (telemetry) => set(telemetry),
   tick: (dt) => {
     const { time, state } = get();
@@ -99,9 +123,15 @@ export const useGameStore = create<Store>((set, get) => ({
     if (roundTimeRemaining === 0) return;
     roundTimeRemaining = Math.max(0, roundTimeRemaining - dt);
     if (roundTimeRemaining === 0) {
+      resetPlayerDash();
+      clearInput();
       // Let a capture presentation finish before showing the round-over overlay.
       const presentingCapture = state === "capture" || state === "after";
-      set(presentingCapture ? { time: 0 } : { time: 0, state: "timeup" });
+      set(
+        presentingCapture
+          ? { time: 0, dashStatus: "ready" }
+          : { time: 0, state: "timeup", dashStatus: "ready" },
+      );
     } else if (Math.ceil(roundTimeRemaining) !== Math.ceil(time)) {
       // The HUD only needs whole seconds; keep React out of the 60fps loop.
       set({ time: roundTimeRemaining });
@@ -121,6 +151,7 @@ export const useGameStore = create<Store>((set, get) => ({
       playerX: PLAYER.x,
       playerZ: PLAYER.z,
       restartCount: state.restartCount + 1,
+      dashStatus: "ready",
     }));
   },
 }));

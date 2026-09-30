@@ -24,7 +24,18 @@ export type Agent = {
   lastZ: number;
   respawns: number;
   radius: number;
+  dashState: DashState;
+  dashCooldownRemaining: number;
+  dashDurationRemaining: number;
+  dashDirectionX: number;
+  dashDirectionZ: number;
+  dashActivationId: number;
+  dashStartX: number;
+  dashStartZ: number;
+  dashCameraRemaining: number;
 };
+
+export type DashState = "ready" | "active" | "cooldown";
 
 const initialPositions = [
   { id: "player", role: "player" as const, ...GAME_CONFIG.player.spawn, heading: -1.2, phase: 0 },
@@ -55,12 +66,52 @@ function makeAgent(index: number): Agent {
     lastZ: initial.z,
     respawns: 0,
     radius,
+    dashState: "ready",
+    dashCooldownRemaining: 0,
+    dashDurationRemaining: 0,
+    dashDirectionX: 0,
+    dashDirectionZ: 1,
+    dashActivationId: 0,
+    dashStartX: initial.x,
+    dashStartZ: initial.z,
+    dashCameraRemaining: 0,
   };
 }
 
 export const AGENTS: Agent[] = initialPositions.map((_, index) => makeAgent(index));
 export const PLAYER = AGENTS[0]!;
 export const RUNNERS = AGENTS.slice(1);
+
+/** Begin the player's short burst; the caller enforces the current game phase. */
+export function startPlayerDash(direction: { x: number; z: number }) {
+  if (PLAYER.dashState !== "ready") return false;
+  const length = Math.hypot(direction.x, direction.z);
+  const inverseLength = length > 0.001 ? 1 / length : 0;
+  const dash = GAME_CONFIG.player.dash;
+  PLAYER.dashDirectionX = length > 0.001 ? direction.x * inverseLength : Math.sin(PLAYER.heading);
+  PLAYER.dashDirectionZ = length > 0.001 ? direction.z * inverseLength : Math.cos(PLAYER.heading);
+  PLAYER.heading = Math.atan2(PLAYER.dashDirectionX, PLAYER.dashDirectionZ);
+  PLAYER.dashStartX = PLAYER.x;
+  PLAYER.dashStartZ = PLAYER.z;
+  PLAYER.dashDurationRemaining = dash.durationSeconds;
+  PLAYER.dashCooldownRemaining = dash.cooldownSeconds;
+  PLAYER.dashCameraRemaining = dash.cameraImpulseSeconds;
+  PLAYER.dashState = "active";
+  PLAYER.dashActivationId++;
+  return true;
+}
+
+/** Cancel any active burst and optionally clear the full cooldown for a new round. */
+export function resetPlayerDash(clearCooldown = true) {
+  PLAYER.dashDurationRemaining = 0;
+  PLAYER.dashCameraRemaining = 0;
+  if (clearCooldown) PLAYER.dashCooldownRemaining = 0;
+  PLAYER.dashState = PLAYER.dashCooldownRemaining > 0 ? "cooldown" : "ready";
+}
+
+export function cancelPlayerDash() {
+  resetPlayerDash(false);
+}
 
 const TAU = Math.PI * 2;
 const WALL_MARGIN = GAME_CONFIG.obstacleMargin;
@@ -246,6 +297,14 @@ export function resetSimulation() {
     agent.lastX = spawn.x;
     agent.lastZ = spawn.z;
     agent.respawns = 0;
+    agent.dashState = "ready";
+    agent.dashCooldownRemaining = 0;
+    agent.dashDurationRemaining = 0;
+    agent.dashDirectionX = 0;
+    agent.dashDirectionZ = 1;
+    agent.dashStartX = spawn.x;
+    agent.dashStartZ = spawn.z;
+    agent.dashCameraRemaining = 0;
   }
 }
 
@@ -525,6 +584,31 @@ function chooseNavigationRoute(agent: Agent, avoidPreviousFirstStep: boolean) {
   agent.routeTimer = GAME_CONFIG.npc.navigation.routeRecheck;
 }
 
+function integrateMovement(agent: Agent, dt: number) {
+  const distance = Math.max(Math.abs(agent.vx * dt), Math.abs(agent.vz * dt));
+  const substeps = Math.max(1, Math.ceil(distance / 0.18));
+  const stepX = (agent.vx * dt) / substeps;
+  const stepZ = (agent.vz * dt) / substeps;
+  for (let i = 0; i < substeps; i++) {
+    agent.x += stepX;
+    resolveWorld(agent);
+    agent.z += stepZ;
+    resolveWorld(agent);
+  }
+}
+
+function updateMovementPresentation(agent: Agent, dt: number, preserveHeading: boolean) {
+  agent.speed = Math.hypot(agent.vx, agent.vz);
+  if (!preserveHeading && agent.speed > 0.4) {
+    const wantedHeading = Math.atan2(agent.vx, agent.vz);
+    let difference = wantedHeading - agent.heading;
+    while (difference > Math.PI) difference -= TAU;
+    while (difference < -Math.PI) difference += TAU;
+    agent.heading += difference * (1 - Math.exp(-10 * dt));
+  }
+  agent.phase += agent.speed * dt * 0.85;
+}
+
 function move(
   agent: Agent,
   ax: number,
@@ -545,26 +629,23 @@ function move(
   const acceleration = 1 - Math.exp(-9 * dt);
   agent.vx += (ax - agent.vx) * acceleration;
   agent.vz += (az - agent.vz) * acceleration;
-  const distance = Math.max(Math.abs(agent.vx * dt), Math.abs(agent.vz * dt));
-  const substeps = Math.max(1, Math.ceil(distance / 0.18));
-  const stepX = (agent.vx * dt) / substeps;
-  const stepZ = (agent.vz * dt) / substeps;
-  for (let i = 0; i < substeps; i++) {
-    agent.x += stepX;
-    resolveWorld(agent);
-    agent.z += stepZ;
-    resolveWorld(agent);
-  }
+  integrateMovement(agent, dt);
+  updateMovementPresentation(agent, dt, preserveHeading);
+}
 
-  agent.speed = Math.hypot(agent.vx, agent.vz);
-  if (!preserveHeading && agent.speed > 0.4) {
-    const wantedHeading = Math.atan2(agent.vx, agent.vz);
-    let difference = wantedHeading - agent.heading;
-    while (difference > Math.PI) difference -= TAU;
-    while (difference < -Math.PI) difference += TAU;
-    agent.heading += difference * (1 - Math.exp(-10 * dt));
-  }
-  agent.phase += agent.speed * dt * 0.85;
+function movePlayerDash(dt: number) {
+  const dashSpeed = GAME_CONFIG.player.dash.distance / GAME_CONFIG.player.dash.durationSeconds;
+  PLAYER.vx = PLAYER.dashDirectionX * dashSpeed;
+  PLAYER.vz = PLAYER.dashDirectionZ * dashSpeed;
+  integrateMovement(PLAYER, dt);
+  updateMovementPresentation(PLAYER, dt, true);
+}
+
+function advancePlayerDashTimers(dt: number) {
+  PLAYER.dashCooldownRemaining = Math.max(0, PLAYER.dashCooldownRemaining - dt);
+  PLAYER.dashCameraRemaining = Math.max(0, PLAYER.dashCameraRemaining - dt);
+  if (PLAYER.dashState === "cooldown" && PLAYER.dashCooldownRemaining === 0)
+    PLAYER.dashState = "ready";
 }
 
 function advanceRunner(runner: Agent, dt: number) {
@@ -619,7 +700,10 @@ export function step(
   freezePlayer: boolean,
   freezeWorld = false,
 ) {
+  advancePlayerDashTimers(dt);
+
   if (freezeWorld) {
+    if (PLAYER.dashState === "active") cancelPlayerDash();
     for (const agent of AGENTS) {
       agent.vx = 0;
       agent.vz = 0;
@@ -634,7 +718,33 @@ export function step(
     const movingBackward = input
       ? input.x * facingX + input.z * facingZ < -0.5
       : PLAYER.vx * facingX + PLAYER.vz * facingZ < -0.4;
-    move(PLAYER, input?.x ?? 0, input?.z ?? 0, GAME_CONFIG.player.speed, dt, movingBackward);
+    let movementDt = dt;
+    if (PLAYER.dashState === "active") {
+      const dashDt = Math.min(dt, PLAYER.dashDurationRemaining);
+      if (dashDt > 0) movePlayerDash(dashDt);
+      PLAYER.dashDurationRemaining = Math.max(0, PLAYER.dashDurationRemaining - dashDt);
+      movementDt -= dashDt;
+      if (PLAYER.dashDurationRemaining === 0) {
+        PLAYER.dashState = PLAYER.dashCooldownRemaining > 0 ? "cooldown" : "ready";
+        const speed = Math.hypot(PLAYER.vx, PLAYER.vz);
+        if (speed > GAME_CONFIG.player.speed) {
+          const scale = GAME_CONFIG.player.speed / speed;
+          PLAYER.vx *= scale;
+          PLAYER.vz *= scale;
+          PLAYER.speed = GAME_CONFIG.player.speed;
+        }
+      }
+    }
+    if (movementDt > 0 && PLAYER.dashState !== "active") {
+      move(
+        PLAYER,
+        input?.x ?? 0,
+        input?.z ?? 0,
+        GAME_CONFIG.player.speed,
+        movementDt,
+        movingBackward,
+      );
+    }
   }
 
   for (const runner of RUNNERS) {

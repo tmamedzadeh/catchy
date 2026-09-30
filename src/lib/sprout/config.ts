@@ -5,6 +5,15 @@ export const GAME_CONFIG = {
     radius: 0.55,
     speed: 9.2,
     spawn: { x: -4, z: 12 },
+    dash: {
+      durationSeconds: 0.18,
+      distance: 4.2,
+      cooldownSeconds: 2.5,
+      cameraImpulseSeconds: 0.34,
+      cameraFovIncrease: 5,
+      trailSeconds: 0.22,
+      hapticMs: 18,
+    },
   },
   npc: {
     radius: 0.48,

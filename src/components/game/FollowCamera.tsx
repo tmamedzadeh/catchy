@@ -2,6 +2,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useRef } from "react";
 import * as THREE from "three";
 import { PLAYER } from "@/lib/sprout/agents";
+import { GAME_CONFIG } from "@/lib/sprout/config";
 import { useGameStore } from "@/store/gameStore";
 
 /** Smooth perspective follow camera trailing behind the player's heading. */
@@ -11,6 +12,8 @@ export function FollowCamera() {
   const lookAt = useRef(new THREE.Vector3());
   const desiredPosition = useRef(new THREE.Vector3());
   const desiredLookAt = useRef(new THREE.Vector3());
+  const baseFov = useRef((camera as THREE.PerspectiveCamera).fov);
+  const fov = useRef(baseFov.current);
 
   useFrame((_, rawDelta) => {
     const dt = Math.min(rawDelta, 0.05);
@@ -34,6 +37,15 @@ export function FollowCamera() {
     );
 
     const blend = 1 - Math.exp(-3.2 * dt);
+    const perspective = camera as THREE.PerspectiveCamera;
+    const dash = GAME_CONFIG.player.dash;
+    const fovPulse = Math.min(PLAYER.dashCameraRemaining / dash.cameraImpulseSeconds, 1);
+    const desiredFov = baseFov.current + dash.cameraFovIncrease * fovPulse;
+    fov.current += (desiredFov - fov.current) * (1 - Math.exp(-12 * dt));
+    if (Math.abs(perspective.fov - fov.current) > 0.01) {
+      perspective.fov = fov.current;
+      perspective.updateProjectionMatrix();
+    }
     position.current.lerp(desiredPosition.current, blend);
     // Linear interpolation cuts inside the orbit during turns, which looks like a zoom.
     const offsetX = position.current.x - PLAYER.x;

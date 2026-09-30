@@ -4,7 +4,7 @@ import { EnvironmentCapture } from "./EnvironmentCapture";
 import { Arena, SkyDome } from "./Arena";
 import { Props } from "./Prop";
 import { Characters } from "./Characters";
-import { CaptureBurst, Dust, TargetBeacon } from "./Effects";
+import { CaptureBurst, DashStreak, Dust, TargetBeacon } from "./Effects";
 import { FollowCamera } from "./FollowCamera";
 import { Director } from "./Director";
 import { QUALITY_LEVELS, type QualityTier } from "./quality";
@@ -52,6 +52,7 @@ export function Scene({ qualityTier }: { qualityTier: QualityTier }) {
       </Suspense>
       <Characters />
       <Dust />
+      <DashStreak />
       <CaptureBurst />
       <TargetBeacon />
 

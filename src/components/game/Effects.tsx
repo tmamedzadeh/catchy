@@ -1,7 +1,8 @@
 import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { AGENTS, RUNNERS } from "@/lib/sprout/agents";
+import { AGENTS, PLAYER, RUNNERS } from "@/lib/sprout/agents";
+import { GAME_CONFIG } from "@/lib/sprout/config";
 import { useGameStore } from "@/store/gameStore";
 
 const PARTICLE_GEOMETRY = new THREE.SphereGeometry(1, 8, 6);
@@ -69,6 +70,75 @@ export function Dust() {
           <meshBasicMaterial color="#f4e0bd" transparent opacity={0.3} depthWrite={false} />
         </mesh>
       ))}
+    </group>
+  );
+}
+
+/** A short, pooled floor streak left at the start of an accepted player dash. */
+export function DashStreak() {
+  const group = useRef<THREE.Group>(null);
+  const restartCount = useGameStore((s) => s.restartCount);
+  const previousRestart = useRef(restartCount);
+  const animation = useRef({ id: PLAYER.dashActivationId, elapsed: 0, active: false });
+
+  useFrame((_, rawDelta) => {
+    const g = group.current;
+    if (!g) return;
+    const game = useGameStore.getState();
+    if (
+      game.time <= 0 ||
+      game.state === "capture" ||
+      game.state === "after" ||
+      game.state === "timeup"
+    ) {
+      animation.current.active = false;
+      g.visible = false;
+      return;
+    }
+    if (previousRestart.current !== restartCount) {
+      previousRestart.current = restartCount;
+      animation.current.id = PLAYER.dashActivationId;
+      animation.current.active = false;
+      g.visible = false;
+      return;
+    }
+
+    if (PLAYER.dashActivationId !== animation.current.id) {
+      animation.current.id = PLAYER.dashActivationId;
+      animation.current.elapsed = 0;
+      animation.current.active = true;
+      g.position.set(PLAYER.dashStartX, 0, PLAYER.dashStartZ);
+      g.rotation.y = Math.atan2(PLAYER.dashDirectionX, PLAYER.dashDirectionZ);
+      g.visible = true;
+    }
+    if (!animation.current.active) return;
+
+    animation.current.elapsed += Math.min(rawDelta, 0.05);
+    const progress = Math.min(animation.current.elapsed / GAME_CONFIG.player.dash.trailSeconds, 1);
+    for (let i = 0; i < g.children.length; i++) {
+      const mesh = g.children[i] as THREE.Mesh;
+      (mesh.material as THREE.MeshBasicMaterial).opacity = (0.42 - i * 0.09) * (1 - progress);
+    }
+    if (progress >= 1) {
+      animation.current.active = false;
+      g.visible = false;
+    }
+  });
+
+  return (
+    <group ref={group} visible={false}>
+      <mesh position={[0, 0.14, -0.32]}>
+        <boxGeometry args={[0.16, 0.06, 1.15]} />
+        <meshBasicMaterial color="#8df2ff" transparent opacity={0.42} depthWrite={false} />
+      </mesh>
+      <mesh position={[0, 0.13, -0.88]}>
+        <boxGeometry args={[0.11, 0.05, 0.82]} />
+        <meshBasicMaterial color="#d3fbff" transparent opacity={0.33} depthWrite={false} />
+      </mesh>
+      <mesh position={[0, 0.12, -1.36]}>
+        <boxGeometry args={[0.07, 0.04, 0.54]} />
+        <meshBasicMaterial color="#ffffff" transparent opacity={0.24} depthWrite={false} />
+      </mesh>
     </group>
   );
 }

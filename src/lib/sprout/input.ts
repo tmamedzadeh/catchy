@@ -10,6 +10,7 @@ const GAME_CODES = new Set([
   "ArrowRight",
 ]);
 const keys = new Set<string>();
+let dashRequested = false;
 
 export const joystick = { x: 0, z: 0, active: false };
 const vector = { x: 0, z: 0 };
@@ -26,10 +27,25 @@ export function clearInput() {
   joystick.x = 0;
   joystick.z = 0;
   joystick.active = false;
+  dashRequested = false;
+}
+
+export function requestPlayerDash() {
+  dashRequested = true;
+}
+
+export function consumePlayerDashRequest() {
+  const requested = dashRequested;
+  dashRequested = false;
+  return requested;
 }
 
 if (typeof window !== "undefined") {
   window.addEventListener("keydown", (event) => {
+    if ((event.code === "ShiftLeft" || event.code === "ShiftRight") && !event.repeat) {
+      if (!isTextControl(event.target)) requestPlayerDash();
+      return;
+    }
     if (!GAME_CODES.has(event.code) || isTextControl(event.target)) return;
     if (event.code.startsWith("Arrow")) event.preventDefault();
     keys.add(event.code);

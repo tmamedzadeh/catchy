@@ -1,9 +1,17 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
-import { AGENTS, PLAYER, RUNNERS, respawn, selectTarget, step } from "@/lib/sprout/agents";
+import {
+  AGENTS,
+  PLAYER,
+  RUNNERS,
+  respawn,
+  selectTarget,
+  startPlayerDash,
+  step,
+} from "@/lib/sprout/agents";
 import { GAME_CONFIG } from "@/lib/sprout/config";
-import { inputVector } from "@/lib/sprout/input";
+import { consumePlayerDashRequest, inputVector } from "@/lib/sprout/input";
 import { useGameStore } from "@/store/gameStore";
 
 /** Camera-relative controls, deterministic player-only capture, and HUD telemetry. */
@@ -55,6 +63,14 @@ export function Director() {
       input.current.z = right.current.z * raw.x - forward.current.z * raw.z;
     }
     const frameInput = raw ? input.current : null;
+    const dashRequested = consumePlayerDashRequest();
+    if (dashRequested && state.state === "chase") {
+      const dashDirection = frameInput ?? {
+        x: Math.sin(PLAYER.heading),
+        z: Math.cos(PLAYER.heading),
+      };
+      startPlayerDash(dashDirection);
+    }
     const presentation = state.state === "capture" || state.state === "after";
     step(
       dt,
@@ -62,6 +78,8 @@ export function Director() {
       presentation || state.state === "timeup",
       presentation || state.state === "timeup",
     );
+    const dashStatus = useGameStore.getState().dashStatus;
+    if (dashStatus !== PLAYER.dashState) useGameStore.getState().setDashStatus(PLAYER.dashState);
     let target = selectTarget(targetId.current, state.capture?.runnerId ?? null);
     targetId.current = target?.agent.id ?? null;
 

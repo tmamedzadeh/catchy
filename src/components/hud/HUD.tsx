@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Joystick } from "./Joystick";
 import { CAM_DEFAULTS, useGameStore } from "@/store/gameStore";
+import { requestPlayerDash } from "@/lib/sprout/input";
+import { GAME_CONFIG } from "@/lib/sprout/config";
 
 const ONBOARDING_KEY = "catchy-first-session-controls-v1";
 const MOVEMENT_KEYS = new Set([
@@ -12,6 +14,8 @@ const MOVEMENT_KEYS = new Set([
   "ArrowDown",
   "ArrowLeft",
   "ArrowRight",
+  "ShiftLeft",
+  "ShiftRight",
 ]);
 
 const ClockIcon = (
@@ -85,6 +89,7 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
   const bearing = useGameStore((s) => s.bearing);
   const targetId = useGameStore((s) => s.targetId);
   const restart = useGameStore((s) => s.restart);
+  const dashStatus = useGameStore((s) => s.dashStatus);
   const debugMode = useMemo(
     () =>
       typeof window !== "undefined" &&
@@ -266,10 +271,73 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
       <div className="touch-controls absolute">
         <Joystick />
       </div>
+      <DashControl gameReady={gameReady} state={state} status={dashStatus} />
 
       <FirstSessionOnboarding gameReady={gameReady} />
 
       {debugMode && <CameraTuningPanel />}
+    </div>
+  );
+}
+
+function DashControl({
+  gameReady,
+  state,
+  status,
+}: {
+  gameReady: boolean;
+  state: ReturnType<typeof useGameStore.getState>["state"];
+  status: ReturnType<typeof useGameStore.getState>["dashStatus"];
+}) {
+  const enabled = gameReady && state === "chase" && status === "ready";
+  const label = status === "ready" ? "READY" : status === "active" ? "DASH" : "WAIT";
+  const coolDownAnimationSeconds = Math.max(
+    0.1,
+    GAME_CONFIG.player.dash.cooldownSeconds - GAME_CONFIG.player.dash.durationSeconds,
+  );
+
+  return (
+    <div className="dash-control absolute">
+      <button
+        type="button"
+        data-sound="dash"
+        aria-label={enabled ? "Dash" : `Dash ${state === "chase" ? status : "unavailable"}`}
+        title={enabled ? "Dash" : label}
+        disabled={!enabled}
+        onPointerDown={(event) => {
+          if (event.button !== 0 || !enabled) return;
+          event.preventDefault();
+          event.stopPropagation();
+          requestPlayerDash();
+        }}
+        onPointerCancel={(event) => event.preventDefault()}
+        onContextMenu={(event) => event.preventDefault()}
+        className="dash-control-button pointer-events-auto relative grid place-items-center rounded-full text-white transition-transform active:scale-95 disabled:cursor-default"
+      >
+        <svg
+          className="dash-control-ring absolute inset-0 size-full"
+          viewBox="0 0 48 48"
+          aria-hidden="true"
+        >
+          <circle className="dash-control-ring-track" cx="24" cy="24" r="20" />
+          <circle
+            key={status}
+            className={`dash-control-ring-progress ${status === "cooldown" ? "is-cooling" : ""}`}
+            cx="24"
+            cy="24"
+            r="20"
+            style={{ animationDuration: `${coolDownAnimationSeconds}s` }}
+          />
+        </svg>
+        <span className="relative flex flex-col items-center leading-none">
+          <svg viewBox="0 0 24 24" className="mb-0.5 size-5" fill="currentColor" aria-hidden="true">
+            <path d="M13.1 1.8 4.7 13h5.5l-.5 9.2L19.3 10h-5.7l-.5-8.2Z" />
+          </svg>
+          <span className="font-display text-[0.55rem] font-bold tracking-wide">
+            {state === "chase" ? label : "LOCK"}
+          </span>
+        </span>
+      </button>
     </div>
   );
 }
@@ -356,7 +424,8 @@ function FirstSessionOnboarding({ gameReady }: { gameReady: boolean }) {
       if (MOVEMENT_KEYS.has(event.code)) finish();
     };
     const onPointerDown = (event: PointerEvent) => {
-      if (event.target instanceof Element && event.target.closest(".touch-controls")) finish();
+      if (event.target instanceof Element && event.target.closest(".touch-controls, .dash-control"))
+        finish();
     };
     const finish = () => {
       if (finished) return;
@@ -393,7 +462,9 @@ function FirstSessionOnboarding({ gameReady }: { gameReady: boolean }) {
       <div className="hud-card px-4 py-2.5 text-center">
         <div className="font-display text-sm font-semibold text-sprout-ink">Ready to chase?</div>
         <div className="mt-0.5 text-xs text-sprout-ink-soft">
-          {isCoarsePointer ? "Move with the joystick" : "Move with WASD or arrow keys"}
+          {isCoarsePointer
+            ? "Move with the joystick · Dash button"
+            : "Move with WASD or arrows · Shift to dash"}
         </div>
       </div>
     </div>
