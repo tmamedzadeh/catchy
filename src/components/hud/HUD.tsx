@@ -343,7 +343,7 @@ export function HUD() {
             <Slider
               label="Camera height"
               value={camHeight}
-              min={14}
+              min={10}
               max={32}
               unit=""
               onChange={setCamHeight}
@@ -351,7 +351,7 @@ export function HUD() {
             <Slider
               label="Camera angle"
               value={camAngle}
-              min={45}
+              min={10}
               max={75}
               unit="°"
               onChange={setCamAngle}
