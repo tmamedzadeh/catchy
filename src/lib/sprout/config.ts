@@ -111,6 +111,7 @@ add("statue_obelisk", 2, -1, 0, 2.1, 1.35);
 block(2, -1, 4.0);
 garden(6.4, -4.2, 2.6, 11);
 garden(-2.2, 2.6, 2.4, 12);
+garden(-7.2, 7.2, 2.0, 13);
 add("lantern", 6.6, 1.8, 0, 2.2);
 add("lantern", -2.6, -4.4, 0, 2.2);
 
@@ -118,11 +119,15 @@ add("lantern", -2.6, -4.4, 0, 2.2);
 wallRun(11.5, -7.5, Math.PI / 2, 4);
 wallRun(11.5, 3.4, Math.PI / 2, 3);
 add("lantern", 13.4, -1.6, 0, 2.2);
+garden(15.8, 3.7, 2.0, 31);
 
 // LOOP wall north-west
 wallRun(-14, -9, 0, 5);
 wallRun(-14, -9, Math.PI / 2, 3);
 garden(-9.5, -12.5, 2.6, 21);
+add("crate", -10.4, -5.3, 0.5, 1.35);
+add("barrel", -8.9, -5.9, -0.2, 1.15);
+block(-9.7, -5.6, 1.25);
 
 // RISK ZONE fence north
 hedgeRun(-6, -17.5, 0, 6);

@@ -32,6 +32,20 @@ function PropGroup({ model }: { model: string }) {
           if (mesh.isMesh) {
             mesh.castShadow = true;
             mesh.receiveShadow = true;
+            const enhance = (source: THREE.Material) => {
+              const material = source.clone();
+              if (material instanceof THREE.MeshStandardMaterial) {
+                const hsl = { h: 0, s: 0, l: 0 };
+                material.color.getHSL(hsl);
+                material.color.setHSL(hsl.h, Math.min(1, hsl.s * 1.22 + 0.04), Math.min(0.72, hsl.l * 1.03));
+                material.roughness = Math.min(material.roughness, 0.72);
+                material.envMapIntensity = 0.85;
+              }
+              return material;
+            };
+            mesh.material = Array.isArray(mesh.material)
+              ? mesh.material.map(enhance)
+              : enhance(mesh.material);
           }
         });
         return { c, it };
