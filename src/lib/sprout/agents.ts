@@ -100,6 +100,7 @@ export function step(
   }
   avoid(PLAYER, px, pz);
   integrate(PLAYER, px.v, pz.v, PLAYER_SPEED, dt, frozen);
+  collide(PLAYER);
 
   // -- runners --------------------------------------------------------------
   for (const r of RUNNERS) {
@@ -138,9 +139,47 @@ export function step(
     }
     avoid(r, fx, fz);
     integrate(r, fx.v, fz.v, RUNNER_SPEED, dt, frozen);
+    collide(r);
   }
 
   return target;
+}
+
+/** Hard collision: push the agent out of obstacle circles and the arena rim,
+ *  and kill the velocity component pointing into the surface. */
+function collide(a: Agent) {
+  const body = 0.55; // agent body radius
+  for (const o of OBSTACLES) {
+    const dx = a.x - o.x;
+    const dz = a.z - o.z;
+    const d = Math.hypot(dx, dz);
+    const min = o.r + body;
+    if (d < min) {
+      const nx = d > 0.0001 ? dx / d : 1;
+      const nz = d > 0.0001 ? dz / d : 0;
+      a.x = o.x + nx * min;
+      a.z = o.z + nz * min;
+      const into = a.vx * nx + a.vz * nz;
+      if (into < 0) {
+        a.vx -= nx * into;
+        a.vz -= nz * into;
+      }
+    }
+  }
+  // arena rim
+  const dist = Math.hypot(a.x, a.z);
+  const maxR = ARENA.radius - 1.4 - body;
+  if (dist > maxR) {
+    const nx = a.x / dist;
+    const nz = a.z / dist;
+    a.x = nx * maxR;
+    a.z = nz * maxR;
+    const into = a.vx * nx + a.vz * nz;
+    if (into > 0) {
+      a.vx -= nx * into;
+      a.vz -= nz * into;
+    }
+  }
 }
 
 function integrate(a: Agent, ax: number, az: number, maxSpeed: number, dt: number, frozen: boolean) {
