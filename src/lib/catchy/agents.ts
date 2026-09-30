@@ -22,8 +22,15 @@ export type Agent = {
   hidden: number;
   stuckTime: number;
   routeTimer: number;
+  routeInterval: number;
+  routePhaseOffset: number;
+  routeDecisionCount: number;
+  routeSeed: number;
   routeX: number;
   routeZ: number;
+  routeGoalX: number;
+  routeGoalZ: number;
+  routeFirstStep: number;
   route: number[];
   routeIndex: number;
   lastX: number;
@@ -73,6 +80,11 @@ const initialPositions = [
 function makeAgent(index: number): Agent {
   const initial = initialPositions[index]!;
   const radius = initial.role === "player" ? GAME_CONFIG.player.radius : GAME_CONFIG.npc.radius;
+  const navigation = GAME_CONFIG.npc.navigation;
+  const runnerSlot = initial.role === "runner" ? index - 1 : 0;
+  const runnerCount = initialPositions.length - 1;
+  const runnerRatio = runnerCount > 1 ? runnerSlot / (runnerCount - 1) : 0;
+  const routePhaseOffset = navigation.replanPhaseSpreadSeconds * runnerRatio;
   return {
     ...initial,
     state: initial.role === "player" ? "player" : "flee",
@@ -83,9 +95,18 @@ function makeAgent(index: number): Agent {
     speed: 0,
     hidden: 0,
     stuckTime: 0,
-    routeTimer: 0,
+    routeTimer: initial.role === "runner" ? routePhaseOffset : 0,
+    routeInterval:
+      navigation.replanIntervalMin +
+      (navigation.replanIntervalMax - navigation.replanIntervalMin) * runnerRatio,
+    routePhaseOffset,
+    routeDecisionCount: 0,
+    routeSeed: (runnerSlot + 1) * 2.399963229728653,
     routeX: 0,
     routeZ: 0,
+    routeGoalX: initial.x,
+    routeGoalZ: initial.z,
+    routeFirstStep: -1,
     route: [],
     routeIndex: 0,
     lastX: initial.x,
@@ -287,13 +308,7 @@ export function isWalkablePoint(x: number, z: number, radius: number) {
 }
 
 /** Check waypoint links with the same body radius and obstacle colliders used by movement. */
-export function isWalkableSegment(
-  x1: number,
-  z1: number,
-  x2: number,
-  z2: number,
-  radius: number,
-) {
+export function isWalkableSegment(x1: number, z1: number, x2: number, z2: number, radius: number) {
   const length = Math.hypot(x2 - x1, z2 - z1);
   const samples = Math.max(1, Math.ceil(length / NAV_SAMPLE_SPACING));
   for (let i = 1; i < samples; i++) {
@@ -361,6 +376,8 @@ let navPrevious = new Int32Array(0);
 let navFirstStep = new Int32Array(0);
 let navVisited = new Uint8Array(0);
 let navReversePath = new Int32Array(0);
+const goalSectorBestNode = new Int32Array(GAME_CONFIG.npc.navigation.candidateDirections);
+const goalSectorBestScore = new Float64Array(GAME_CONFIG.npc.navigation.candidateDirections);
 
 function rebuildNavigationGraph() {
   NAV_NODES = buildNavigationGraph();
@@ -372,7 +389,10 @@ function rebuildNavigationGraph() {
   for (const runner of RUNNERS) {
     runner.route.length = 0;
     runner.routeIndex = 0;
-    runner.routeTimer = 0;
+    runner.routeTimer = runner.routePhaseOffset;
+    runner.routeGoalX = runner.x;
+    runner.routeGoalZ = runner.z;
+    runner.routeFirstStep = -1;
     runner.stuckTime = 0;
   }
 }
@@ -488,9 +508,13 @@ export function resetSimulation() {
     agent.hidden = 0;
     agent.state = initial.role === "player" ? "player" : "flee";
     agent.stuckTime = 0;
-    agent.routeTimer = 0;
+    agent.routeTimer = agent.role === "runner" ? agent.routePhaseOffset : 0;
+    agent.routeDecisionCount = 0;
     agent.routeX = 0;
     agent.routeZ = 0;
+    agent.routeGoalX = spawn.x;
+    agent.routeGoalZ = spawn.z;
+    agent.routeFirstStep = -1;
     agent.route.length = 0;
     agent.routeIndex = 0;
     agent.lastX = spawn.x;
@@ -594,7 +618,10 @@ export function respawn(agent: Agent) {
   agent.vz = 0;
   agent.speed = 0;
   agent.stuckTime = 0;
-  agent.routeTimer = 0;
+  agent.routeTimer = agent.routePhaseOffset;
+  agent.routeGoalX = agent.x;
+  agent.routeGoalZ = agent.z;
+  agent.routeFirstStep = -1;
   agent.route.length = 0;
   agent.routeIndex = 0;
   agent.boostState = "ready";
@@ -758,13 +785,22 @@ function nearestReachableNode(agent: Agent) {
   return bestNode;
 }
 
-/** Dijkstra on the small static graph, scored toward reachable points farther from the player. */
+/** Dijkstra on the collision-checked graph, then score one reachable goal per escape sector. */
 function chooseNavigationRoute(agent: Agent, avoidPreviousFirstStep: boolean) {
+  const navigation = GAME_CONFIG.npc.navigation;
+  const weights = navigation.goalWeights;
+  const directionCount = navigation.candidateDirections;
+  const directionStep = TAU / directionCount;
+  const decision = agent.routeDecisionCount++;
+  const personalLateralBias = Math.sin(agent.routeSeed + decision * 2.399963229728653);
   const start = nearestReachableNode(agent);
   if (start < 0) {
     agent.route.length = 0;
     agent.routeIndex = 0;
-    agent.routeTimer = GAME_CONFIG.npc.navigation.stuckRecheck;
+    agent.routeGoalX = agent.x;
+    agent.routeGoalZ = agent.z;
+    agent.routeFirstStep = -1;
+    agent.routeTimer = agent.routeInterval;
     return;
   }
 
@@ -772,12 +808,14 @@ function chooseNavigationRoute(agent: Agent, avoidPreviousFirstStep: boolean) {
   navPrevious.fill(-1);
   navFirstStep.fill(-1);
   navVisited.fill(0);
+  goalSectorBestNode.fill(-1);
+  goalSectorBestScore.fill(-Infinity);
   navDistance[start] = 0;
 
-  let bestGoal = -1;
-  let bestScore = -Infinity;
   const currentPlayerDistance = Math.hypot(agent.x - PLAYER.x, agent.z - PLAYER.z);
-  const previousFirstStep = agent.route[0];
+  const escapeX = (agent.x - PLAYER.x) / (currentPlayerDistance || 1);
+  const escapeZ = (agent.z - PLAYER.z) / (currentPlayerDistance || 1);
+  const previousFirstStep = agent.routeFirstStep;
 
   for (let iteration = 0; iteration < NAV_NODES.length; iteration++) {
     let current = -1;
@@ -793,14 +831,67 @@ function chooseNavigationRoute(agent: Agent, avoidPreviousFirstStep: boolean) {
     const node = NAV_NODES[current]!;
     const playerDistance = Math.hypot(node.x - PLAYER.x, node.z - PLAYER.z);
     if (current !== start) {
-      const gain = playerDistance - currentPlayerDistance;
-      let score = playerDistance - currentCost * 0.58 + Math.min(gain, 0) * 0.9;
-      if (avoidPreviousFirstStep && navFirstStep[current] === previousFirstStep) {
-        score -= GAME_CONFIG.npc.navigation.gridSpacing * 2.2;
+      const goalDX = node.x - agent.x;
+      const goalDZ = node.z - agent.z;
+      const goalDistance = Math.hypot(goalDX, goalDZ) || 1;
+      const directionCos = (goalDX * escapeX + goalDZ * escapeZ) / goalDistance;
+      const directionSin = (escapeX * goalDZ - escapeZ * goalDX) / goalDistance;
+      const relativeAngle = Math.atan2(directionSin, directionCos);
+      let sector = Math.round(relativeAngle / directionStep);
+      sector = ((sector % directionCount) + directionCount) % directionCount;
+
+      let score = (playerDistance - currentPlayerDistance) * weights.escapeDistance;
+      score -= currentCost * weights.routeQuality;
+      score -= Math.max(0, currentCost - goalDistance) * weights.routeDetour;
+      score += (node.links.length / 8) * weights.openSpace;
+      score += Math.max(0, directionCos) * weights.awayDirection;
+      score += Math.abs(directionSin) * weights.lateralEscape;
+      score += directionSin * personalLateralBias * weights.personalLateralBias;
+
+      const boundaryExcess = Math.max(
+        0,
+        Math.hypot(node.x, node.z) - navigation.preferredRunnerRadius,
+      );
+      score -= boundaryExcess * boundaryExcess * weights.boundaryPenalty;
+
+      for (const other of RUNNERS) {
+        if (other === agent || other.hidden > 0) continue;
+        const runnerDistance = Math.hypot(node.x - other.x, node.z - other.z);
+        const separationRatio = Math.min(runnerDistance / navigation.preferredRunnerSeparation, 1);
+        score += separationRatio * weights.runnerSeparation;
+        const crowding = Math.max(0, 1 - separationRatio);
+        score -= crowding * crowding * weights.crowdingPenalty;
+
+        const otherHasRoute = other.routeIndex < other.route.length;
+        const otherGoalX = otherHasRoute ? other.routeGoalX : other.x;
+        const otherGoalZ = otherHasRoute ? other.routeGoalZ : other.z;
+        const goalSeparation = Math.hypot(node.x - otherGoalX, node.z - otherGoalZ);
+        score +=
+          Math.min(goalSeparation / navigation.preferredGoalSeparation, 1) * weights.goalSeparation;
+
+        if (otherHasRoute) {
+          let closestRouteDistance = goalSeparation;
+          for (let routeIndex = other.routeIndex; routeIndex < other.route.length; routeIndex++) {
+            const routeNode = NAV_NODES[other.route[routeIndex]!]!;
+            closestRouteDistance = Math.min(
+              closestRouteDistance,
+              Math.hypot(node.x - routeNode.x, node.z - routeNode.z),
+            );
+          }
+          const routeCrowding = Math.max(
+            0,
+            1 - closestRouteDistance / navigation.preferredGoalSeparation,
+          );
+          score -= routeCrowding * routeCrowding * weights.crowdingPenalty;
+        }
       }
-      if (score > bestScore) {
-        bestScore = score;
-        bestGoal = current;
+
+      if (avoidPreviousFirstStep && navFirstStep[current] === previousFirstStep) {
+        score -= weights.previousRoutePenalty;
+      }
+      if (score > goalSectorBestScore[sector]!) {
+        goalSectorBestScore[sector] = score;
+        goalSectorBestNode[sector] = current;
       }
     }
 
@@ -814,10 +905,23 @@ function chooseNavigationRoute(agent: Agent, avoidPreviousFirstStep: boolean) {
     }
   }
 
+  let bestGoal = -1;
+  let bestScore = -Infinity;
+  for (let sector = 0; sector < directionCount; sector++) {
+    const candidate = goalSectorBestNode[sector]!;
+    const score = goalSectorBestScore[sector]!;
+    if (candidate < 0 || score <= bestScore) continue;
+    bestGoal = candidate;
+    bestScore = score;
+  }
+
   if (bestGoal < 0) {
     agent.route.length = 0;
     agent.routeIndex = 0;
-    agent.routeTimer = GAME_CONFIG.npc.navigation.stuckRecheck;
+    agent.routeGoalX = agent.x;
+    agent.routeGoalZ = agent.z;
+    agent.routeFirstStep = -1;
+    agent.routeTimer = agent.routeInterval;
     return;
   }
 
@@ -830,10 +934,16 @@ function chooseNavigationRoute(agent: Agent, avoidPreviousFirstStep: boolean) {
   if (pathNode !== start || pathLength === 0) {
     agent.route.length = 0;
     agent.routeIndex = 0;
-    agent.routeTimer = GAME_CONFIG.npc.navigation.stuckRecheck;
+    agent.routeGoalX = agent.x;
+    agent.routeGoalZ = agent.z;
+    agent.routeFirstStep = -1;
+    agent.routeTimer = agent.routeInterval;
     return;
   }
 
+  agent.routeGoalX = NAV_NODES[bestGoal]!.x;
+  agent.routeGoalZ = NAV_NODES[bestGoal]!.z;
+  agent.routeFirstStep = navFirstStep[bestGoal]!;
   agent.route.length = 0;
   for (let i = pathLength - 1; i >= 0; i--) agent.route.push(navReversePath[i]!);
   agent.routeIndex = 0;
@@ -846,7 +956,7 @@ function chooseNavigationRoute(agent: Agent, avoidPreviousFirstStep: boolean) {
   const waypoint = NAV_NODES[agent.route[agent.routeIndex]!]!;
   agent.routeX = waypoint.x;
   agent.routeZ = waypoint.z;
-  agent.routeTimer = GAME_CONFIG.npc.navigation.routeRecheck;
+  agent.routeTimer = agent.routeInterval;
 }
 
 function integrateMovement(agent: Agent, dt: number) {
@@ -1041,7 +1151,10 @@ function advanceRunner(runner: Agent, dt: number) {
   runner.lastZ = spawn.z;
   runner.vx = 0;
   runner.vz = 0;
-  runner.routeTimer = 0;
+  runner.routeTimer = runner.routePhaseOffset;
+  runner.routeGoalX = spawn.x;
+  runner.routeGoalZ = spawn.z;
+  runner.routeFirstStep = -1;
   runner.route.length = 0;
   runner.routeIndex = 0;
   runner.state = "flee";
@@ -1221,8 +1334,26 @@ export function step(
     const waypointZ =
       runner.routeIndex < runner.route.length ? runner.routeZ - runner.z : awayZ / distance;
     // The graph owns obstacle routing; fleeing and the existing separation field remain responsive.
-    const steerX = waypointX * 0.84 + (awayX / distance) * 0.16 + separationX;
-    const steerZ = waypointZ * 0.84 + (awayZ / distance) * 0.16 + separationZ;
+    let steerX = waypointX * 0.84 + (awayX / distance) * 0.16 + separationX;
+    let steerZ = waypointZ * 0.84 + (awayZ / distance) * 0.16 + separationZ;
+    const runnerRadius = Math.hypot(runner.x, runner.z);
+    if (runnerRadius > navigation.boundarySteeringStartRadius) {
+      const radialX = runner.x / runnerRadius;
+      const radialZ = runner.z / runnerRadius;
+      const pressure = Math.min(
+        1,
+        (runnerRadius - navigation.boundarySteeringStartRadius) /
+          (navigation.boundarySteeringFullRadius - navigation.boundarySteeringStartRadius),
+      );
+      const outwardSteering = steerX * radialX + steerZ * radialZ;
+      if (outwardSteering > 0) {
+        const dampedOutward = outwardSteering * pressure * navigation.boundaryOutwardDamping;
+        steerX -= radialX * dampedOutward;
+        steerZ -= radialZ * dampedOutward;
+      }
+      steerX -= radialX * pressure * navigation.boundaryInwardSteeringWeight;
+      steerZ -= radialZ * pressure * navigation.boundaryInwardSteeringWeight;
+    }
     move(runner, steerX, steerZ, GAME_CONFIG.npc.speed * effectiveSpeedMultiplier(runner), dt);
   }
 
