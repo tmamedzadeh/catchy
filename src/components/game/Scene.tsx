@@ -4,7 +4,7 @@ import { Arena, SkyDome } from "./Arena";
 import { Props } from "./Prop";
 import { Characters } from "./Characters";
 import { Interactives } from "./Interactives";
-import { CaptureBurst, Dust, TargetBeacon } from "./Effects";
+import { CaptureBurst, CaptureShockwave, Dust, SpeedTrails, TargetBeacon } from "./Effects";
 import { FollowCamera } from "./FollowCamera";
 import { Director } from "./Director";
 
@@ -53,6 +53,8 @@ export function Scene() {
       <Characters />
       <Dust />
       <CaptureBurst />
+      <CaptureShockwave />
+      <SpeedTrails />
       <TargetBeacon />
 
       <FollowCamera />
