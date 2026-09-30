@@ -289,7 +289,8 @@ function DashControl({
   state: ReturnType<typeof useGameStore.getState>["state"];
   status: ReturnType<typeof useGameStore.getState>["dashStatus"];
 }) {
-  const enabled = gameReady && state === "chase" && status === "ready";
+  const isChasing = state === "chase" || state === "nearby";
+  const enabled = gameReady && isChasing && status === "ready";
   const label = status === "ready" ? "READY" : status === "active" ? "DASH" : "WAIT";
   const coolDownAnimationSeconds = Math.max(
     0.1,
@@ -301,7 +302,7 @@ function DashControl({
       <button
         type="button"
         data-sound="dash"
-        aria-label={enabled ? "Dash" : `Dash ${state === "chase" ? status : "unavailable"}`}
+        aria-label={enabled ? "Dash" : `Dash ${isChasing ? status : "unavailable"}`}
         title={enabled ? "Dash" : label}
         disabled={!enabled}
         onPointerDown={(event) => {
@@ -334,7 +335,7 @@ function DashControl({
             <path d="M13.1 1.8 4.7 13h5.5l-.5 9.2L19.3 10h-5.7l-.5-8.2Z" />
           </svg>
           <span className="font-display text-[0.55rem] font-bold tracking-wide">
-            {state === "chase" ? label : "LOCK"}
+            {isChasing ? label : "LOCK"}
           </span>
         </span>
       </button>

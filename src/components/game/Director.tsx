@@ -64,7 +64,7 @@ export function Director() {
     }
     const frameInput = raw ? input.current : null;
     const dashRequested = consumePlayerDashRequest();
-    if (dashRequested && state.state === "chase") {
+    if (dashRequested && (state.state === "chase" || state.state === "nearby")) {
       const dashDirection = frameInput ?? {
         x: Math.sin(PLAYER.heading),
         z: Math.cos(PLAYER.heading),

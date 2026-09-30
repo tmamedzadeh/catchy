@@ -91,7 +91,8 @@ export const useGameStore = create<Store>((set, get) => ({
 
   state: "chase",
   setState: (state) => {
-    if (state !== "chase" && PLAYER.dashState === "active") cancelPlayerDash();
+    if (state !== "chase" && state !== "nearby" && PLAYER.dashState === "active")
+      cancelPlayerDash();
     set({ state, dashStatus: PLAYER.dashState });
   },
   capture: null,

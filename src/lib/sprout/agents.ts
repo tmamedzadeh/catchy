@@ -111,6 +111,13 @@ export function resetPlayerDash(clearCooldown = true) {
 
 export function cancelPlayerDash() {
   resetPlayerDash(false);
+  const speed = Math.hypot(PLAYER.vx, PLAYER.vz);
+  if (speed > GAME_CONFIG.player.speed) {
+    const scale = GAME_CONFIG.player.speed / speed;
+    PLAYER.vx *= scale;
+    PLAYER.vz *= scale;
+    PLAYER.speed = GAME_CONFIG.player.speed;
+  }
 }
 
 const TAU = Math.PI * 2;
