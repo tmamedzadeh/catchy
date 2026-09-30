@@ -5,6 +5,7 @@ import { Scene } from "./Scene";
 export function GameCanvas() {
   return (
     <Canvas
+      className="game-canvas"
       shadows="soft"
       dpr={[1, 1.75]}
       camera={{ position: [0, 22, 24], fov: 48, near: 0.5, far: 400 }}

@@ -2,9 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { GameCanvas } from "@/components/game/GameCanvas";
 import { HUD } from "@/components/hud/HUD";
 
-const title = "Sprout! Tiny Tag Arena — 3D chase game prototype";
+const title = "Catchy — Fast chase/tag browser game";
 const description =
-  "A sunny 3D tag arena: chase three runners across an open round map, dodge traps, grab power-ups and tag them before the timer runs out.";
+  "Chase three runners around a bright 3D arena in Catchy, a fast browser tag game.";
 
 export const Route = createFileRoute("/")({
   head: () => ({

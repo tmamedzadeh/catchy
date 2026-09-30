@@ -1,12 +1,14 @@
 import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { AGENTS, PLAYER } from "@/lib/sprout/agents";
+import { AGENTS, PLAYER, nearestRunner } from "@/lib/sprout/agents";
 import { useGameStore } from "@/store/gameStore";
 
 /** Dust puffs kicked up behind every running character. */
 export function Dust() {
   const group = useRef<THREE.Group>(null);
+  const restartCount = useGameStore((s) => s.restartCount);
+  const previousRestart = useRef(restartCount);
   const COUNT = 6;
   const data = useMemo(
     () =>
@@ -20,6 +22,15 @@ export function Dust() {
     const dt = Math.min(rawDelta, 0.05);
     const g = group.current;
     if (!g) return;
+    if (previousRestart.current !== restartCount) {
+      previousRestart.current = restartCount;
+      data.forEach((particle, index) => {
+        particle.life = 0.8;
+        const mesh = g.children[index] as THREE.Mesh;
+        mesh.visible = false;
+        mesh.scale.setScalar(0);
+      });
+    }
     data.forEach((d, i) => {
       const m = g.children[i] as THREE.Mesh;
       const a = AGENTS[d.ai]!;
@@ -57,7 +68,8 @@ export function CaptureBurst() {
   const active = state === "capture" || state === "after";
 
   const hearts = useMemo(
-    () => Array.from({ length: 10 }, (_, i) => ({ a: (i / 10) * Math.PI * 2, r: 0.5 + (i % 3) * 0.3 })),
+    () =>
+      Array.from({ length: 10 }, (_, i) => ({ a: (i / 10) * Math.PI * 2, r: 0.5 + (i % 3) * 0.3 })),
     [],
   );
 
@@ -75,7 +87,7 @@ export function CaptureBurst() {
     g.position.set(PLAYER.x, 1.4, PLAYER.z);
     hearts.forEach((h, i) => {
       const m = g.children[i] as THREE.Mesh;
-      const p = Math.min(t.current / 1.6, 1);
+      const p = Math.min(t.current / 0.75, 1);
       m.position.set(
         Math.cos(h.a) * h.r * (0.6 + p * 2.4),
         p * 2.2 + Math.sin(p * 6 + i) * 0.1,
@@ -92,11 +104,7 @@ export function CaptureBurst() {
       {hearts.map((_, i) => (
         <mesh key={i}>
           <sphereGeometry args={[1, 8, 6]} />
-          <meshBasicMaterial
-            color={i % 2 ? "#ff5c86" : "#ffd166"}
-            transparent
-            depthWrite={false}
-          />
+          <meshBasicMaterial color={i % 2 ? "#ff5c86" : "#ffd166"} transparent depthWrite={false} />
         </mesh>
       ))}
     </group>
@@ -109,16 +117,8 @@ export function TargetBeacon() {
   useFrame(({ clock }) => {
     const g = ref.current;
     if (!g) return;
-    const runners = AGENTS.slice(1).filter((r) => r.hidden <= 0);
-    let best = runners[0];
-    let bd = Infinity;
-    for (const r of runners) {
-      const d = Math.hypot(r.x - PLAYER.x, r.z - PLAYER.z);
-      if (d < bd) {
-        bd = d;
-        best = r;
-      }
-    }
+    const target = nearestRunner();
+    const best = target?.agent;
     if (!best) {
       g.visible = false;
       return;
@@ -128,7 +128,7 @@ export function TargetBeacon() {
     const t = clock.elapsedTime;
     const pulse = (t % 1.4) / 1.4;
     const ring = g.children[0] as THREE.Mesh;
-    ring.scale.setScalar(0.6 + pulse * 2.2);
+    ring.scale.setScalar(0.75 + pulse * 0.95);
     (ring.material as THREE.MeshBasicMaterial).opacity = 0.85 * (1 - pulse);
     const beam = g.children[1] as THREE.Mesh;
     (beam.material as THREE.MeshBasicMaterial).opacity = 0.3 + Math.sin(t * 3) * 0.07;
@@ -137,11 +137,11 @@ export function TargetBeacon() {
   return (
     <group ref={ref}>
       <mesh rotation-x={-Math.PI / 2} position={[0, 0.11, 0]}>
-        <ringGeometry args={[0.85, 1.15, 28]} />
+        <ringGeometry args={[0.42, 0.58, 28]} />
         <meshBasicMaterial color="#ff9a3d" transparent opacity={0.5} side={THREE.DoubleSide} />
       </mesh>
-      <mesh position={[0, 3.5, 0]}>
-        <cylinderGeometry args={[0.7, 1.15, 7, 18, 1, true]} />
+      <mesh position={[0, 3.8, 0]}>
+        <cylinderGeometry args={[0.1, 0.2, 1.1, 12, 1, true]} />
         <meshBasicMaterial
           color="#ffb347"
           transparent

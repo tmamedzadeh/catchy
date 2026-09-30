@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="catchy" x1="12" y1="8" x2="54" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffc45d" />
+      <stop offset="1" stop-color="#f06b3d" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="19" fill="url(#catchy)" />
+  <path d="M43.5 19.8a18 18 0 1 0 0 24.4l-6-5.3a10 10 0 1 1 0-13.8z" fill="#fff" />
+</svg>

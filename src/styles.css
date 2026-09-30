@@ -144,17 +144,15 @@
 }
 
 /* ---------------------------------------------------------------------------
- * Sprout! Tiny Tag Arena — game design tokens.
- * These are the single source of truth for the game's visual language so it
- * can be reproduced in a real engine (Babylon.js) later.
+ * Catchy game design tokens. These values define the HUD and touch controls.
  * ------------------------------------------------------------------------ */
 
 :root {
   /* brand */
-  --sprout-ink: oklch(0.34 0.07 152);          /* dark green text */
+  --sprout-ink: oklch(0.34 0.07 152); /* dark green text */
   --sprout-ink-soft: oklch(0.52 0.05 152);
-  --sprout-accent: oklch(0.72 0.19 45);        /* orange / coral */
-  --sprout-accent-2: oklch(0.66 0.21 25);      /* deep coral */
+  --sprout-accent: oklch(0.72 0.19 45); /* orange / coral */
+  --sprout-accent-2: oklch(0.66 0.21 25); /* deep coral */
   --sprout-cyan: oklch(0.78 0.14 210);
   --sprout-lime: oklch(0.82 0.18 135);
   --sprout-danger: oklch(0.62 0.23 25);
@@ -171,8 +169,6 @@
   --hud-pad: 0.75rem;
   --hud-shadow: 0 10px 24px -8px oklch(0.34 0.07 152 / 0.35), 0 2px 0 0 oklch(1 0 0 / 0.5) inset;
   --hud-shadow-soft: 0 8px 20px -10px oklch(0.34 0.07 152 / 0.45);
-  --btn-ability: 4rem;
-  --btn-ability-primary: 5rem;
   --joystick-size: 8.5rem;
 }
 
@@ -218,28 +214,62 @@
   body {
     font-family: var(--font-body);
     overscroll-behavior: none;
+    min-height: 100dvh;
+    margin: 0;
+    overflow: hidden;
+  }
+}
+
+.game-canvas,
+.game-canvas canvas {
+  touch-action: none;
+}
+
+.touch-controls {
+  display: none;
+}
+
+@media (pointer: coarse), (max-width: 640px) {
+  .touch-controls {
+    display: block;
   }
 }
 
 @keyframes sprout-pop {
-  0% { transform: scale(0.6); opacity: 0; }
-  60% { transform: scale(1.08); opacity: 1; }
-  100% { transform: scale(1); opacity: 1; }
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 @keyframes sprout-pulse {
-  0%, 100% { opacity: 0.55; }
-  50% { opacity: 1; }
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 @keyframes sprout-flash {
-  0% { opacity: 0.75; }
-  100% { opacity: 0; }
+  0% {
+    opacity: 0.75;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 @media (max-width: 640px) {
   :root {
-    --joystick-size: 6.5rem;
-    --btn-ability: 3.25rem;
-    --btn-ability-primary: 4.25rem;
+    --joystick-size: 5.5rem;
     --hud-radius: 1rem;
   }
 }

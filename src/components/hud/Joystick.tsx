@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { joystick } from "@/lib/sprout/input";
 
 export function Joystick() {
@@ -21,34 +21,48 @@ export function Joystick() {
       dy = (dy / d) * max;
     }
     setKnob({ x: dx, y: dy });
-    const n = Math.max(d, 0.001);
+    const n = Math.max(Math.hypot(dx, dy), 0.001);
     const mag = Math.min(d / max, 1);
     joystick.x = (dx / n) * mag * (d > 0 ? 1 : 0);
     joystick.z = (dy / n) * mag * (d > 0 ? 1 : 0);
     joystick.active = true;
   };
 
-  const release = () => {
+  const release = useCallback(() => {
     pointer.current = null;
     setKnob({ x: 0, y: 0 });
     joystick.x = 0;
     joystick.z = 0;
     joystick.active = false;
-  };
+  }, []);
+
+  useEffect(() => {
+    const clear = () => release();
+    window.addEventListener("blur", clear);
+    document.addEventListener("visibilitychange", clear);
+    return () => {
+      window.removeEventListener("blur", clear);
+      document.removeEventListener("visibilitychange", clear);
+    };
+  }, [release]);
 
   return (
     <div
       ref={base}
       onPointerDown={(e) => {
+        if (pointer.current !== null) return;
         pointer.current = e.pointerId;
-        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+        e.currentTarget.setPointerCapture(e.pointerId);
         update(e.clientX, e.clientY);
       }}
       onPointerMove={(e) => {
         if (pointer.current === e.pointerId) update(e.clientX, e.clientY);
       }}
-      onPointerUp={release}
+      onPointerUp={(e) => {
+        if (pointer.current === e.pointerId) release();
+      }}
       onPointerCancel={release}
+      onLostPointerCapture={release}
       className="pointer-events-auto relative size-[var(--joystick-size)] touch-none rounded-full select-none"
       style={{
         background:
@@ -63,8 +77,7 @@ export function Joystick() {
         className="absolute top-1/2 left-1/2 size-[42%] -translate-x-1/2 -translate-y-1/2 rounded-full transition-transform duration-75"
         style={{
           transform: `translate(calc(-50% + ${knob.x}px), calc(-50% + ${knob.y}px))`,
-          background:
-            "radial-gradient(circle at 40% 32%, oklch(0.99 0.01 95), oklch(0.9 0.05 80))",
+          background: "radial-gradient(circle at 40% 32%, oklch(0.99 0.01 95), oklch(0.9 0.05 80))",
           boxShadow: "0 6px 14px -4px oklch(0.34 0.07 152 / 0.55)",
         }}
       />

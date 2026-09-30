@@ -21,7 +21,7 @@ PROP_MODELS.forEach((m) => useGLTF.preload(url(m)));
  */
 function PropGroup({ model }: { model: string }) {
   const { scene } = useGLTF(url(model));
-  const items = useMemo(() => PROPS.filter((p) => p.m === model), [model]);
+  const items = useMemo(() => PROPS.filter((p) => p.model === model), [model]);
 
   const clones = useMemo(
     () =>
@@ -37,7 +37,11 @@ function PropGroup({ model }: { model: string }) {
               if (material instanceof THREE.MeshStandardMaterial) {
                 const hsl = { h: 0, s: 0, l: 0 };
                 material.color.getHSL(hsl);
-                material.color.setHSL(hsl.h, Math.min(1, hsl.s * 1.22 + 0.04), Math.min(0.72, hsl.l * 1.03));
+                material.color.setHSL(
+                  hsl.h,
+                  Math.min(1, hsl.s * 1.22 + 0.04),
+                  Math.min(0.72, hsl.l * 1.03),
+                );
                 material.roughness = Math.min(material.roughness, 0.72);
                 material.envMapIntensity = 0.85;
               }
@@ -59,9 +63,9 @@ function PropGroup({ model }: { model: string }) {
         <primitive
           key={i}
           object={c}
-          position={[it.p[0], it.y ?? 0, it.p[1]]}
-          rotation-y={it.r ?? 0}
-          scale={it.s ?? 1}
+          position={[it.position.x, it.y, it.position.z]}
+          rotation-y={it.rotation}
+          scale={it.scale}
         />
       ))}
     </group>

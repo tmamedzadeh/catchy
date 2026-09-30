@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
-import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { ARENA } from "@/lib/sprout/config";
+import { ARENA, GAME_CONFIG } from "@/lib/sprout/config";
 import { createTerrainTexture } from "@/lib/sprout/textures";
 
 const SAND = "#edb75f";
@@ -54,34 +53,6 @@ export function SkyDome() {
   );
 }
 
-function Fountain() {
-  const water = useRef<THREE.Mesh>(null);
-  useFrame(({ clock }) => {
-    if (water.current) {
-      const t = clock.elapsedTime;
-      water.current.position.y = 0.92 + Math.sin(t * 2) * 0.02;
-      (water.current.material as THREE.MeshStandardMaterial).opacity =
-        0.82 + Math.sin(t * 1.4) * 0.05;
-    }
-  });
-  return (
-    <group position={[2, 0, -1]}>
-      <mesh ref={water} position={[0, 0.92, 0]} receiveShadow>
-        <cylinderGeometry args={[2.55, 2.55, 0.12, 40]} />
-        <meshStandardMaterial
-          color="#39c6f0"
-          transparent
-          opacity={0.85}
-          roughness={0.12}
-          metalness={0.1}
-          emissive="#0d7fa8"
-          emissiveIntensity={0.25}
-        />
-      </mesh>
-    </group>
-  );
-}
-
 function IrregularIsland({
   position,
   radius,
@@ -130,8 +101,12 @@ function StoneRim() {
     const dummy = new THREE.Object3D();
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2;
-      const radius = ARENA.radius + 0.08;
-      dummy.position.set(Math.cos(angle) * radius, 0.72 + (i % 3) * 0.035, Math.sin(angle) * radius);
+      const radius = GAME_CONFIG.arenaRadius + 0.08;
+      dummy.position.set(
+        Math.cos(angle) * radius,
+        0.72 + (i % 3) * 0.035,
+        Math.sin(angle) * radius,
+      );
       dummy.rotation.set(0, -angle, (i % 2 ? 1 : -1) * 0.025);
       dummy.scale.set(1.95, 0.82 + (i % 4) * 0.035, 1.16);
       dummy.updateMatrix();
@@ -150,7 +125,7 @@ function StoneRim() {
 
 /** Ground disc, grass rim, boundary wall and the cliff the arena sits on. */
 export function Arena() {
-  const R = ARENA.radius;
+  const R = GAME_CONFIG.arenaRadius;
   const textures = useMemo(
     () => ({
       sand: createTerrainTexture("sand", 12),
@@ -196,29 +171,26 @@ export function Arena() {
       <IrregularIsland position={[10, 11]} radius={4.8} color="#f1c875" y={0.063} />
       <IrregularIsland position={[-2, -15]} radius={4.2} color="#e4a552" y={0.064} />
 
-      {/* raised, organic garden beds create visible height changes */}
-      <mesh position={[2, 0.1, -1]} castShadow receiveShadow>
-        <cylinderGeometry args={[6.15, 6.35, 0.22, 32]} />
-        <meshStandardMaterial map={textures.grass} color={GRASS_DARK} roughness={0.78} />
-      </mesh>
-      <IrregularIsland position={[-14, -9.5]} radius={4.1} color="#469d35" y={0.11} />
-      <IrregularIsland position={[14, -3]} radius={3.3} color="#68be43" y={0.105} />
-      <IrregularIsland position={[-6, 18]} radius={4.0} color="#4ea93a" y={0.1} />
-
       {/* thin boundary wall */}
       <mesh position={[0, ARENA.rimHeight / 2, 0]} castShadow receiveShadow>
-        <cylinderGeometry
-          args={[R + 0.05, R + 0.05, ARENA.rimHeight, 72, 1, true]}
+        <cylinderGeometry args={[R + 0.05, R + 0.05, ARENA.rimHeight, 72, 1, true]} />
+        <meshStandardMaterial
+          map={textures.stone}
+          color={STONE}
+          roughness={0.72}
+          side={THREE.DoubleSide}
         />
-        <meshStandardMaterial map={textures.stone} color={STONE} roughness={0.72} side={THREE.DoubleSide} />
       </mesh>
       <mesh position={[0, ARENA.rimHeight, 0]} rotation-x={-Math.PI / 2} receiveShadow>
         <ringGeometry args={[R - 0.55, R + 0.35, 72]} />
-        <meshStandardMaterial map={textures.stone} color="#eadfc9" roughness={0.68} side={THREE.DoubleSide} />
+        <meshStandardMaterial
+          map={textures.stone}
+          color="#eadfc9"
+          roughness={0.68}
+          side={THREE.DoubleSide}
+        />
       </mesh>
       <StoneRim />
-
-      <Fountain />
     </group>
   );
 }

@@ -15,7 +15,7 @@ type Palette = {
   build: number;
 };
 
-export const PALETTES: Palette[] = [
+const PALETTES: Palette[] = [
   {
     shirt: "#2ea8ff",
     pants: "#1b4f9c",
@@ -166,7 +166,7 @@ export function Character({ index }: { index: number }) {
     if (!g) return;
     g.position.set(agent.x, 0, agent.z);
     g.rotation.y = agent.heading;
-    g.visible = agent.hidden <= 0.35;
+    g.visible = agent.hidden <= 0;
 
     // ease the run factor so starts/stops blend instead of snapping
     const runTarget = Math.min(agent.speed / 8, 1.15);
@@ -222,14 +222,15 @@ export function Character({ index }: { index: number }) {
   });
 
   const state = useGameStore((s) => s.state);
-  const highlight = isPlayer || state === "nearby" || state === "capture";
+  const targetId = useGameStore((s) => s.targetId);
+  const highlight = isPlayer || state === "capture" || targetId === agent.id;
 
   return (
     <group ref={root}>
       {/* selection / contact ring */}
       {highlight && (
         <mesh ref={ring} rotation-x={-Math.PI / 2} position={[0, 0.09, 0]}>
-          <ringGeometry args={[0.72, 0.92, 28]} />
+          <ringGeometry args={[agent.radius * 1.3, agent.radius * 1.65, 28]} />
           <meshBasicMaterial
             color={isPlayer ? "#38e6ff" : p.accent}
             transparent
@@ -240,7 +241,7 @@ export function Character({ index }: { index: number }) {
       )}
       {/* soft contact shadow */}
       <mesh rotation-x={-Math.PI / 2} position={[0, 0.08, 0]}>
-        <circleGeometry args={[0.72, 20]} />
+        <circleGeometry args={[agent.radius * 1.3, 20]} />
         <meshBasicMaterial color="#5b4326" transparent opacity={0.36} depthWrite={false} />
       </mesh>
 
