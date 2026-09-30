@@ -12,6 +12,7 @@ import {
 const base = (): FeedbackTransition => {
   const state = useGameStore.getState();
   return {
+    ...state,
     state: "chase",
     caught: 0,
     time: 300,
@@ -21,7 +22,6 @@ const base = (): FeedbackTransition => {
     interactionCueId: 0,
     interactionCueKind: null,
     restartCount: 0,
-    ...state,
   };
 };
 

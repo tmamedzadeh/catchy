@@ -230,7 +230,7 @@
   display: none;
 }
 
-.action-controls {
+.camera-controls {
   display: none;
 }
 
@@ -242,7 +242,10 @@
 .hud-game-status {
   top: calc(1rem + env(safe-area-inset-top, 0px));
   right: calc(0.75rem + env(safe-area-inset-right, 0px));
-  width: min(20rem, calc(100vw - 2rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
+  width: min(
+    20rem,
+    calc(100vw - 2rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))
+  );
   min-height: 4.5rem;
 }
 
@@ -255,7 +258,7 @@
   left: max(1.25rem, calc(env(safe-area-inset-left, 0px) + 1rem));
 }
 
-.action-controls {
+.camera-controls {
   right: max(1.25rem, calc(env(safe-area-inset-right, 0px) + 1rem));
   bottom: max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
 }
@@ -271,8 +274,8 @@
 }
 
 .dash-control-button {
-  width: 4.25rem;
-  height: 4.25rem;
+  width: 3.25rem;
+  height: 3.25rem;
   border: 2px solid oklch(1 0 0 / 0.68);
   background: radial-gradient(circle at 35% 28%, oklch(0.82 0.16 205), oklch(0.52 0.16 222));
   box-shadow:
@@ -283,8 +286,8 @@
 }
 
 .boost-control-button {
-  width: 3.75rem;
-  height: 3.75rem;
+  width: 4.25rem;
+  height: 4.25rem;
   border: 2px solid oklch(1 0 0 / 0.68);
   background: radial-gradient(circle at 35% 28%, oklch(0.8 0.16 145), oklch(0.48 0.14 160));
   box-shadow:
@@ -298,30 +301,9 @@
   opacity: 0.66;
 }
 
-.touch-stick-action {
+.touch-stick-camera {
   width: var(--action-joystick-size);
   height: var(--action-joystick-size);
-}
-
-.action-stick-hint {
-  position: absolute;
-  left: 50%;
-  color: oklch(1 0 0 / 0.82);
-  font-family: var(--font-display);
-  font-size: 0.45rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  pointer-events: none;
-  transform: translateX(-50%);
-  text-shadow: 0 1px 3px oklch(0.2 0.08 230 / 0.65);
-}
-
-.action-stick-hint-up {
-  top: 0.35rem;
-}
-
-.action-stick-hint-down {
-  bottom: 0.35rem;
 }
 
 .dash-control-button:disabled {
@@ -467,13 +449,14 @@
     display: block;
   }
 
-  .action-controls {
+  .camera-controls {
     display: block;
   }
 
   .ability-controls {
     bottom: calc(
-      var(--action-joystick-size) + max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 1rem)) + 0.5rem
+      var(--action-joystick-size) + max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 1rem)) +
+        0.5rem
     );
   }
 }
@@ -534,7 +517,10 @@
 
   .hud-game-status {
     top: calc(0.75rem + env(safe-area-inset-top, 0px));
-    width: min(16rem, calc(100vw - 6.5rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
+    width: min(
+      16rem,
+      calc(100vw - 6.5rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))
+    );
     min-height: 4rem;
   }
 }
@@ -559,24 +545,25 @@
     left: max(2rem, calc(env(safe-area-inset-left, 0px) + 1.5rem));
   }
 
-  .action-controls,
+  .camera-controls,
   .ability-controls {
     right: max(2rem, calc(env(safe-area-inset-right, 0px) + 1.5rem));
   }
 
   .ability-controls {
     bottom: calc(
-      var(--action-joystick-size) + max(2rem, calc(env(safe-area-inset-bottom, 0px) + 1.5rem)) + 0.5rem
+      var(--action-joystick-size) + max(2rem, calc(env(safe-area-inset-bottom, 0px) + 1.5rem)) +
+        0.5rem
     );
   }
 
   .dash-control-button {
-    width: 3.75rem;
-    height: 3.75rem;
+    width: 3.25rem;
+    height: 3.25rem;
   }
 
   .boost-control-button {
-    width: 3.75rem;
-    height: 3.75rem;
+    width: 4rem;
+    height: 4rem;
   }
 }

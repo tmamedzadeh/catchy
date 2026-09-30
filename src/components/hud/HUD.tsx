@@ -275,10 +275,10 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
       <div className="touch-controls absolute">
         <Joystick />
       </div>
-      <div className="action-controls absolute">
-        <Joystick side="action" />
+      <div className="camera-controls absolute">
+        <Joystick side="camera" />
       </div>
-      <div className="ability-controls absolute flex items-center gap-2">
+      <div className="ability-controls absolute flex flex-col-reverse items-end gap-2">
         <DashControl gameReady={gameReady} state={state} status={dashStatus} />
         <SpeedBoostControl
           gameReady={gameReady}
@@ -510,7 +510,7 @@ function FirstSessionOnboarding({ gameReady }: { gameReady: boolean }) {
     const onPointerDown = (event: PointerEvent) => {
       if (
         event.target instanceof Element &&
-        event.target.closest(".touch-controls, .action-controls, .ability-controls")
+        event.target.closest(".touch-controls, .camera-controls, .ability-controls")
       )
         finish();
     };
@@ -556,8 +556,8 @@ function FirstSessionOnboarding({ gameReady }: { gameReady: boolean }) {
         <div className="font-display text-sm font-semibold text-catchy-ink">Ready to chase?</div>
         <div className="mt-0.5 text-xs text-catchy-ink-soft">
           {isCoarsePointer
-            ? "Left stick moves · Right stick turns, jumps and slides · Dash / boost buttons"
-            : "WASD moves · ← / → turns · ↑ jump · ↓ slide · Shift dash · E boost"}
+            ? "Left stick moves · Right stick turns, recenters, or shows the arena · Dash / boost buttons"
+            : "WASD moves · ← / → turns camera · ↑ recenter · ↓ arena overview · Shift dash · E boost"}
         </div>
       </div>
     </div>

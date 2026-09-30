@@ -6,8 +6,6 @@ import {
   WORLD_STATE,
   advanceAgentActionTimers,
   advanceBarrier,
-  beginPlayerJump,
-  beginPlayerSlide,
   cancelPlayerActions,
   effectiveSpeedMultiplier,
   findSafeSpawn,
@@ -32,14 +30,9 @@ import {
 import { GAME_CONFIG, INTERACTIVE_OBJECTS, OBSTACLES, type Obstacle } from "./config";
 
 const DT = 1 / GAME_CONFIG.simulation.tickHz;
-const noCommands = { dash: false, jump: false, slide: false, speedBoost: false };
+const noCommands = { dash: false, speedBoost: false };
 
-function obstacle(
-  type: "box" | "circle",
-  x = 0,
-  z = 0,
-  rotation = 0,
-): Obstacle {
+function obstacle(type: "box" | "circle", x = 0, z = 0, rotation = 0): Obstacle {
   return {
     kind: "prop",
     model: "test",
@@ -47,8 +40,7 @@ function obstacle(
     rotation,
     scale: 1,
     y: 0,
-    collision:
-      type === "box" ? { type, width: 2, depth: 1 } : { type, radius: 0.7 },
+    collision: type === "box" ? { type, width: 2, depth: 1 } : { type, radius: 0.7 },
   };
 }
 
@@ -127,9 +119,10 @@ describe("collision resolution", () => {
 
   it("stops a Dash at a solid obstacle without tunneling", () => {
     const fountain = OBSTACLES.find((item) => item.model === "fountain-round")!;
-    const minDistance = fountain.collision.type === "circle"
-      ? fountain.collision.radius * fountain.scale + PLAYER.radius + GAME_CONFIG.obstacleMargin
-      : 0;
+    const minDistance =
+      fountain.collision.type === "circle"
+        ? fountain.collision.radius * fountain.scale + PLAYER.radius + GAME_CONFIG.obstacleMargin
+        : 0;
     put(PLAYER, fountain.position.x + minDistance + 1.35, fountain.position.z);
     expect(startPlayerDash({ x: -1, z: 0 })).toBe(true);
     for (let i = 0; i < 12; i++) step(DT, null, noCommands, false);
@@ -310,21 +303,17 @@ describe("target hysteresis and capture target lock", () => {
 });
 
 describe("runner respawn", () => {
-  it("hides a captured runner, clears its action state, and restores safe movement after delay", () => {
+  it("hides a captured runner, clears its boost state, and restores safe movement after delay", () => {
     const runner = RUNNERS[0]!;
     runner.boostState = "active";
     runner.boostDurationRemaining = 2;
     runner.slowMultiplier = 0.55;
     runner.onSlowZone = true;
-    runner.jumpRemaining = 0.2;
-    runner.slideRemaining = 0.2;
     respawn(runner);
     expect(runner.hidden).toBe(GAME_CONFIG.npc.respawnDelay);
     expect(runner.state).toBe("respawning");
     expect(runner.boostState).toBe("ready");
     expect(runner.slowMultiplier).toBe(1);
-    expect(runner.jumpRemaining).toBe(0);
-    expect(runner.slideRemaining).toBe(0);
     for (let i = 0; i < 43; i++) step(DT, null, noCommands, true);
     expect(runner.hidden).toBe(0);
     expect(runner.state).toBe("flee");
@@ -347,16 +336,10 @@ describe("Dash and Speed Boost", () => {
     expect(PLAYER.dashState).toBe("ready");
   });
 
-  it("uses heading when Dash starts without a direction and rejects jump/slide overlap", () => {
+  it("uses heading when Dash starts without a direction", () => {
     PLAYER.heading = Math.PI / 3;
     expect(startPlayerDash({ x: 0, z: 0 })).toBe(true);
     expect(PLAYER.dashDirectionX).toBeCloseTo(Math.sin(Math.PI / 3), 8);
-    resetSimulation();
-    PLAYER.jumpRemaining = 0.2;
-    expect(startPlayerDash({ x: 1, z: 0 })).toBe(false);
-    PLAYER.jumpRemaining = 0;
-    PLAYER.slideRemaining = 0.2;
-    expect(startPlayerDash({ x: 1, z: 0 })).toBe(false);
   });
 
   it("runs a single 5-second active boost on a 30-second recharge cycle", () => {
@@ -386,13 +369,12 @@ describe("Dash and Speed Boost", () => {
   it("cancels active player actions and clears cooldowns on a full reset", () => {
     startSpeedBoost(PLAYER);
     startPlayerDash({ x: 1, z: 0 });
-    PLAYER.jumpCooldownRemaining = 3;
     advanceAgentActionTimers(PLAYER, 0.04);
     // The store uses this same method for capture and round end.
     cancelPlayerActions(true);
     expect(PLAYER.dashState).toBe("ready");
     expect(PLAYER.boostState).toBe("ready");
-    expect(PLAYER.jumpCooldownRemaining).toBe(0);
+    expect(PLAYER.boostCooldownRemaining).toBe(0);
   });
 });
 
@@ -450,9 +432,10 @@ describe("Elastic Bounce", () => {
     const normalLength = Math.hypot(normalX, normalZ);
     const nx = normalX / normalLength;
     const nz = normalZ / normalLength;
-    const radius = bounce.collision.type === "circle"
-      ? bounce.collision.radius * bounce.scale + runner.radius + GAME_CONFIG.obstacleMargin
-      : 0;
+    const radius =
+      bounce.collision.type === "circle"
+        ? bounce.collision.radius * bounce.scale + runner.radius + GAME_CONFIG.obstacleMargin
+        : 0;
     put(runner, bounce.position.x + nx * (radius - 0.05), bounce.position.z + nz * (radius - 0.05));
     runner.vx = inX;
     runner.vz = inZ;
@@ -469,10 +452,7 @@ describe("Elastic Bounce", () => {
     const dot = incoming[0] * nx + incoming[1] * nz;
     expect(runner.vx).toBeCloseTo(incoming[0] - 2 * dot * nx, 7);
     expect(runner.vz).toBeCloseTo(incoming[1] - 2 * dot * nz, 7);
-    expect(Math.hypot(runner.vx, runner.vz)).toBeCloseTo(
-      Math.hypot(incoming[0], incoming[1]),
-      7,
-    );
+    expect(Math.hypot(runner.vx, runner.vz)).toBeCloseTo(Math.hypot(incoming[0], incoming[1]), 7);
     expect(overlapsObstacle(runner.x, runner.z, runner.radius, bounce)).toBe(false);
   });
 
@@ -489,9 +469,10 @@ describe("Elastic Bounce", () => {
   });
 
   it("bounces a player Dash, including when Boost is active, without tunneling", () => {
-    const minDistance = bounce.collision.type === "circle"
-      ? bounce.collision.radius + PLAYER.radius + GAME_CONFIG.obstacleMargin
-      : 0;
+    const minDistance =
+      bounce.collision.type === "circle"
+        ? bounce.collision.radius + PLAYER.radius + GAME_CONFIG.obstacleMargin
+        : 0;
     for (const withBoost of [false, true]) {
       resetSimulation();
       put(PLAYER, bounce.position.x + minDistance + 1.2, bounce.position.z);
@@ -504,28 +485,7 @@ describe("Elastic Bounce", () => {
   });
 });
 
-describe("Jump, Slide, camera-relative movement, and reset", () => {
-  it("advances Jump through its vertical arc and grounded cooldown", () => {
-    expect(beginPlayerJump()).toBe(true);
-    expect(beginPlayerJump()).toBe(false);
-    advanceAgentActionTimers(PLAYER, GAME_CONFIG.player.jump.durationSeconds / 2);
-    expect(PLAYER.jumpHeight).toBeCloseTo(GAME_CONFIG.player.jump.height, 6);
-    advanceAgentActionTimers(PLAYER, GAME_CONFIG.player.jump.durationSeconds / 2);
-    expect(PLAYER.jumpHeight).toBe(0);
-    expect(PLAYER.jumpCooldownRemaining).toBeCloseTo(GAME_CONFIG.player.jump.groundedSeconds, 8);
-    expect(beginPlayerJump()).toBe(false);
-  });
-
-  it("starts Slide in movement direction and moves horizontally at the configured multiplier", () => {
-    expect(beginPlayerSlide({ x: 1, z: 0 })).toBe(true);
-    expect(PLAYER.slideRemaining).toBe(GAME_CONFIG.player.slide.durationSeconds);
-    const x = PLAYER.x;
-    step(DT, { x: 1, z: 0 }, noCommands, false);
-    expect(PLAYER.x).toBeGreaterThan(x);
-    expect(PLAYER.slideRemaining).toBeLessThan(GAME_CONFIG.player.slide.durationSeconds);
-    expect(beginPlayerSlide(null)).toBe(false);
-  });
-
+describe("camera-relative movement and reset", () => {
   it.each([
     { name: "W at zero yaw", yaw: 0, input: { x: 0, z: -1 }, world: { x: 0, z: -1 } },
     { name: "S at zero yaw", yaw: 0, input: { x: 0, z: 1 }, world: { x: 0, z: 1 } },
@@ -541,7 +501,10 @@ describe("Jump, Slide, camera-relative movement, and reset", () => {
       name: "arbitrary yaw",
       yaw: 0.37,
       input: { x: 0.4, z: -0.9 },
-      world: { x: 0.4 * Math.cos(0.37) + 0.9 * Math.sin(0.37), z: -0.4 * Math.sin(0.37) - 0.9 * Math.cos(0.37) },
+      world: {
+        x: 0.4 * Math.cos(0.37) + 0.9 * Math.sin(0.37),
+        z: -0.4 * Math.sin(0.37) - 0.9 * Math.cos(0.37),
+      },
     },
   ])("maps $name into world movement", ({ yaw, input, world: expected }) => {
     const world = resolveCameraRelativeInput(input, yaw);
@@ -567,17 +530,11 @@ describe("Jump, Slide, camera-relative movement, and reset", () => {
   it("clears all player and world action state on restart", () => {
     startSpeedBoost(PLAYER);
     startPlayerDash({ x: 1, z: 0 });
-    beginPlayerJump();
-    PLAYER.slideRemaining = 0.5;
     WORLD_STATE.barrierClosed = true;
     resetSimulation();
     expect(PLAYER.dashState).toBe("ready");
     expect(PLAYER.boostState).toBe("ready");
-    expect(PLAYER.jumpRemaining).toBe(0);
-    expect(PLAYER.jumpCooldownRemaining).toBe(0);
-    expect(PLAYER.slideRemaining).toBe(0);
     expect(WORLD_STATE.barrierClosed).toBe(false);
     expect(AGENTS.every((agent) => agent.hidden === 0)).toBe(true);
   });
 });
-

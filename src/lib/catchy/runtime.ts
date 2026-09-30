@@ -1,15 +1,12 @@
-import {
-  AGENTS,
-  PLAYER,
-  RUNNERS,
-  WORLD_STATE,
-  respawn,
-  selectTarget,
-  step,
-} from "./agents";
+import { AGENTS, PLAYER, RUNNERS, WORLD_STATE, respawn, selectTarget, step } from "./agents";
 import { GAME_CONFIG } from "./config";
 import { consumeFixedSteps } from "./fixedStep";
-import { cameraTurnInput, consumePlayerActionCommands, inputVector } from "./input";
+import {
+  cameraModeInput,
+  cameraTurnInput,
+  consumePlayerActionCommands,
+  inputVector,
+} from "./input";
 import { useGameStore } from "@/store/gameStore";
 
 const FIXED_DT = 1 / GAME_CONFIG.simulation.tickHz;
@@ -45,12 +42,12 @@ function simulateTick(dt: number) {
     presentation || roundEnded,
     presentation || roundEnded,
     cameraTurnInput(),
+    cameraModeInput(),
   );
 
   const store = useGameStore.getState();
   if (store.dashStatus !== PLAYER.dashState) store.setDashStatus(PLAYER.dashState);
-  if (store.speedBoostStatus !== PLAYER.boostState)
-    store.setSpeedBoostStatus(PLAYER.boostState);
+  if (store.speedBoostStatus !== PLAYER.boostState) store.setSpeedBoostStatus(PLAYER.boostState);
   if (
     store.boostCueId !== WORLD_STATE.boostCueId ||
     store.interactionCueId !== WORLD_STATE.interactionCueId ||
@@ -74,7 +71,8 @@ function simulateTick(dt: number) {
         runtime.captureTimer = GAME_CONFIG.capturePresentation.afterSeconds;
       } else {
         const snapshot = state.capture;
-        const capturedRunner = snapshot && RUNNERS.find((runner) => runner.id === snapshot.runnerId);
+        const capturedRunner =
+          snapshot && RUNNERS.find((runner) => runner.id === snapshot.runnerId);
         if (capturedRunner) respawn(capturedRunner);
         useGameStore.getState().finishCapture();
         runtime.captureTimer = 0;
@@ -102,13 +100,16 @@ function simulateTick(dt: number) {
   if (runtime.telemetryAcc >= 0.1) {
     runtime.telemetryAcc %= 0.1;
     const latest = useGameStore.getState();
-    const cameraAnticipation = Math.max(
-      -GAME_CONFIG.camera.turnAnticipationMaxRadians,
-      Math.min(
-        GAME_CONFIG.camera.turnAnticipationMaxRadians,
-        PLAYER.turnRate * GAME_CONFIG.camera.turnAnticipationPerRadianPerSecond,
-      ),
-    );
+    const cameraAnticipation =
+      cameraModeInput() === "normal"
+        ? Math.max(
+            -GAME_CONFIG.camera.turnAnticipationMaxRadians,
+            Math.min(
+              GAME_CONFIG.camera.turnAnticipationMaxRadians,
+              PLAYER.turnRate * GAME_CONFIG.camera.turnAnticipationPerRadianPerSecond,
+            ),
+          )
+        : 0;
     const viewYaw = WORLD_STATE.cameraYaw + cameraAnticipation;
     const forwardX = Math.sin(viewYaw);
     const forwardZ = Math.cos(viewYaw);

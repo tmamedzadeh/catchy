@@ -29,7 +29,7 @@ function Game() {
   const markReady = useCallback(() => setGameReady(true), []);
 
   useEffect(() => {
-    if (import.meta.env.VITE_CATCHY_E2E !== "true") return;
+    if (import.meta.env["VITE_CATCHY_E2E"] !== "true") return;
     let dispose: (() => void) | undefined;
     let canceled = false;
     void import("@/lib/catchy/e2eBridge").then(({ installCatchyE2EBridge }) => {

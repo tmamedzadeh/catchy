@@ -82,8 +82,6 @@ export function installCatchyE2EBridge() {
         speed: PLAYER.speed,
         dashState: PLAYER.dashState,
         boostState: PLAYER.boostState,
-        jumpRemaining: PLAYER.jumpRemaining,
-        slideRemaining: PLAYER.slideRemaining,
         slowMultiplier: PLAYER.slowMultiplier,
       };
     },

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { AGENTS, PLAYER, RUNNERS, WORLD_STATE } from "./agents";
 import { GAME_CONFIG } from "./config";
 import { advanceSimulationFrame, resetSimulationRuntime, SIMULATION_FIXED_DT } from "./runtime";
-import { requestPlayerDash, requestPlayerJump, requestPlayerSlide, requestPlayerSpeedBoost } from "./input";
+import { requestPlayerDash, requestPlayerSpeedBoost } from "./input";
 import { CAM_DEFAULTS, useGameStore } from "@/store/gameStore";
 
 function place(agent: (typeof AGENTS)[number], x: number, z: number) {
@@ -80,11 +80,9 @@ describe("round, capture, score, and respawn flow", () => {
 });
 
 describe("restart and action reset", () => {
-  it("clears active Dash, Boost, Jump, Slide, capture, input, and hidden runner state", () => {
+  it("clears active Dash, Boost, capture, input, and hidden runner state", () => {
     requestPlayerDash();
     requestPlayerSpeedBoost();
-    requestPlayerJump();
-    requestPlayerSlide();
     const runner = RUNNERS[0]!;
     useGameStore.getState().beginCapture({
       runnerId: runner.id,
@@ -103,8 +101,6 @@ describe("restart and action reset", () => {
     expect(game.speedBoostStatus).toBe("ready");
     expect(PLAYER.dashState).toBe("ready");
     expect(PLAYER.boostState).toBe("ready");
-    expect(PLAYER.jumpRemaining).toBe(0);
-    expect(PLAYER.slideRemaining).toBe(0);
     expect(RUNNERS.every((agent) => agent.hidden === 0)).toBe(true);
     expect(useGameStore.getState().restartCount).toBe(2);
   });
@@ -149,11 +145,6 @@ describe("simulation runtime fixed-tick integration", () => {
     requestPlayerSpeedBoost();
     stepTicks(1);
     expect(PLAYER.boostState).toBe("active");
-    requestPlayerJump();
-    stepTicks(1);
-    // Dash and Jump are mutually exclusive; the buffered Jump does not interrupt the burst.
-    expect(PLAYER.jumpRemaining).toBe(0);
-    requestPlayerSlide();
     stepTicks(15);
     expect(PLAYER.dashState).toBe("cooldown");
   });
