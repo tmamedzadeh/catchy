@@ -18,7 +18,7 @@ export function Scene() {
       <ambientLight intensity={0.18} color="#fff4de" />
       <directionalLight
         position={[26, 34, 16]}
-        intensity={3.4}
+        intensity={3.0}
         color="#ffe2b0"
         castShadow
         shadow-mapSize-width={2048}

@@ -3,9 +3,9 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { ARENA } from "@/lib/sprout/config";
 
-const SAND = "#f2b36e";
-const SAND_DARK = "#e89a55";
-const GRASS = "#4fcf5a";
+const SAND = "#e89a4f";
+const SAND_DARK = "#d9803a";
+const GRASS = "#3fbf4e";
 const GRASS_DARK = "#35b04c";
 const STONE = "#f4efe6";
 const ROCK = "#9c8f7c";
