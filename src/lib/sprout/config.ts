@@ -12,6 +12,13 @@ export const GAME_CONFIG = {
     respawnDelay: 0.7,
     minSpawnDistanceFromPlayer: 8,
     spawnSeparation: 1.8,
+    navigation: {
+      gridSpacing: 1.9,
+      routeRecheck: 0.62,
+      stuckRecheck: 0.32,
+      stuckMovementThreshold: 0.025,
+      stuckSpeedThreshold: 1.2,
+    },
     spawns: [
       { x: -13, z: -2 },
       { x: 9, z: -12 },
@@ -20,7 +27,12 @@ export const GAME_CONFIG = {
   },
   captureDistance: 2,
   nearbyDistance: 9,
-  roundSeconds: 45,
+  targetSwitchRatio: 0.78,
+  capturePresentation: {
+    captureSeconds: 0.43,
+    afterSeconds: 0.31,
+  },
+  roundSeconds: 5 * 60,
   obstacleMargin: 0.12,
 } as const;
 

@@ -1,7 +1,7 @@
 import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { AGENTS, PLAYER, nearestRunner } from "@/lib/sprout/agents";
+import { AGENTS, RUNNERS } from "@/lib/sprout/agents";
 import { useGameStore } from "@/store/gameStore";
 
 /** Dust puffs kicked up behind every running character. */
@@ -63,9 +63,10 @@ export function Dust() {
 /** Hearts + sparkle burst that plays on the capture moment. */
 export function CaptureBurst() {
   const state = useGameStore((s) => s.state);
+  const capture = useGameStore((s) => s.capture);
   const group = useRef<THREE.Group>(null);
-  const t = useRef(0);
-  const active = state === "capture" || state === "after";
+  const animation = useRef({ runnerId: null as string | null, capturedAt: 0, elapsed: 0 });
+  const active = Boolean(capture) && (state === "capture" || state === "after");
 
   const hearts = useMemo(
     () =>
@@ -74,20 +75,30 @@ export function CaptureBurst() {
   );
 
   useFrame((_, rawDelta) => {
-    const dt = Math.min(rawDelta, 0.05);
     const g = group.current;
     if (!g) return;
-    if (!active) {
-      t.current = 0;
+    if (!active || !capture) {
+      animation.current.runnerId = null;
+      animation.current.elapsed = 0;
       g.visible = false;
       return;
     }
+
+    if (
+      animation.current.runnerId !== capture.runnerId ||
+      animation.current.capturedAt !== capture.capturedAt
+    ) {
+      animation.current.runnerId = capture.runnerId;
+      animation.current.capturedAt = capture.capturedAt;
+      animation.current.elapsed = 0;
+    } else {
+      animation.current.elapsed += Math.min(rawDelta, 0.05);
+    }
     g.visible = true;
-    t.current += dt;
-    g.position.set(PLAYER.x, 1.4, PLAYER.z);
+    g.position.set(capture.position.x, capture.position.y + 1.4, capture.position.z);
     hearts.forEach((h, i) => {
       const m = g.children[i] as THREE.Mesh;
-      const p = Math.min(t.current / 0.75, 1);
+      const p = Math.min(animation.current.elapsed / 0.75, 1);
       m.position.set(
         Math.cos(h.a) * h.r * (0.6 + p * 2.4),
         p * 2.2 + Math.sin(p * 6 + i) * 0.1,
@@ -117,14 +128,29 @@ export function TargetBeacon() {
   useFrame(({ clock }) => {
     const g = ref.current;
     if (!g) return;
-    const target = nearestRunner();
-    const best = target?.agent;
-    if (!best) {
+    const state = useGameStore.getState();
+    const capture = state.capture;
+    const isPresentation = state.state === "capture" || state.state === "after";
+    let x: number;
+    let z: number;
+    if (isPresentation && capture) {
+      x = capture.position.x;
+      z = capture.position.z;
+    } else {
+      const target = RUNNERS.find((runner) => runner.id === state.targetId && runner.hidden <= 0);
+      if (!target) {
+        g.visible = false;
+        return;
+      }
+      x = target.x;
+      z = target.z;
+    }
+    if (!Number.isFinite(x) || !Number.isFinite(z)) {
       g.visible = false;
       return;
     }
     g.visible = true;
-    g.position.set(best.x, 0, best.z);
+    g.position.set(x, 0, z);
     const t = clock.elapsedTime;
     const pulse = (t % 1.4) / 1.4;
     const ring = g.children[0] as THREE.Mesh;

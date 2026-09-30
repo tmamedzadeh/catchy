@@ -1,18 +1,16 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
-import { AGENTS, PLAYER, nearestRunner, respawn, step } from "@/lib/sprout/agents";
+import { AGENTS, PLAYER, RUNNERS, respawn, selectTarget, step } from "@/lib/sprout/agents";
 import { GAME_CONFIG } from "@/lib/sprout/config";
 import { inputVector } from "@/lib/sprout/input";
 import { useGameStore } from "@/store/gameStore";
-
-const CAPTURE_PRESENTATION = 0.43;
-const AFTER_PRESENTATION = 0.31;
 
 /** Camera-relative controls, deterministic player-only capture, and HUD telemetry. */
 export function Director() {
   const { camera } = useThree();
   const captureTimer = useRef(0);
+  const targetId = useRef<string | null>(null);
   const telemetryAcc = useRef(0);
   const lastRestartCount = useRef(useGameStore.getState().restartCount);
   const forward = useRef(new THREE.Vector3());
@@ -37,6 +35,7 @@ export function Director() {
     if (state.restartCount !== lastRestartCount.current) {
       lastRestartCount.current = state.restartCount;
       captureTimer.current = 0;
+      targetId.current = null;
       telemetryAcc.current = 0;
     }
     state.tick(dt);
@@ -53,26 +52,43 @@ export function Director() {
     }
     const frameInput = raw ? input.current : null;
     const presentation = state.state === "capture" || state.state === "after";
-    step(dt, frameInput, presentation, state.state === "timeup");
+    step(
+      dt,
+      frameInput,
+      presentation || state.state === "timeup",
+      presentation || state.state === "timeup",
+    );
+    let target = selectTarget(targetId.current, state.capture?.runnerId ?? null);
+    targetId.current = target?.agent.id ?? null;
 
-    if (state.state === "capture" || state.state === "after") {
+    if (presentation) {
       captureTimer.current -= dt;
       if (captureTimer.current <= 0) {
         if (state.state === "capture") {
-          useGameStore.getState().setState("after");
-          captureTimer.current = AFTER_PRESENTATION;
+          useGameStore.getState().enterAfter();
+          captureTimer.current = GAME_CONFIG.capturePresentation.afterSeconds;
         } else {
-          useGameStore.getState().setState("chase");
+          const snapshot = state.capture;
+          const capturedRunner =
+            snapshot && RUNNERS.find((runner) => runner.id === snapshot.runnerId);
+          if (capturedRunner) respawn(capturedRunner);
+          useGameStore.getState().finishCapture();
+          captureTimer.current = 0;
+          state = useGameStore.getState();
+          target = selectTarget(targetId.current);
+          targetId.current = target?.agent.id ?? null;
         }
       }
     } else if (state.state !== "timeup") {
-      const target = nearestRunner();
       if (target && target.dist <= GAME_CONFIG.captureDistance) {
-        // The only capture path is Player -> nearest active Runner.
-        useGameStore.getState().setState("capture");
+        // Snapshot the live runner before the capture presentation takes control.
+        useGameStore.getState().beginCapture({
+          runnerId: target.agent.id,
+          position: { x: target.agent.x, y: 0, z: target.agent.z },
+          capturedAt: performance.now(),
+        });
         useGameStore.getState().addCatch();
-        captureTimer.current = CAPTURE_PRESENTATION;
-        respawn(target.agent);
+        captureTimer.current = GAME_CONFIG.capturePresentation.captureSeconds;
       } else {
         const nextState = target && target.dist < GAME_CONFIG.nearbyDistance ? "nearby" : "chase";
         if (nextState !== state.state) useGameStore.getState().setState(nextState);
@@ -82,7 +98,9 @@ export function Director() {
     telemetryAcc.current += dt;
     if (telemetryAcc.current >= 0.1) {
       telemetryAcc.current = 0;
-      const target = nearestRunner();
+      const latest = useGameStore.getState();
+      target = selectTarget(targetId.current, latest.capture?.runnerId ?? null);
+      targetId.current = target?.agent.id ?? null;
       camera.getWorldDirection(forward.current);
       forward.current.y = 0;
       forward.current.normalize();

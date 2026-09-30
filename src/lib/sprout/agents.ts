@@ -18,6 +18,8 @@ export type Agent = {
   routeTimer: number;
   routeX: number;
   routeZ: number;
+  route: number[];
+  routeIndex: number;
   lastX: number;
   lastZ: number;
   respawns: number;
@@ -47,6 +49,8 @@ function makeAgent(index: number): Agent {
     routeTimer: 0,
     routeX: 0,
     routeZ: 0,
+    route: [],
+    routeIndex: 0,
     lastX: initial.x,
     lastZ: initial.z,
     respawns: 0,
@@ -60,9 +64,7 @@ export const RUNNERS = AGENTS.slice(1);
 
 const TAU = Math.PI * 2;
 const WALL_MARGIN = GAME_CONFIG.obstacleMargin;
-const ROUTE_RECHECK = 0.24;
-const ROUTE_OFFSETS = [0, 0.35, -0.35, 0.7, -0.7, 1.05, -1.05, 1.4, -1.4, 2.1, -2.1, Math.PI];
-const ROUTE_LOOKAHEAD = [1.4, 2.8, 4.2];
+const NAV_SAMPLE_SPACING = 0.3;
 
 function scaleOf(obstacle: Obstacle) {
   return Math.abs(obstacle.scale);
@@ -91,6 +93,87 @@ function overlapsObstacle(x: number, z: number, radius: number, obstacle: Obstac
   if (ex * ex + ez * ez > 0.000001) return ex * ex + ez * ez < radius * radius;
   return Math.abs(localX) < halfWidth + radius && Math.abs(localZ) < halfDepth + radius;
 }
+
+type NavLink = { node: number; cost: number };
+type NavNode = { x: number; z: number; links: NavLink[] };
+
+function isWalkablePoint(x: number, z: number, radius: number) {
+  if (Math.hypot(x, z) + radius > GAME_CONFIG.arenaRadius - WALL_MARGIN) return false;
+  for (const obstacle of OBSTACLES) {
+    if (overlapsObstacle(x, z, radius, obstacle)) return false;
+  }
+  return true;
+}
+
+/** Check waypoint links with the same body radius and obstacle colliders used by movement. */
+function isWalkableSegment(x1: number, z1: number, x2: number, z2: number, radius: number) {
+  const length = Math.hypot(x2 - x1, z2 - z1);
+  const samples = Math.max(1, Math.ceil(length / NAV_SAMPLE_SPACING));
+  for (let i = 1; i < samples; i++) {
+    const t = i / samples;
+    if (!isWalkablePoint(x1 + (x2 - x1) * t, z1 + (z2 - z1) * t, radius)) return false;
+  }
+  return true;
+}
+
+/** Static grid graph: its nodes and edges are admitted only when free under the live colliders. */
+function buildNavigationGraph() {
+  const spacing = GAME_CONFIG.npc.navigation.gridSpacing;
+  const extent = Math.floor(
+    (GAME_CONFIG.arenaRadius - GAME_CONFIG.npc.radius - WALL_MARGIN) / spacing,
+  );
+  const width = extent * 2 + 1;
+  const grid = new Int32Array(width * width);
+  grid.fill(-1);
+  const nodes: NavNode[] = [];
+
+  for (let row = 0; row < width; row++) {
+    const z = (row - extent) * spacing;
+    for (let column = 0; column < width; column++) {
+      const x = (column - extent) * spacing;
+      if (!isWalkablePoint(x, z, GAME_CONFIG.npc.radius)) continue;
+      const node = nodes.length;
+      grid[row * width + column] = node;
+      nodes.push({ x, z, links: [] });
+    }
+  }
+
+  // Each undirected edge is considered once. Segment checks prevent diagonal corner cuts.
+  const offsets = [
+    [1, 0],
+    [0, 1],
+    [1, 1],
+    [-1, 1],
+  ] as const;
+  for (let row = 0; row < width; row++) {
+    for (let column = 0; column < width; column++) {
+      const nodeId = grid[row * width + column]!;
+      if (nodeId < 0) continue;
+      const node = nodes[nodeId]!;
+      for (const [dc, dr] of offsets) {
+        const nextColumn = column + dc;
+        const nextRow = row + dr;
+        if (nextColumn < 0 || nextColumn >= width || nextRow < 0 || nextRow >= width) continue;
+        const nextId = grid[nextRow * width + nextColumn]!;
+        if (nextId < 0) continue;
+        const next = nodes[nextId]!;
+        if (!isWalkableSegment(node.x, node.z, next.x, next.z, GAME_CONFIG.npc.radius)) continue;
+        const cost = Math.hypot(next.x - node.x, next.z - node.z);
+        node.links.push({ node: nextId, cost });
+        next.links.push({ node: nodeId, cost });
+      }
+    }
+  }
+
+  return nodes;
+}
+
+const NAV_NODES = buildNavigationGraph();
+const navDistance = new Float64Array(NAV_NODES.length);
+const navPrevious = new Int32Array(NAV_NODES.length);
+const navFirstStep = new Int32Array(NAV_NODES.length);
+const navVisited = new Uint8Array(NAV_NODES.length);
+const navReversePath = new Int32Array(NAV_NODES.length);
 
 function isSafeSpawn(agent: Agent, x: number, z: number) {
   if (Math.hypot(x, z) + agent.radius > GAME_CONFIG.arenaRadius - WALL_MARGIN) return false;
@@ -158,29 +241,58 @@ export function resetSimulation() {
     agent.routeTimer = 0;
     agent.routeX = 0;
     agent.routeZ = 0;
+    agent.route.length = 0;
+    agent.routeIndex = 0;
     agent.lastX = spawn.x;
     agent.lastZ = spawn.z;
     agent.respawns = 0;
   }
 }
 
-const nearestTarget = { agent: PLAYER, dist: Infinity };
+const selectedTarget = { agent: PLAYER, dist: Infinity };
 
-export function nearestRunner(): { agent: Agent; dist: number } | null {
-  let best: Agent | null = null;
-  let bestD = Infinity;
+/** Stable target selection shared by chase, capture feedback, and HUD telemetry. */
+export function selectTarget(
+  currentTargetId: string | null,
+  lockedTargetId: string | null = null,
+): { agent: Agent; dist: number } | null {
+  if (lockedTargetId) {
+    const locked = RUNNERS.find((runner) => runner.id === lockedTargetId);
+    if (locked) {
+      selectedTarget.agent = locked;
+      selectedTarget.dist = Math.hypot(locked.x - PLAYER.x, locked.z - PLAYER.z);
+      return selectedTarget;
+    }
+  }
+
+  let nearest: Agent | null = null;
+  let nearestDistance = Infinity;
   for (const runner of RUNNERS) {
     if (runner.hidden > 0) continue;
     const d = Math.hypot(runner.x - PLAYER.x, runner.z - PLAYER.z);
-    if (d < bestD) {
-      bestD = d;
-      best = runner;
+    if (d < nearestDistance) {
+      nearestDistance = d;
+      nearest = runner;
     }
   }
-  if (!best) return null;
-  nearestTarget.agent = best;
-  nearestTarget.dist = bestD;
-  return nearestTarget;
+  if (!nearest) return null;
+
+  const current = RUNNERS.find((runner) => runner.id === currentTargetId && runner.hidden <= 0);
+  if (current) {
+    const currentDistance = Math.hypot(current.x - PLAYER.x, current.z - PLAYER.z);
+    if (
+      nearest.id === current.id ||
+      nearestDistance >= currentDistance * GAME_CONFIG.targetSwitchRatio
+    ) {
+      selectedTarget.agent = current;
+      selectedTarget.dist = currentDistance;
+      return selectedTarget;
+    }
+  }
+
+  selectedTarget.agent = nearest;
+  selectedTarget.dist = nearestDistance;
+  return selectedTarget;
 }
 
 export function respawn(agent: Agent) {
@@ -192,6 +304,8 @@ export function respawn(agent: Agent) {
   agent.speed = 0;
   agent.stuckTime = 0;
   agent.routeTimer = 0;
+  agent.route.length = 0;
+  agent.routeIndex = 0;
   agent.respawns++;
 }
 
@@ -282,49 +396,121 @@ function resolveWorld(agent: Agent) {
   }
 }
 
-function directionBlocked(agent: Agent, dx: number, dz: number) {
-  const look = 1.4 + agent.radius;
-  const x = agent.x + dx * look;
-  const z = agent.z + dz * look;
-  if (Math.hypot(x, z) + agent.radius > GAME_CONFIG.arenaRadius - 0.08) return true;
-  for (const obstacle of OBSTACLES) {
-    if (overlapsObstacle(x, z, agent.radius * 0.9, obstacle)) return true;
+function nearestReachableNode(agent: Agent) {
+  let bestNode = -1;
+  let bestDistance = GAME_CONFIG.npc.navigation.gridSpacing * 2.4;
+  for (let i = 0; i < NAV_NODES.length; i++) {
+    const node = NAV_NODES[i]!;
+    const distance = Math.hypot(node.x - agent.x, node.z - agent.z);
+    if (distance >= bestDistance) continue;
+    if (!isWalkableSegment(agent.x, agent.z, node.x, node.z, agent.radius)) continue;
+    bestNode = i;
+    bestDistance = distance;
   }
-  return false;
+  if (bestNode >= 0) return bestNode;
+
+  // Fall back to the nearest visible node when a runner is pushed outside the local grid neighborhood.
+  bestDistance = Infinity;
+  for (let i = 0; i < NAV_NODES.length; i++) {
+    const node = NAV_NODES[i]!;
+    const distance = Math.hypot(node.x - agent.x, node.z - agent.z);
+    if (distance >= bestDistance) continue;
+    if (!isWalkableSegment(agent.x, agent.z, node.x, node.z, agent.radius)) continue;
+    bestNode = i;
+    bestDistance = distance;
+  }
+  return bestNode;
 }
 
-function chooseRoute(agent: Agent, goalX: number, goalZ: number) {
-  const goalLength = Math.hypot(goalX, goalZ) || 1;
-  goalX /= goalLength;
-  goalZ /= goalLength;
+/** Dijkstra on the small static graph, scored toward reachable points farther from the player. */
+function chooseNavigationRoute(agent: Agent, avoidPreviousFirstStep: boolean) {
+  const start = nearestReachableNode(agent);
+  if (start < 0) {
+    agent.route.length = 0;
+    agent.routeIndex = 0;
+    agent.routeTimer = GAME_CONFIG.npc.navigation.stuckRecheck;
+    return;
+  }
+
+  navDistance.fill(Infinity);
+  navPrevious.fill(-1);
+  navFirstStep.fill(-1);
+  navVisited.fill(0);
+  navDistance[start] = 0;
+
+  let bestGoal = -1;
   let bestScore = -Infinity;
-  let bestX = goalX;
-  let bestZ = goalZ;
-  const baseAngle = Math.atan2(goalZ, goalX);
-  for (const offset of ROUTE_OFFSETS) {
-    const angle = baseAngle + offset;
-    const x = Math.cos(angle);
-    const z = Math.sin(angle);
-    let score = x * goalX + z * goalZ;
-    for (const distance of ROUTE_LOOKAHEAD) {
-      const tx = agent.x + x * distance;
-      const tz = agent.z + z * distance;
-      if (Math.hypot(tx, tz) + agent.radius > GAME_CONFIG.arenaRadius - 0.08) {
-        score -= 3.5;
+  const currentPlayerDistance = Math.hypot(agent.x - PLAYER.x, agent.z - PLAYER.z);
+  const previousFirstStep = agent.route[0];
+
+  for (let iteration = 0; iteration < NAV_NODES.length; iteration++) {
+    let current = -1;
+    let currentCost = Infinity;
+    for (let i = 0; i < NAV_NODES.length; i++) {
+      if (navVisited[i] || navDistance[i]! >= currentCost) continue;
+      current = i;
+      currentCost = navDistance[i]!;
+    }
+    if (current < 0) break;
+    navVisited[current] = 1;
+
+    const node = NAV_NODES[current]!;
+    const playerDistance = Math.hypot(node.x - PLAYER.x, node.z - PLAYER.z);
+    if (current !== start) {
+      const gain = playerDistance - currentPlayerDistance;
+      let score = playerDistance - currentCost * 0.58 + Math.min(gain, 0) * 0.9;
+      if (avoidPreviousFirstStep && navFirstStep[current] === previousFirstStep) {
+        score -= GAME_CONFIG.npc.navigation.gridSpacing * 2.2;
       }
-      for (const obstacle of OBSTACLES) {
-        if (overlapsObstacle(tx, tz, agent.radius, obstacle)) score -= distance === 1.4 ? 3 : 1.4;
+      if (score > bestScore) {
+        bestScore = score;
+        bestGoal = current;
       }
     }
-    if (score > bestScore) {
-      bestScore = score;
-      bestX = x;
-      bestZ = z;
+
+    for (const link of node.links) {
+      if (navVisited[link.node]) continue;
+      const nextCost = currentCost + link.cost;
+      if (nextCost >= navDistance[link.node]!) continue;
+      navDistance[link.node] = nextCost;
+      navPrevious[link.node] = current;
+      navFirstStep[link.node] = current === start ? link.node : navFirstStep[current]!;
     }
   }
-  agent.routeX = bestX;
-  agent.routeZ = bestZ;
-  agent.routeTimer = ROUTE_RECHECK;
+
+  if (bestGoal < 0) {
+    agent.route.length = 0;
+    agent.routeIndex = 0;
+    agent.routeTimer = GAME_CONFIG.npc.navigation.stuckRecheck;
+    return;
+  }
+
+  let pathLength = 0;
+  let pathNode = bestGoal;
+  while (pathNode !== start && pathNode >= 0 && pathLength < navReversePath.length) {
+    navReversePath[pathLength++] = pathNode;
+    pathNode = navPrevious[pathNode]!;
+  }
+  if (pathNode !== start || pathLength === 0) {
+    agent.route.length = 0;
+    agent.routeIndex = 0;
+    agent.routeTimer = GAME_CONFIG.npc.navigation.stuckRecheck;
+    return;
+  }
+
+  agent.route.length = 0;
+  for (let i = pathLength - 1; i >= 0; i--) agent.route.push(navReversePath[i]!);
+  agent.routeIndex = 0;
+
+  // Smooth clear portions of the grid path into direct segments while keeping colliders authoritative.
+  for (let i = 1; i < agent.route.length; i++) {
+    const node = NAV_NODES[agent.route[i]!]!;
+    if (isWalkableSegment(agent.x, agent.z, node.x, node.z, agent.radius)) agent.routeIndex = i;
+  }
+  const waypoint = NAV_NODES[agent.route[agent.routeIndex]!]!;
+  agent.routeX = waypoint.x;
+  agent.routeZ = waypoint.z;
+  agent.routeTimer = GAME_CONFIG.npc.navigation.routeRecheck;
 }
 
 function move(
@@ -383,6 +569,8 @@ function advanceRunner(runner: Agent, dt: number) {
   runner.vx = 0;
   runner.vz = 0;
   runner.routeTimer = 0;
+  runner.route.length = 0;
+  runner.routeIndex = 0;
   runner.state = "flee";
   return true;
 }
@@ -419,7 +607,14 @@ export function step(
   freezePlayer: boolean,
   freezeWorld = false,
 ) {
-  if (freezeWorld) return nearestRunner();
+  if (freezeWorld) {
+    for (const agent of AGENTS) {
+      agent.vx = 0;
+      agent.vz = 0;
+      agent.speed = 0;
+    }
+    return;
+  }
 
   if (!freezePlayer) {
     const facingX = Math.sin(PLAYER.heading);
@@ -430,18 +625,14 @@ export function step(
     move(PLAYER, input?.x ?? 0, input?.z ?? 0, GAME_CONFIG.player.speed, dt, movingBackward);
   }
 
-  const now = performance.now() * 0.001;
   for (const runner of RUNNERS) {
     if (!advanceRunner(runner, dt)) continue;
 
     const awayX = runner.x - PLAYER.x;
     const awayZ = runner.z - PLAYER.z;
     const distance = Math.hypot(awayX, awayZ) || 1;
-    const urgency = distance < 12 ? 2.6 : 1.4;
-    let steerX = (awayX / distance) * urgency + (-awayZ / distance) * 1.5;
-    let steerZ = (awayZ / distance) * urgency + (awayX / distance) * 1.5;
-    steerX += Math.sin(now * 0.8 + runner.phase * 3) * 0.6;
-    steerZ += Math.cos(now * 0.7 + runner.phase * 2) * 0.6;
+    let separationX = 0;
+    let separationZ = 0;
 
     for (const other of RUNNERS) {
       if (other === runner || other.hidden > 0) continue;
@@ -450,39 +641,52 @@ export function step(
       const d = Math.hypot(dx, dz);
       if (d < 4.2 && d > 0.001) {
         const push = (4.2 - d) / 4.2;
-        steerX += (dx / d) * push * 2.2;
-        steerZ += (dz / d) * push * 2.2;
+        separationX += (dx / d) * push * 2.2;
+        separationZ += (dz / d) * push * 2.2;
       }
     }
 
     const moved = Math.hypot(runner.x - runner.lastX, runner.z - runner.lastZ);
-    if (moved < 0.025 && runner.speed > 1.2) runner.stuckTime += dt;
-    else runner.stuckTime = Math.max(0, runner.stuckTime - dt * 1.5);
+    const navigation = GAME_CONFIG.npc.navigation;
+    if (
+      moved < navigation.stuckMovementThreshold &&
+      runner.speed > navigation.stuckSpeedThreshold
+    ) {
+      runner.stuckTime += dt;
+    } else runner.stuckTime = Math.max(0, runner.stuckTime - dt * 1.5);
     runner.lastX = runner.x;
     runner.lastZ = runner.z;
 
     runner.routeTimer -= dt;
-    if (
-      runner.routeTimer <= 0 ||
-      runner.stuckTime > 0.28 ||
-      (runner.routeTimer < 0.08 &&
-        directionBlocked(
-          runner,
-          steerX / (Math.hypot(steerX, steerZ) || 1),
-          steerZ / (Math.hypot(steerX, steerZ) || 1),
-        ))
-    ) {
-      chooseRoute(runner, steerX, steerZ);
+    const stuck = runner.stuckTime >= navigation.stuckRecheck;
+    if (runner.routeTimer <= 0 || stuck) {
+      chooseNavigationRoute(runner, stuck);
       runner.stuckTime = 0;
     }
-    // Keep a little of the direct flee vector while following a clear route.
-    steerX = steerX * 0.32 + runner.routeX * 0.68;
-    steerZ = steerZ * 0.32 + runner.routeZ * 0.68;
+
+    while (runner.routeIndex < runner.route.length) {
+      const node = NAV_NODES[runner.route[runner.routeIndex]!]!;
+      if (Math.hypot(node.x - runner.x, node.z - runner.z) > 0.95) {
+        runner.routeX = node.x;
+        runner.routeZ = node.z;
+        break;
+      }
+      runner.routeIndex++;
+    }
+
+    if (runner.routeIndex >= runner.route.length)
+      runner.routeTimer = Math.min(runner.routeTimer, 0);
+    const waypointX =
+      runner.routeIndex < runner.route.length ? runner.routeX - runner.x : awayX / distance;
+    const waypointZ =
+      runner.routeIndex < runner.route.length ? runner.routeZ - runner.z : awayZ / distance;
+    // The graph owns obstacle routing; fleeing and the existing separation field remain responsive.
+    const steerX = waypointX * 0.84 + (awayX / distance) * 0.16 + separationX;
+    const steerZ = waypointZ * 0.84 + (awayZ / distance) * 0.16 + separationZ;
     move(runner, steerX, steerZ, GAME_CONFIG.npc.speed, dt);
   }
 
   separateRunners();
-  return nearestRunner();
 }
 
 resetSimulation();

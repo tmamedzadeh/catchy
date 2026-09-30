@@ -5,6 +5,12 @@ import { GAME_CONFIG } from "@/lib/sprout/config";
 
 export type GameState = "chase" | "nearby" | "capture" | "after" | "timeup";
 
+export type CaptureSnapshot = {
+  runnerId: string;
+  position: { x: number; y: number; z: number };
+  capturedAt: number;
+};
+
 export type Telemetry = {
   distance: number | null;
   bearing: number;
@@ -32,6 +38,10 @@ type Store = {
 
   state: GameState;
   setState: (state: GameState) => void;
+  capture: CaptureSnapshot | null;
+  beginCapture: (capture: CaptureSnapshot) => void;
+  enterAfter: () => void;
+  finishCapture: () => void;
   caught: number;
   time: number;
   distance: number | null;
@@ -73,6 +83,11 @@ export const useGameStore = create<Store>((set, get) => ({
 
   state: "chase",
   setState: (state) => set({ state }),
+  capture: null,
+  beginCapture: (capture) => set({ state: "capture", capture }),
+  enterAfter: () => set({ state: "after" }),
+  finishCapture: () =>
+    set((state) => ({ state: state.time <= 0 ? "timeup" : "chase", capture: null })),
   caught: 0,
   time: GAME_CONFIG.roundSeconds,
   ...initialTelemetry,
@@ -81,9 +96,12 @@ export const useGameStore = create<Store>((set, get) => ({
   tick: (dt) => {
     const { time, state } = get();
     if (state === "timeup") return;
+    if (roundTimeRemaining === 0) return;
     roundTimeRemaining = Math.max(0, roundTimeRemaining - dt);
     if (roundTimeRemaining === 0) {
-      set({ time: 0, state: "timeup" });
+      // Let a capture presentation finish before showing the round-over overlay.
+      const presentingCapture = state === "capture" || state === "after";
+      set(presentingCapture ? { time: 0 } : { time: 0, state: "timeup" });
     } else if (Math.ceil(roundTimeRemaining) !== Math.ceil(time)) {
       // The HUD only needs whole seconds; keep React out of the 60fps loop.
       set({ time: roundTimeRemaining });
@@ -98,6 +116,7 @@ export const useGameStore = create<Store>((set, get) => ({
       caught: 0,
       time: GAME_CONFIG.roundSeconds,
       state: "chase",
+      capture: null,
       ...initialTelemetry,
       playerX: PLAYER.x,
       playerZ: PLAYER.z,

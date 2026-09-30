@@ -2,7 +2,7 @@
 
 Fast chase/tag browser game.
 
-Catchy is a bright, browser-first 3D arena game. You are the only hunter. Chase three runners that flee, tag them at close range, and build your score before the 45-second round ends. Each tagged runner briefly leaves play and respawns on a safe part of the map.
+Catchy is a bright, browser-first 3D arena game. You are the only hunter. Chase three runners that flee, tag them at close range, and build your score before the 5-minute round ends. Each tagged runner briefly leaves play and respawns on a safe part of the map.
 
 ## Controls
 
