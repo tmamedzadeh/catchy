@@ -138,7 +138,7 @@ export function TargetBeacon() {
     <group ref={ref}>
       <mesh rotation-x={-Math.PI / 2} position={[0, 0.11, 0]}>
         <ringGeometry args={[0.85, 1.15, 28]} />
-        <meshBasicMaterial color="#ff9a3d" transparent opacity={0.5} side={THREE.DoubleSide} />
+        <meshBasicMaterial color="#ff6b3d" toneMapped={false} transparent opacity={0.5} side={THREE.DoubleSide} />
       </mesh>
       <mesh position={[0, 3.5, 0]}>
         <cylinderGeometry args={[0.7, 1.15, 7, 18, 1, true]} />
@@ -150,6 +150,113 @@ export function TargetBeacon() {
           depthWrite={false}
         />
       </mesh>
+    </group>
+  );
+}
+
+const TRAIL_COLORS = ["#2ee6d6", "#ff4f8b", "#a06bff", "#ffd23f"];
+
+/** Glowing speed streaks trailing each running character. */
+export function SpeedTrails() {
+  const group = useRef<THREE.Group>(null);
+  const N = 10;
+  const hist = useMemo(
+    () => AGENTS.map((a) => Array.from({ length: N }, () => new THREE.Vector3(a.x, 0, a.z))),
+    [],
+  );
+  const acc = useRef(0);
+  useFrame((_, rawDelta) => {
+    const g = group.current;
+    if (!g) return;
+    acc.current += Math.min(rawDelta, 0.05);
+    const push = acc.current > 0.025;
+    if (push) acc.current = 0;
+    AGENTS.forEach((a, ai) => {
+      const h = hist[ai]!;
+      if (push) {
+        const last = h.pop()!;
+        last.set(a.x, 0, a.z);
+        h.unshift(last);
+      }
+      const on = a.speed > 5 && a.hidden <= 0;
+      for (let i = 0; i < N; i++) {
+        const m = g.children[ai * N + i] as THREE.Mesh;
+        const pt = h[i]!;
+        m.visible = on && i > 0;
+        m.position.set(pt.x, 0.9, pt.z);
+        m.rotation.y = a.heading;
+        const k = 1 - i / N;
+        m.scale.set(0.9 * k, 1.1 * k, 0.5);
+        (m.material as THREE.MeshBasicMaterial).opacity = 0.35 * k * Math.min(1, (a.speed - 5) / 3);
+      }
+    });
+  });
+  return (
+    <group ref={group}>
+      {AGENTS.flatMap((_, ai) =>
+        Array.from({ length: N }, (_, i) => (
+          <mesh key={`${ai}-${i}`}>
+            <planeGeometry args={[1, 1]} />
+            <meshBasicMaterial
+              color={TRAIL_COLORS[ai]!}
+              transparent
+              depthWrite={false}
+              side={THREE.DoubleSide}
+              blending={THREE.AdditiveBlending}
+              toneMapped={false}
+            />
+          </mesh>
+        )),
+      )}
+    </group>
+  );
+}
+
+/** Shockwave ring + star sparks on the capture moment. */
+export function CaptureShockwave() {
+  const state = useGameStore((s) => s.state);
+  const group = useRef<THREE.Group>(null);
+  const t = useRef(0);
+  const active = state === "capture";
+  const sparks = useMemo(
+    () => Array.from({ length: 16 }, (_, i) => ({ a: (i / 16) * Math.PI * 2, v: 3 + (i % 4) })),
+    [],
+  );
+  useFrame((_, rawDelta) => {
+    const g = group.current;
+    if (!g) return;
+    if (!active) {
+      t.current = 0;
+      g.visible = false;
+      return;
+    }
+    g.visible = true;
+    t.current += Math.min(rawDelta, 0.05);
+    const p = Math.min(t.current / 0.7, 1);
+    g.position.set(PLAYER.x, 0, PLAYER.z);
+    const ring = g.children[0] as THREE.Mesh;
+    ring.scale.setScalar(0.5 + p * 6);
+    (ring.material as THREE.MeshBasicMaterial).opacity = 1 - p;
+    sparks.forEach((s, i) => {
+      const m = g.children[i + 1] as THREE.Mesh;
+      const d = s.v * p;
+      m.position.set(Math.cos(s.a) * d, 1 + Math.sin(p * Math.PI) * 1.6, Math.sin(s.a) * d);
+      m.rotation.set(p * 8, p * 6, 0);
+      m.scale.setScalar(0.22 * (1 - p));
+    });
+  });
+  return (
+    <group ref={group} visible={false}>
+      <mesh rotation-x={-Math.PI / 2} position={[0, 0.12, 0]}>
+        <ringGeometry args={[0.8, 1, 48]} />
+        <meshBasicMaterial color="#ffd23f" transparent toneMapped={false} depthWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+      {sparks.map((_, i) => (
+        <mesh key={i}>
+          <octahedronGeometry args={[1, 0]} />
+          <meshBasicMaterial color={i % 2 ? "#ff6b3d" : "#2ee6d6"} toneMapped={false} />
+        </mesh>
+      ))}
     </group>
   );
 }
