@@ -1,5 +1,11 @@
 // Mutable simulation state. Nothing here is stored in React at frame rate.
-import { GAME_CONFIG, OBSTACLES, type Obstacle } from "./config";
+import {
+  GAME_CONFIG,
+  INTERACTIVE_OBJECTS,
+  OBSTACLES,
+  type InteractiveMapObject,
+  type Obstacle,
+} from "./config";
 
 export type Agent = {
   id: string;
@@ -33,9 +39,26 @@ export type Agent = {
   dashStartX: number;
   dashStartZ: number;
   dashCameraRemaining: number;
+  boostState: BoostState;
+  boostDurationRemaining: number;
+  boostCooldownRemaining: number;
+  slowMultiplier: number;
+  onSpeedPad: boolean;
+  jumpRemaining: number;
+  jumpCooldownRemaining: number;
+  jumpHeight: number;
+  slideRemaining: number;
+  slideDirectionX: number;
+  slideDirectionZ: number;
+  turnRate: number;
+  previousX: number;
+  previousZ: number;
+  previousHeading: number;
+  previousJumpHeight: number;
 };
 
 export type DashState = "ready" | "active" | "cooldown";
+export type BoostState = "ready" | "active" | "cooldown";
 
 const initialPositions = [
   { id: "player", role: "player" as const, ...GAME_CONFIG.player.spawn, heading: -1.2, phase: 0 },
@@ -75,6 +98,22 @@ function makeAgent(index: number): Agent {
     dashStartX: initial.x,
     dashStartZ: initial.z,
     dashCameraRemaining: 0,
+    boostState: "ready",
+    boostDurationRemaining: 0,
+    boostCooldownRemaining: 0,
+    slowMultiplier: 1,
+    onSpeedPad: false,
+    jumpRemaining: 0,
+    jumpCooldownRemaining: 0,
+    jumpHeight: 0,
+    slideRemaining: 0,
+    slideDirectionX: Math.sin(initial.heading),
+    slideDirectionZ: Math.cos(initial.heading),
+    turnRate: 0,
+    previousX: initial.x,
+    previousZ: initial.z,
+    previousHeading: initial.heading,
+    previousJumpHeight: 0,
   };
 }
 
@@ -82,9 +121,61 @@ export const AGENTS: Agent[] = initialPositions.map((_, index) => makeAgent(inde
 export const PLAYER = AGENTS[0]!;
 export const RUNNERS = AGENTS.slice(1);
 
+const SPEED_PAD = INTERACTIVE_OBJECTS.find((item) => item.kind === "speedPad")!;
+const SLOW_ZONE = INTERACTIVE_OBJECTS.find((item) => item.kind === "slowZone")!;
+const ELASTIC_BOUNCE = INTERACTIVE_OBJECTS.find((item) => item.kind === "elasticBounce")!;
+const TEMPORARY_BARRIER = INTERACTIVE_OBJECTS.find((item) => item.kind === "temporaryBarrier")!;
+
+export const WORLD_STATE = {
+  cameraYaw: PLAYER.heading,
+  previousCameraYaw: PLAYER.heading,
+  barrierClosed: false,
+  barrierRemaining: GAME_CONFIG.barrier.openSeconds,
+  speedPadPulseRemaining: 0,
+  boostCueId: 0,
+  renderAlpha: 0,
+};
+
+function effectiveSpeedMultiplier(agent: Agent) {
+  return (
+    (agent.boostState === "active" ? GAME_CONFIG.player.speedBoost.multiplier : 1) *
+    agent.slowMultiplier
+  );
+}
+
+export function startSpeedBoost(agent: Agent) {
+  if (agent.boostState !== "ready") return false;
+  agent.boostState = "active";
+  agent.boostDurationRemaining = GAME_CONFIG.player.speedBoost.durationSeconds;
+  WORLD_STATE.boostCueId++;
+  return true;
+}
+
+function finishSpeedBoost(agent: Agent) {
+  agent.boostDurationRemaining = 0;
+  agent.boostCooldownRemaining = GAME_CONFIG.player.speedBoost.cooldownSeconds;
+  agent.boostState = "cooldown";
+}
+
+export function cancelPlayerActions(resetCooldown = false) {
+  if (PLAYER.dashState === "active") cancelPlayerDash();
+  if (PLAYER.boostState === "active") finishSpeedBoost(PLAYER);
+  PLAYER.jumpRemaining = 0;
+  PLAYER.jumpHeight = 0;
+  PLAYER.slideRemaining = 0;
+  if (resetCooldown) {
+    resetPlayerDash();
+    PLAYER.boostState = "ready";
+    PLAYER.boostDurationRemaining = 0;
+    PLAYER.boostCooldownRemaining = 0;
+    PLAYER.jumpCooldownRemaining = 0;
+  }
+}
+
 /** Begin the player's short burst; the caller enforces the current game phase. */
 export function startPlayerDash(direction: { x: number; z: number }) {
-  if (PLAYER.dashState !== "ready") return false;
+  if (PLAYER.dashState !== "ready" || PLAYER.jumpRemaining > 0 || PLAYER.slideRemaining > 0)
+    return false;
   const length = Math.hypot(direction.x, direction.z);
   const inverseLength = length > 0.001 ? 1 / length : 0;
   const dash = GAME_CONFIG.player.dash;
@@ -112,11 +203,12 @@ export function resetPlayerDash(clearCooldown = true) {
 export function cancelPlayerDash() {
   resetPlayerDash(false);
   const speed = Math.hypot(PLAYER.vx, PLAYER.vz);
-  if (speed > GAME_CONFIG.player.speed) {
-    const scale = GAME_CONFIG.player.speed / speed;
+  const maxSpeed = GAME_CONFIG.player.speed * effectiveSpeedMultiplier(PLAYER);
+  if (speed > maxSpeed) {
+    const scale = maxSpeed / speed;
     PLAYER.vx *= scale;
     PLAYER.vz *= scale;
-    PLAYER.speed = GAME_CONFIG.player.speed;
+    PLAYER.speed = maxSpeed;
   }
 }
 
@@ -160,6 +252,8 @@ function isWalkablePoint(x: number, z: number, radius: number) {
   for (const obstacle of OBSTACLES) {
     if (overlapsObstacle(x, z, radius, obstacle)) return false;
   }
+  if (overlapsObstacle(x, z, radius, ELASTIC_BOUNCE)) return false;
+  if (WORLD_STATE.barrierClosed && overlapsObstacle(x, z, radius, TEMPORARY_BARRIER)) return false;
   return true;
 }
 
@@ -226,18 +320,38 @@ function buildNavigationGraph() {
   return nodes;
 }
 
-const NAV_NODES = buildNavigationGraph();
-const navDistance = new Float64Array(NAV_NODES.length);
-const navPrevious = new Int32Array(NAV_NODES.length);
-const navFirstStep = new Int32Array(NAV_NODES.length);
-const navVisited = new Uint8Array(NAV_NODES.length);
-const navReversePath = new Int32Array(NAV_NODES.length);
+let NAV_NODES: NavNode[] = [];
+let navDistance = new Float64Array(0);
+let navPrevious = new Int32Array(0);
+let navFirstStep = new Int32Array(0);
+let navVisited = new Uint8Array(0);
+let navReversePath = new Int32Array(0);
+
+function rebuildNavigationGraph() {
+  NAV_NODES = buildNavigationGraph();
+  navDistance = new Float64Array(NAV_NODES.length);
+  navPrevious = new Int32Array(NAV_NODES.length);
+  navFirstStep = new Int32Array(NAV_NODES.length);
+  navVisited = new Uint8Array(NAV_NODES.length);
+  navReversePath = new Int32Array(NAV_NODES.length);
+  for (const runner of RUNNERS) {
+    runner.route.length = 0;
+    runner.routeIndex = 0;
+    runner.routeTimer = 0;
+    runner.stuckTime = 0;
+  }
+}
+
+rebuildNavigationGraph();
 
 function isSafeSpawn(agent: Agent, x: number, z: number) {
   if (Math.hypot(x, z) + agent.radius > GAME_CONFIG.arenaRadius - WALL_MARGIN) return false;
   for (const obstacle of OBSTACLES) {
     if (overlapsObstacle(x, z, agent.radius, obstacle)) return false;
   }
+  if (overlapsObstacle(x, z, agent.radius, ELASTIC_BOUNCE)) return false;
+  if (WORLD_STATE.barrierClosed && overlapsObstacle(x, z, agent.radius, TEMPORARY_BARRIER))
+    return false;
   for (const other of AGENTS) {
     if (other === agent || other.hidden > 0) continue;
     const minDistance = agent.radius + other.radius + GAME_CONFIG.npc.spawnSeparation;
@@ -281,6 +395,15 @@ export function findSafeSpawn(
 
 /** Full mutable-world reset used by both the UI button and Space key. */
 export function resetSimulation() {
+  const barrierWasClosed = WORLD_STATE.barrierClosed;
+  WORLD_STATE.barrierClosed = false;
+  WORLD_STATE.barrierRemaining = GAME_CONFIG.barrier.openSeconds;
+  WORLD_STATE.speedPadPulseRemaining = 0;
+  WORLD_STATE.boostCueId = 0;
+  WORLD_STATE.cameraYaw = PLAYER.heading;
+  WORLD_STATE.previousCameraYaw = PLAYER.heading;
+  WORLD_STATE.renderAlpha = 0;
+  if (barrierWasClosed) rebuildNavigationGraph();
   for (const agent of AGENTS) agent.hidden = 1;
   for (let i = 0; i < AGENTS.length; i++) {
     const agent = AGENTS[i]!;
@@ -312,7 +435,25 @@ export function resetSimulation() {
     agent.dashStartX = spawn.x;
     agent.dashStartZ = spawn.z;
     agent.dashCameraRemaining = 0;
+    agent.boostState = "ready";
+    agent.boostDurationRemaining = 0;
+    agent.boostCooldownRemaining = 0;
+    agent.slowMultiplier = 1;
+    agent.onSpeedPad = false;
+    agent.jumpRemaining = 0;
+    agent.jumpCooldownRemaining = 0;
+    agent.jumpHeight = 0;
+    agent.slideRemaining = 0;
+    agent.slideDirectionX = Math.sin(initial.heading);
+    agent.slideDirectionZ = Math.cos(initial.heading);
+    agent.turnRate = 0;
+    agent.previousX = spawn.x;
+    agent.previousZ = spawn.z;
+    agent.previousHeading = initial.heading;
+    agent.previousJumpHeight = 0;
   }
+  WORLD_STATE.cameraYaw = PLAYER.heading;
+  WORLD_STATE.previousCameraYaw = PLAYER.heading;
 }
 
 const selectedTarget = { agent: PLAYER, dist: Infinity };
@@ -384,6 +525,14 @@ export function respawn(agent: Agent) {
   agent.routeTimer = 0;
   agent.route.length = 0;
   agent.routeIndex = 0;
+  agent.boostState = "ready";
+  agent.boostDurationRemaining = 0;
+  agent.boostCooldownRemaining = 0;
+  agent.slowMultiplier = 1;
+  agent.onSpeedPad = false;
+  agent.jumpRemaining = 0;
+  agent.jumpHeight = 0;
+  agent.slideRemaining = 0;
   agent.respawns++;
 }
 
@@ -410,7 +559,22 @@ function resolveObstacle(agent: Agent, obstacle: Obstacle) {
     const nz = d > 0.0001 ? dz / d : 0;
     agent.x = obstacle.position.x + nx * minDistance;
     agent.z = obstacle.position.z + nz * minDistance;
-    removeNormalVelocity(agent, nx, nz);
+    if (obstacle.kind === "elasticBounce") {
+      const into = agent.vx * nx + agent.vz * nz;
+      if (into < 0) {
+        const bounce = GAME_CONFIG.elasticBounce;
+        agent.vx -= (1 + bounce.restitution) * into * nx;
+        agent.vz -= (1 + bounce.restitution) * into * nz;
+        agent.vx += nx * bounce.outwardImpulse;
+        agent.vz += nz * bounce.outwardImpulse;
+        if (agent.role === "player" && agent.dashState === "active") {
+          const speed = Math.hypot(agent.vx, agent.vz) || 1;
+          agent.dashDirectionX = agent.vx / speed;
+          agent.dashDirectionZ = agent.vz / speed;
+        }
+        agent.routeTimer = 0;
+      }
+    } else removeNormalVelocity(agent, nx, nz);
     return true;
   }
 
@@ -457,6 +621,8 @@ function resolveObstacle(agent: Agent, obstacle: Obstacle) {
 function resolveWorld(agent: Agent) {
   for (let pass = 0; pass < 2; pass++) {
     for (const obstacle of OBSTACLES) resolveObstacle(agent, obstacle);
+    resolveObstacle(agent, ELASTIC_BOUNCE);
+    if (WORLD_STATE.barrierClosed) resolveObstacle(agent, TEMPORARY_BARRIER);
   }
 
   const d = Math.hypot(agent.x, agent.z);
@@ -594,25 +760,31 @@ function chooseNavigationRoute(agent: Agent, avoidPreviousFirstStep: boolean) {
 function integrateMovement(agent: Agent, dt: number) {
   const distance = Math.max(Math.abs(agent.vx * dt), Math.abs(agent.vz * dt));
   const substeps = Math.max(1, Math.ceil(distance / 0.18));
-  const stepX = (agent.vx * dt) / substeps;
-  const stepZ = (agent.vz * dt) / substeps;
+  const substepDt = dt / substeps;
   for (let i = 0; i < substeps; i++) {
-    agent.x += stepX;
+    agent.x += agent.vx * substepDt;
     resolveWorld(agent);
-    agent.z += stepZ;
+    agent.z += agent.vz * substepDt;
     resolveWorld(agent);
   }
+}
+
+function getDesiredFacingAngle(movementX: number, movementZ: number) {
+  return Math.atan2(movementX, movementZ);
 }
 
 function updateMovementPresentation(agent: Agent, dt: number, preserveHeading: boolean) {
   agent.speed = Math.hypot(agent.vx, agent.vz);
   if (!preserveHeading && agent.speed > 0.4) {
-    const wantedHeading = Math.atan2(agent.vx, agent.vz);
+    const wantedHeading = getDesiredFacingAngle(agent.vx, agent.vz);
     let difference = wantedHeading - agent.heading;
     while (difference > Math.PI) difference -= TAU;
     while (difference < -Math.PI) difference += TAU;
-    agent.heading += difference * (1 - Math.exp(-10 * dt));
-  }
+    const rotationSpeed = agent.role === "player" ? GAME_CONFIG.player.facingRotationSpeed : 10;
+    const headingDelta = difference * (1 - Math.exp(-rotationSpeed * dt));
+    agent.heading += headingDelta;
+    agent.turnRate = headingDelta / dt;
+  } else agent.turnRate *= Math.exp(-8 * dt);
   agent.phase += agent.speed * dt * 0.85;
 }
 
@@ -641,11 +813,13 @@ function move(
 }
 
 function movePlayerDash(dt: number) {
-  const dashSpeed = GAME_CONFIG.player.dash.distance / GAME_CONFIG.player.dash.durationSeconds;
+  const dashSpeed =
+    (GAME_CONFIG.player.dash.distance / GAME_CONFIG.player.dash.durationSeconds) *
+    effectiveSpeedMultiplier(PLAYER);
   PLAYER.vx = PLAYER.dashDirectionX * dashSpeed;
   PLAYER.vz = PLAYER.dashDirectionZ * dashSpeed;
   integrateMovement(PLAYER, dt);
-  updateMovementPresentation(PLAYER, dt, true);
+  updateMovementPresentation(PLAYER, dt, false);
 }
 
 function advancePlayerDashTimers(dt: number) {
@@ -653,6 +827,104 @@ function advancePlayerDashTimers(dt: number) {
   PLAYER.dashCameraRemaining = Math.max(0, PLAYER.dashCameraRemaining - dt);
   if (PLAYER.dashState === "cooldown" && PLAYER.dashCooldownRemaining === 0)
     PLAYER.dashState = "ready";
+}
+
+function advanceAgentActionTimers(agent: Agent, dt: number) {
+  if (agent.boostState === "active") {
+    agent.boostDurationRemaining = Math.max(0, agent.boostDurationRemaining - dt);
+    if (agent.boostDurationRemaining === 0) finishSpeedBoost(agent);
+  } else if (agent.boostState === "cooldown") {
+    agent.boostCooldownRemaining = Math.max(0, agent.boostCooldownRemaining - dt);
+    if (agent.boostCooldownRemaining === 0) agent.boostState = "ready";
+  }
+
+  agent.jumpCooldownRemaining = Math.max(0, agent.jumpCooldownRemaining - dt);
+  agent.jumpRemaining = Math.max(0, agent.jumpRemaining - dt);
+  if (agent.jumpRemaining === 0) agent.jumpHeight = 0;
+  else {
+    const jump = GAME_CONFIG.player.jump;
+    const progress = 1 - agent.jumpRemaining / jump.durationSeconds;
+    agent.jumpHeight = Math.sin(progress * Math.PI) * jump.height;
+  }
+  agent.slideRemaining = Math.max(0, agent.slideRemaining - dt);
+}
+
+function advanceBarrier(dt: number) {
+  WORLD_STATE.barrierRemaining -= dt;
+  if (WORLD_STATE.barrierRemaining > 0) return;
+  WORLD_STATE.barrierClosed = !WORLD_STATE.barrierClosed;
+  WORLD_STATE.barrierRemaining += WORLD_STATE.barrierClosed
+    ? GAME_CONFIG.barrier.closedSeconds
+    : GAME_CONFIG.barrier.openSeconds;
+  rebuildNavigationGraph();
+  if (WORLD_STATE.barrierClosed) {
+    // A runner or player may be standing in the passage as it closes. Eject it
+    // through the nearest face before it can move again.
+    for (const agent of AGENTS) resolveWorld(agent);
+  }
+}
+
+function updateSlowZone(agent: Agent, dt: number) {
+  const inside =
+    Math.hypot(agent.x - SLOW_ZONE.position.x, agent.z - SLOW_ZONE.position.z) <=
+    (SLOW_ZONE.triggerRadius ?? 0) * SLOW_ZONE.scale;
+  if (inside) agent.slowMultiplier = GAME_CONFIG.slowZone.movementMultiplier;
+  else {
+    const recovery = Math.max(0.01, GAME_CONFIG.slowZone.recoverySeconds);
+    agent.slowMultiplier = 1 + (agent.slowMultiplier - 1) * Math.exp(-dt / recovery);
+    if (Math.abs(1 - agent.slowMultiplier) < 0.002) agent.slowMultiplier = 1;
+  }
+}
+
+function updateSpeedPad(agent: Agent) {
+  const inside =
+    Math.hypot(agent.x - SPEED_PAD.position.x, agent.z - SPEED_PAD.position.z) <=
+    (SPEED_PAD.triggerRadius ?? 0) * SPEED_PAD.scale;
+  if (inside && !agent.onSpeedPad && startSpeedBoost(agent)) {
+    WORLD_STATE.speedPadPulseRemaining = GAME_CONFIG.interactiveObjects.speedPad.pulseSeconds;
+  }
+  agent.onSpeedPad = inside;
+}
+
+const playerWorldInput = { x: 0, z: 0 };
+
+function resolvePlayerInput(input: { x: number; z: number } | null) {
+  if (!input) {
+    playerWorldInput.x = 0;
+    playerWorldInput.z = 0;
+    return null;
+  }
+  const forwardX = Math.sin(WORLD_STATE.cameraYaw);
+  const forwardZ = Math.cos(WORLD_STATE.cameraYaw);
+  const rightX = Math.cos(WORLD_STATE.cameraYaw);
+  const rightZ = -Math.sin(WORLD_STATE.cameraYaw);
+  playerWorldInput.x = -forwardX * input.z + rightX * input.x;
+  playerWorldInput.z = -forwardZ * input.z + rightZ * input.x;
+  return playerWorldInput;
+}
+
+function beginPlayerJump() {
+  if (
+    PLAYER.jumpRemaining > 0 ||
+    PLAYER.jumpCooldownRemaining > 0 ||
+    PLAYER.dashState === "active" ||
+    PLAYER.slideRemaining > 0
+  )
+    return false;
+  PLAYER.jumpRemaining = GAME_CONFIG.player.jump.durationSeconds;
+  PLAYER.jumpCooldownRemaining =
+    GAME_CONFIG.player.jump.durationSeconds + GAME_CONFIG.player.jump.groundedSeconds;
+  return true;
+}
+
+function beginPlayerSlide(input: { x: number; z: number } | null) {
+  if (PLAYER.slideRemaining > 0 || PLAYER.jumpRemaining > 0 || PLAYER.dashState === "active")
+    return false;
+  const length = input ? Math.hypot(input.x, input.z) : 0;
+  PLAYER.slideDirectionX = length > 0.001 ? input!.x / length : Math.sin(PLAYER.heading);
+  PLAYER.slideDirectionZ = length > 0.001 ? input!.z / length : Math.cos(PLAYER.heading);
+  PLAYER.slideRemaining = GAME_CONFIG.player.slide.durationSeconds;
+  return true;
 }
 
 function advanceRunner(runner: Agent, dt: number) {
@@ -700,17 +972,32 @@ function separateRunners() {
   }
 }
 
-/** Update all mutable agents. `input` is a camera-relative unit vector. */
+/** Advance all mutable gameplay state by exactly one fixed simulation tick. */
 export function step(
   dt: number,
   input: { x: number; z: number } | null,
+  commands: { dash: boolean; jump: boolean; slide: boolean; speedBoost: boolean },
   freezePlayer: boolean,
   freezeWorld = false,
+  cameraTurnAxis = 0,
 ) {
+  for (const agent of AGENTS) {
+    agent.previousX = agent.x;
+    agent.previousZ = agent.z;
+    agent.previousHeading = agent.heading;
+    agent.previousJumpHeight = agent.jumpHeight;
+  }
+  WORLD_STATE.previousCameraYaw = WORLD_STATE.cameraYaw;
+  WORLD_STATE.cameraYaw += cameraTurnAxis * GAME_CONFIG.camera.yawSpeed * dt;
+  WORLD_STATE.cameraYaw = Math.atan2(
+    Math.sin(WORLD_STATE.cameraYaw),
+    Math.cos(WORLD_STATE.cameraYaw),
+  );
   advancePlayerDashTimers(dt);
 
   if (freezeWorld) {
     if (PLAYER.dashState === "active") cancelPlayerDash();
+    for (const agent of AGENTS) advanceAgentActionTimers(agent, dt);
     for (const agent of AGENTS) {
       agent.vx = 0;
       agent.vz = 0;
@@ -719,12 +1006,21 @@ export function step(
     return;
   }
 
+  advanceBarrier(dt);
+  const worldInput = resolvePlayerInput(input);
   if (!freezePlayer) {
-    const facingX = Math.sin(PLAYER.heading);
-    const facingZ = Math.cos(PLAYER.heading);
-    const movingBackward = input
-      ? input.x * facingX + input.z * facingZ < -0.5
-      : PLAYER.vx * facingX + PLAYER.vz * facingZ < -0.4;
+    if (commands.speedBoost) startSpeedBoost(PLAYER);
+    let actionStarted =
+      commands.dash &&
+      startPlayerDash(
+        worldInput ?? {
+          x: Math.sin(PLAYER.heading),
+          z: Math.cos(PLAYER.heading),
+        },
+      );
+    if (!actionStarted && commands.jump) actionStarted = beginPlayerJump();
+    if (!actionStarted && commands.slide) beginPlayerSlide(worldInput);
+
     let movementDt = dt;
     if (PLAYER.dashState === "active") {
       const dashDt = Math.min(dt, PLAYER.dashDurationRemaining);
@@ -734,23 +1030,36 @@ export function step(
       if (PLAYER.dashDurationRemaining === 0) {
         PLAYER.dashState = PLAYER.dashCooldownRemaining > 0 ? "cooldown" : "ready";
         const speed = Math.hypot(PLAYER.vx, PLAYER.vz);
-        if (speed > GAME_CONFIG.player.speed) {
-          const scale = GAME_CONFIG.player.speed / speed;
+        const maxSpeed = GAME_CONFIG.player.speed * effectiveSpeedMultiplier(PLAYER);
+        if (speed > maxSpeed) {
+          const scale = maxSpeed / speed;
           PLAYER.vx *= scale;
           PLAYER.vz *= scale;
-          PLAYER.speed = GAME_CONFIG.player.speed;
+          PLAYER.speed = maxSpeed;
         }
       }
     }
     if (movementDt > 0 && PLAYER.dashState !== "active") {
-      move(
-        PLAYER,
-        input?.x ?? 0,
-        input?.z ?? 0,
-        GAME_CONFIG.player.speed,
-        movementDt,
-        movingBackward,
-      );
+      if (PLAYER.slideRemaining > 0) {
+        move(
+          PLAYER,
+          PLAYER.slideDirectionX,
+          PLAYER.slideDirectionZ,
+          GAME_CONFIG.player.speed *
+            GAME_CONFIG.player.slide.movementMultiplier *
+            effectiveSpeedMultiplier(PLAYER),
+          movementDt,
+        );
+      } else {
+        move(
+          PLAYER,
+          worldInput?.x ?? 0,
+          worldInput?.z ?? 0,
+          GAME_CONFIG.player.speed * effectiveSpeedMultiplier(PLAYER),
+          movementDt,
+          worldInput === null,
+        );
+      }
     }
   }
 
@@ -812,10 +1121,16 @@ export function step(
     // The graph owns obstacle routing; fleeing and the existing separation field remain responsive.
     const steerX = waypointX * 0.84 + (awayX / distance) * 0.16 + separationX;
     const steerZ = waypointZ * 0.84 + (awayZ / distance) * 0.16 + separationZ;
-    move(runner, steerX, steerZ, GAME_CONFIG.npc.speed, dt);
+    move(runner, steerX, steerZ, GAME_CONFIG.npc.speed * effectiveSpeedMultiplier(runner), dt);
   }
 
   separateRunners();
+  for (const agent of AGENTS) {
+    updateSlowZone(agent, dt);
+    updateSpeedPad(agent);
+    advanceAgentActionTimers(agent, dt);
+  }
+  WORLD_STATE.speedPadPulseRemaining = Math.max(0, WORLD_STATE.speedPadPulseRemaining - dt);
 }
 
 resetSimulation();

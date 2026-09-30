@@ -1,7 +1,8 @@
 import { useRef, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { AGENTS } from "@/lib/sprout/agents";
+import { AGENTS, WORLD_STATE } from "@/lib/catchy/agents";
+import { GAME_CONFIG } from "@/lib/catchy/config";
 import { useGameStore } from "@/store/gameStore";
 
 type Palette = {
@@ -164,14 +165,33 @@ export function Character({ index }: { index: number }) {
     const dt = Math.min(rawDelta, 0.05);
     const g = root.current;
     if (!g) return;
-    g.position.set(agent.x, 0, agent.z);
-    g.rotation.y = agent.heading;
+    const alpha = WORLD_STATE.renderAlpha;
+    const x = agent.previousX + (agent.x - agent.previousX) * alpha;
+    const z = agent.previousZ + (agent.z - agent.previousZ) * alpha;
+    const angleDelta = Math.atan2(
+      Math.sin(agent.heading - agent.previousHeading),
+      Math.cos(agent.heading - agent.previousHeading),
+    );
+    const heading = agent.previousHeading + angleDelta * alpha;
+    const jumpHeight =
+      agent.previousJumpHeight + (agent.jumpHeight - agent.previousJumpHeight) * alpha;
+    g.position.set(x, jumpHeight, z);
+    g.rotation.y = heading;
     g.visible = agent.hidden <= 0;
 
     // ease the run factor so starts/stops blend instead of snapping
     const runTarget = Math.min(agent.speed / 8, 1.15);
     runSmooth.current += (runTarget - runSmooth.current) * (1 - Math.exp(-8 * dt));
     const run = runSmooth.current;
+    const sliding = isPlayer && agent.slideRemaining > 0;
+    if (body.current) {
+      const scale = p.build * 1.9;
+      body.current.scale.set(
+        scale,
+        scale * (sliding ? GAME_CONFIG.player.slide.bodyHeightMultiplier : 1),
+        scale,
+      );
+    }
 
     // stride phase: two steps per cycle, frequency scales with speed
     const ph = agent.phase * 3.1;
@@ -204,7 +224,8 @@ export function Character({ index }: { index: number }) {
 
     // torso: bounce at stride frequency, lean into the run, subtle side roll
     if (body.current) {
-      body.current.position.y = Math.abs(c) * 0.04 * run;
+      body.current.position.y =
+        (sliding ? -GAME_CONFIG.player.slide.bodyLowering : 0) + Math.abs(c) * 0.04 * run;
       body.current.rotation.x = 0.05 + run * 0.18;
       body.current.rotation.z = s * 0.025 * run;
     }

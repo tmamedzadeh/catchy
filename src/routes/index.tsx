@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useProgress } from "@react-three/drei";
 import { GameCanvas } from "@/components/game/GameCanvas";
 import { HUD } from "@/components/hud/HUD";
-import { GameFeedback } from "@/lib/sprout/feedback";
+import { GameFeedback } from "@/lib/catchy/feedback";
 
 const title = "Catchy — Fast chase/tag browser game";
 const description =
@@ -71,7 +71,7 @@ function LoadingScreen({ ready, onReady }: { ready: boolean; onReady: () => void
           C
         </div>
         <div className="font-display text-3xl font-semibold tracking-tight">Catchy</div>
-        <div className="mt-1 text-sm text-sprout-ink-soft">Getting the arena ready</div>
+        <div className="mt-1 text-sm text-catchy-ink-soft">Getting the arena ready</div>
         <div className="game-loading-dots" aria-hidden="true">
           <span />
           <span />

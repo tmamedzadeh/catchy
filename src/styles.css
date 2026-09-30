@@ -149,13 +149,13 @@
 
 :root {
   /* brand */
-  --sprout-ink: oklch(0.34 0.07 152); /* dark green text */
-  --sprout-ink-soft: oklch(0.52 0.05 152);
-  --sprout-accent: oklch(0.72 0.19 45); /* orange / coral */
-  --sprout-accent-2: oklch(0.66 0.21 25); /* deep coral */
-  --sprout-cyan: oklch(0.78 0.14 210);
-  --sprout-lime: oklch(0.82 0.18 135);
-  --sprout-danger: oklch(0.62 0.23 25);
+  --catchy-ink: oklch(0.34 0.07 152); /* dark green text */
+  --catchy-ink-soft: oklch(0.52 0.05 152);
+  --catchy-accent: oklch(0.72 0.19 45); /* orange / coral */
+  --catchy-accent-2: oklch(0.66 0.21 25); /* deep coral */
+  --catchy-cyan: oklch(0.78 0.14 210);
+  --catchy-lime: oklch(0.82 0.18 135);
+  --catchy-danger: oklch(0.62 0.23 25);
 
   /* hud surfaces */
   --hud-surface: oklch(0.99 0.012 95 / 0.86);
@@ -170,16 +170,17 @@
   --hud-shadow: 0 10px 24px -8px oklch(0.34 0.07 152 / 0.35), 0 2px 0 0 oklch(1 0 0 / 0.5) inset;
   --hud-shadow-soft: 0 8px 20px -10px oklch(0.34 0.07 152 / 0.45);
   --joystick-size: 8.5rem;
+  --action-joystick-size: 5.5rem;
 }
 
 @theme inline {
-  --color-sprout-ink: var(--sprout-ink);
-  --color-sprout-ink-soft: var(--sprout-ink-soft);
-  --color-sprout-accent: var(--sprout-accent);
-  --color-sprout-accent-2: var(--sprout-accent-2);
-  --color-sprout-cyan: var(--sprout-cyan);
-  --color-sprout-lime: var(--sprout-lime);
-  --color-sprout-danger: var(--sprout-danger);
+  --color-catchy-ink: var(--catchy-ink);
+  --color-catchy-ink-soft: var(--catchy-ink-soft);
+  --color-catchy-accent: var(--catchy-accent);
+  --color-catchy-accent-2: var(--catchy-accent-2);
+  --color-catchy-cyan: var(--catchy-cyan);
+  --color-catchy-lime: var(--catchy-lime);
+  --color-catchy-danger: var(--catchy-danger);
   --color-hud-surface: var(--hud-surface);
   --color-hud-surface-solid: var(--hud-surface-solid);
   --color-hud-surface-dark: var(--hud-surface-dark);
@@ -229,6 +230,10 @@
   display: none;
 }
 
+.action-controls {
+  display: none;
+}
+
 .hud-brand-timer {
   top: calc(1rem + env(safe-area-inset-top, 0px));
   left: calc(1rem + env(safe-area-inset-left, 0px));
@@ -252,9 +257,19 @@
   left: max(1.25rem, calc(env(safe-area-inset-left, 0px) + 1rem));
 }
 
-.dash-control {
+.action-controls {
   right: max(1.25rem, calc(env(safe-area-inset-right, 0px) + 1rem));
   bottom: max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
+}
+
+.ability-controls {
+  right: max(1.25rem, calc(env(safe-area-inset-right, 0px) + 1rem));
+  bottom: max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
+}
+
+.dash-control,
+.boost-control {
+  position: relative;
 }
 
 .dash-control-button {
@@ -267,6 +282,48 @@
     inset 0 -3px 0 oklch(0.32 0.1 230 / 0.35);
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
+}
+
+.boost-control-button {
+  width: 3.75rem;
+  height: 3.75rem;
+  border: 2px solid oklch(1 0 0 / 0.68);
+  background: radial-gradient(circle at 35% 28%, oklch(0.8 0.16 145), oklch(0.48 0.14 160));
+  box-shadow:
+    0 8px 18px -5px oklch(0.2 0.08 155 / 0.48),
+    inset 0 -3px 0 oklch(0.32 0.1 155 / 0.35);
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.boost-control-button:disabled {
+  opacity: 0.66;
+}
+
+.touch-stick-action {
+  width: var(--action-joystick-size);
+  height: var(--action-joystick-size);
+}
+
+.action-stick-hint {
+  position: absolute;
+  left: 50%;
+  color: oklch(1 0 0 / 0.82);
+  font-family: var(--font-display);
+  font-size: 0.45rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+  transform: translateX(-50%);
+  text-shadow: 0 1px 3px oklch(0.2 0.08 230 / 0.65);
+}
+
+.action-stick-hint-up {
+  top: 0.35rem;
+}
+
+.action-stick-hint-down {
+  bottom: 0.35rem;
 }
 
 .dash-control-button:disabled {
@@ -310,7 +367,7 @@
     calc(100vw - 2rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))
   );
   pointer-events: none;
-  animation: sprout-pop 260ms ease-out;
+  animation: catchy-pop 260ms ease-out;
 }
 
 .round-end-overlay {
@@ -334,7 +391,7 @@
   padding: max(1.25rem, env(safe-area-inset-top, 0px)) max(1.25rem, env(safe-area-inset-right, 0px))
     max(1.25rem, env(safe-area-inset-bottom, 0px)) max(1.25rem, env(safe-area-inset-left, 0px));
   background: #bfe3ff;
-  color: var(--sprout-ink);
+  color: var(--catchy-ink);
   transition: opacity 280ms ease-out;
 }
 
@@ -380,8 +437,8 @@
   width: 0.4rem;
   height: 0.4rem;
   border-radius: 50%;
-  background: var(--sprout-accent);
-  animation: sprout-pulse 850ms ease-in-out infinite;
+  background: var(--catchy-accent);
+  animation: catchy-pulse 850ms ease-in-out infinite;
 }
 
 .game-loading-dots span:nth-child(2) {
@@ -405,9 +462,19 @@
   .touch-controls {
     display: block;
   }
+
+  .action-controls {
+    display: block;
+  }
+
+  .ability-controls {
+    bottom: calc(
+      var(--action-joystick-size) + max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 1rem)) + 0.5rem
+    );
+  }
 }
 
-@keyframes sprout-pop {
+@keyframes catchy-pop {
   0% {
     transform: scale(0.6);
     opacity: 0;
@@ -421,7 +488,7 @@
     opacity: 1;
   }
 }
-@keyframes sprout-pulse {
+@keyframes catchy-pulse {
   0%,
   100% {
     opacity: 0.55;
@@ -430,7 +497,7 @@
     opacity: 1;
   }
 }
-@keyframes sprout-flash {
+@keyframes catchy-flash {
   0% {
     opacity: 0.75;
   }
@@ -439,7 +506,7 @@
   }
 }
 
-@keyframes sprout-capture-flash {
+@keyframes catchy-capture-flash {
   0% {
     opacity: 0.8;
   }
@@ -457,6 +524,7 @@
 @media (max-width: 640px) {
   :root {
     --joystick-size: 5.5rem;
+    --action-joystick-size: 5.5rem;
     --hud-radius: 1rem;
   }
 }
@@ -485,12 +553,23 @@
     left: max(2rem, calc(env(safe-area-inset-left, 0px) + 1.5rem));
   }
 
-  .dash-control {
+  .action-controls,
+  .ability-controls {
     right: max(2rem, calc(env(safe-area-inset-right, 0px) + 1.5rem));
-    bottom: max(2rem, calc(env(safe-area-inset-bottom, 0px) + 1.5rem));
+  }
+
+  .ability-controls {
+    bottom: calc(
+      var(--action-joystick-size) + max(2rem, calc(env(safe-area-inset-bottom, 0px) + 1.5rem)) + 0.5rem
+    );
   }
 
   .dash-control-button {
+    width: 3.75rem;
+    height: 3.75rem;
+  }
+
+  .boost-control-button {
     width: 3.75rem;
     height: 3.75rem;
   }

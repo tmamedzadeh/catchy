@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Joystick } from "./Joystick";
-import { CAM_DEFAULTS, useGameStore } from "@/store/gameStore";
-import { requestPlayerDash } from "@/lib/sprout/input";
-import { GAME_CONFIG } from "@/lib/sprout/config";
+import { useGameStore } from "@/store/gameStore";
+import { requestPlayerDash, requestPlayerSpeedBoost } from "@/lib/catchy/input";
+import { GAME_CONFIG } from "@/lib/catchy/config";
 
 const ONBOARDING_KEY = "catchy-first-session-controls-v1";
 const MOVEMENT_KEYS = new Set([
@@ -16,6 +16,7 @@ const MOVEMENT_KEYS = new Set([
   "ArrowRight",
   "ShiftLeft",
   "ShiftRight",
+  "KeyE",
 ]);
 
 const ClockIcon = (
@@ -57,11 +58,14 @@ function Slider({
   const progress = ((value - min) / (max - min)) * 100;
   return (
     <label className="pointer-events-auto block">
-      <div className="mb-1 flex items-center justify-between font-display text-[0.7rem] tracking-wide text-sprout-ink-soft uppercase">
+      <div className="mb-1 flex items-center justify-between font-display text-[0.7rem] tracking-wide text-catchy-ink-soft uppercase">
         <span>{label}</span>
-        <span className="text-sprout-accent-2">
-          {unit === "°" ? value.toFixed(0) : value.toFixed(1)}
-          {unit}
+        <span className="text-catchy-accent-2">
+          {unit === "%"
+            ? `${(value * 100).toFixed(0)}%`
+            : unit === "°"
+              ? `${value.toFixed(0)}°`
+              : `${value.toFixed(1)}${unit}`}
         </span>
       </div>
       <input
@@ -72,9 +76,9 @@ function Slider({
         value={value}
         aria-label={label}
         onChange={(event) => onChange(Number(event.currentTarget.value))}
-        className="h-1.5 w-full cursor-pointer appearance-none rounded-full outline-none [&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-sprout-accent [&::-webkit-slider-thumb]:shadow-md"
+        className="h-1.5 w-full cursor-pointer appearance-none rounded-full outline-none [&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-catchy-accent [&::-webkit-slider-thumb]:shadow-md"
         style={{
-          background: `linear-gradient(90deg, var(--sprout-accent) ${progress}%, oklch(0.34 0.07 152 / 0.15) ${progress}%)`,
+          background: `linear-gradient(90deg, var(--catchy-accent) ${progress}%, oklch(0.34 0.07 152 / 0.15) ${progress}%)`,
         }}
       />
     </label>
@@ -90,6 +94,7 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
   const targetId = useGameStore((s) => s.targetId);
   const restart = useGameStore((s) => s.restart);
   const dashStatus = useGameStore((s) => s.dashStatus);
+  const speedBoostStatus = useGameStore((s) => s.speedBoostStatus);
   const debugMode = useMemo(
     () =>
       typeof window !== "undefined" &&
@@ -118,7 +123,7 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
         <div
           key={flash}
           className="capture-flash absolute inset-0"
-          style={{ animation: "sprout-capture-flash 380ms ease-out forwards" }}
+          style={{ animation: "catchy-capture-flash 380ms ease-out forwards" }}
         />
       )}
 
@@ -136,33 +141,33 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
             C
           </div>
           <div className="leading-none">
-            <div className="font-display text-base font-semibold text-sprout-ink sm:text-lg">
+            <div className="font-display text-base font-semibold text-catchy-ink sm:text-lg">
               Catchy
             </div>
-            <div className="mt-0.5 hidden font-display text-[0.6rem] tracking-[0.18em] text-sprout-ink-soft uppercase min-[420px]:block sm:text-[0.65rem]">
+            <div className="mt-0.5 hidden font-display text-[0.6rem] tracking-[0.18em] text-catchy-ink-soft uppercase min-[420px]:block sm:text-[0.65rem]">
               Tag arena
             </div>
           </div>
         </div>
         <div
           className="hud-card flex items-center gap-1.5 px-3 py-2 sm:px-3.5 sm:py-2.5"
-          style={time < 10 ? { animation: "sprout-pulse 1s infinite" } : undefined}
+          style={time < 10 ? { animation: "catchy-pulse 1s infinite" } : undefined}
         >
-          <span className="text-sprout-accent-2">{ClockIcon}</span>
-          <span className="font-display text-lg tabular-nums text-sprout-ink sm:text-xl">
+          <span className="text-catchy-accent-2">{ClockIcon}</span>
+          <span className="font-display text-lg tabular-nums text-catchy-ink sm:text-xl">
             {fmt(time)}
           </span>
         </div>
       </div>
 
       <div className="hud-card hud-score absolute px-3.5 py-2 text-right sm:px-4 sm:py-2.5">
-        <div className="font-display text-[0.6rem] tracking-[0.18em] text-sprout-ink-soft uppercase sm:text-[0.65rem]">
+        <div className="font-display text-[0.6rem] tracking-[0.18em] text-catchy-ink-soft uppercase sm:text-[0.65rem]">
           Caught
         </div>
         <div
           key={caught}
-          className="font-display text-2xl leading-none text-sprout-accent-2 tabular-nums sm:text-3xl"
-          style={{ animation: "sprout-pop 320ms ease-out" }}
+          className="font-display text-2xl leading-none text-catchy-accent-2 tabular-nums sm:text-3xl"
+          style={{ animation: "catchy-pop 320ms ease-out" }}
         >
           {String(caught).padStart(2, "0")}
         </div>
@@ -170,7 +175,7 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
 
       {/* Camera-relative nearest-runner finder; neutral when all runners are unavailable. */}
       <div className="hud-card hud-target-finder absolute top-1/2 flex -translate-y-1/2 flex-col items-center gap-1.5 px-3 py-3 sm:px-4">
-        <div className="font-display text-[0.58rem] tracking-[0.16em] text-sprout-ink-soft uppercase sm:text-[0.65rem]">
+        <div className="font-display text-[0.58rem] tracking-[0.16em] text-catchy-ink-soft uppercase sm:text-[0.65rem]">
           {targetId ? "Target" : "No target"}
         </div>
         <div
@@ -192,15 +197,15 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
             >
               <path
                 d="M12 3.2 18.4 19 12 15.4 5.6 19 12 3.2Z"
-                className={nearby ? "text-sprout-lime" : "text-sprout-accent-2"}
+                className={nearby ? "text-catchy-lime" : "text-catchy-accent-2"}
                 style={{ filter: "drop-shadow(0 1px 2px oklch(0.34 0.07 152 / 0.35))" }}
               />
             </svg>
           ) : (
-            <span className="font-display text-2xl text-sprout-ink-soft">·</span>
+            <span className="font-display text-2xl text-catchy-ink-soft">·</span>
           )}
         </div>
-        <div className="font-display text-base text-sprout-ink tabular-nums sm:text-lg">
+        <div className="font-display text-base text-catchy-ink tabular-nums sm:text-lg">
           {distance === null ? "—" : `${Math.round(distance)} m`}
         </div>
       </div>
@@ -212,7 +217,7 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
             style={{
               background: "linear-gradient(90deg, oklch(0.72 0.19 45), oklch(0.66 0.21 25))",
               boxShadow: "var(--hud-shadow-soft)",
-              animation: "sprout-pop 260ms ease-out",
+              animation: "catchy-pop 260ms ease-out",
             }}
           >
             {distance !== null && distance <= 4.5 ? "Close! Go for the tag" : "Runner nearby!"}
@@ -223,7 +228,7 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
             className="capture-tag font-display text-5xl text-white sm:text-7xl"
             style={{
               textShadow: "0 4px 0 oklch(0.66 0.21 25), 0 10px 26px oklch(0.34 0.07 152 / 0.45)",
-              animation: "sprout-pop 320ms ease-out",
+              animation: "catchy-pop 320ms ease-out",
             }}
           >
             TAG!
@@ -231,8 +236,8 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
         )}
         {state === "after" && (
           <div
-            className="hud-card px-4 py-2 font-display text-lg text-sprout-ink"
-            style={{ animation: "sprout-pop 280ms ease-out" }}
+            className="hud-card px-4 py-2 font-display text-lg text-catchy-ink"
+            style={{ animation: "catchy-pop 280ms ease-out" }}
           >
             +1 caught · nice tag!
           </div>
@@ -240,16 +245,16 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
       </div>
 
       {state === "timeup" && (
-        <div className="round-end-overlay absolute inset-0 grid place-items-center bg-sprout-ink/45 backdrop-blur-[2px]">
+        <div className="round-end-overlay absolute inset-0 grid place-items-center bg-catchy-ink/45 backdrop-blur-[2px]">
           <div
             className="hud-card pointer-events-auto w-[min(22rem,86vw)] px-6 py-7 text-center"
-            style={{ animation: "sprout-pop 340ms ease-out" }}
+            style={{ animation: "catchy-pop 340ms ease-out" }}
           >
-            <div className="font-display text-[0.7rem] tracking-[0.22em] text-sprout-ink-soft uppercase">
+            <div className="font-display text-[0.7rem] tracking-[0.22em] text-catchy-ink-soft uppercase">
               Time up
             </div>
-            <div className="mt-1 font-display text-4xl text-sprout-ink">Round over</div>
-            <div className="mt-3 font-display text-lg text-sprout-accent-2">
+            <div className="mt-1 font-display text-4xl text-catchy-ink">Round over</div>
+            <div className="mt-3 font-display text-lg text-catchy-accent-2">
               {caught} runner{caught === 1 ? "" : "s"} caught
             </div>
             <button
@@ -271,7 +276,13 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
       <div className="touch-controls absolute">
         <Joystick />
       </div>
-      <DashControl gameReady={gameReady} state={state} status={dashStatus} />
+      <div className="action-controls absolute">
+        <Joystick side="action" />
+      </div>
+      <div className="ability-controls absolute flex items-center gap-2">
+        <DashControl gameReady={gameReady} state={state} status={dashStatus} />
+        <SpeedBoostControl gameReady={gameReady} state={state} status={speedBoostStatus} />
+      </div>
 
       <FirstSessionOnboarding gameReady={gameReady} />
 
@@ -298,7 +309,7 @@ function DashControl({
   );
 
   return (
-    <div className="dash-control absolute">
+    <div className="dash-control">
       <button
         type="button"
         data-sound="dash"
@@ -343,12 +354,59 @@ function DashControl({
   );
 }
 
+function SpeedBoostControl({
+  gameReady,
+  state,
+  status,
+}: {
+  gameReady: boolean;
+  state: ReturnType<typeof useGameStore.getState>["state"];
+  status: ReturnType<typeof useGameStore.getState>["speedBoostStatus"];
+}) {
+  const isChasing = state === "chase" || state === "nearby";
+  const enabled = gameReady && isChasing && status === "ready";
+  const label = status === "active" ? "LIVE" : status === "cooldown" ? "WAIT" : "BOOST";
+
+  return (
+    <div className="boost-control">
+      <button
+        type="button"
+        data-sound="boost"
+        aria-label={enabled ? "Speed boost" : `Speed boost ${isChasing ? status : "unavailable"}`}
+        title={label}
+        disabled={!enabled}
+        onPointerDown={(event) => {
+          if (event.button !== 0 || !enabled) return;
+          event.preventDefault();
+          event.stopPropagation();
+          requestPlayerSpeedBoost();
+        }}
+        onPointerCancel={(event) => event.preventDefault()}
+        onContextMenu={(event) => event.preventDefault()}
+        className="boost-control-button pointer-events-auto grid place-items-center rounded-full font-display font-bold text-white transition-transform active:scale-95 disabled:cursor-default"
+      >
+        <span className="flex flex-col items-center leading-none">
+          <svg viewBox="0 0 24 24" className="mb-0.5 size-5" fill="currentColor" aria-hidden="true">
+            <path d="M14.2 1.8 5.1 13.2h5.7l-.8 9 8.9-12h-5.7l1-8.4Z" />
+          </svg>
+          <span className="text-[0.5rem] tracking-wide">{isChasing ? label : "LOCK"}</span>
+        </span>
+      </button>
+    </div>
+  );
+}
+
 function CameraTuningPanel() {
   const camHeight = useGameStore((s) => s.camHeight);
   const camAngle = useGameStore((s) => s.camAngle);
+  const camLookAhead = useGameStore((s) => s.camLookAhead);
+  const camCompositionOffset = useGameStore((s) => s.camCompositionOffset);
   const setCamHeight = useGameStore((s) => s.setCamHeight);
   const setCamAngle = useGameStore((s) => s.setCamAngle);
+  const setCamLookAhead = useGameStore((s) => s.setCamLookAhead);
+  const setCamCompositionOffset = useGameStore((s) => s.setCamCompositionOffset);
   const resetCamera = useGameStore((s) => s.resetCamera);
+  const ranges = GAME_CONFIG.camera.tuningRanges;
   const cameraYaw = useGameStore((s) => s.cameraYaw);
   const playerX = useGameStore((s) => s.playerX);
   const playerZ = useGameStore((s) => s.playerZ);
@@ -359,34 +417,38 @@ function CameraTuningPanel() {
 
   return (
     <div className="hud-card pointer-events-auto absolute top-24 left-4 w-[min(14rem,88vw)] space-y-3 p-3.5 sm:top-28 sm:left-6">
-      <div className="font-display text-[0.72rem] font-semibold tracking-[0.14em] text-sprout-ink uppercase">
+      <div className="font-display text-[0.72rem] font-semibold tracking-[0.14em] text-catchy-ink uppercase">
         Camera tuning
       </div>
       <Slider
-        label="Height / zoom"
+        label="Distance / zoom"
         value={camHeight}
-        min={14}
-        max={32}
-        step={0.5}
+        {...ranges.distance}
         unit=""
         onChange={setCamHeight}
       />
+      <Slider label="Angle" value={camAngle} {...ranges.angle} unit="°" onChange={setCamAngle} />
       <Slider
-        label="Angle"
-        value={camAngle}
-        min={10}
-        max={75}
-        step={1}
-        unit="°"
-        onChange={setCamAngle}
+        label="Look ahead"
+        value={camLookAhead}
+        {...ranges.lookAhead}
+        unit=" u"
+        onChange={setCamLookAhead}
+      />
+      <Slider
+        label="Composition offset"
+        value={camCompositionOffset}
+        {...ranges.compositionOffset}
+        unit="%"
+        onChange={setCamCompositionOffset}
       />
       <button
         onClick={resetCamera}
-        className="w-full rounded-xl border border-sprout-ink/15 bg-white/70 px-3 py-1.5 font-display text-xs text-sprout-ink transition-colors hover:bg-white"
+        className="w-full rounded-xl border border-catchy-ink/15 bg-white/70 px-3 py-1.5 font-display text-xs text-catchy-ink transition-colors hover:bg-white"
       >
-        Reset camera ({CAM_DEFAULTS.height.toFixed(1)} / {CAM_DEFAULTS.angle}°)
+        Reset camera defaults
       </button>
-      <div className="border-t border-sprout-ink/10 pt-2 font-body text-[0.64rem] leading-relaxed text-sprout-ink-soft">
+      <div className="border-t border-catchy-ink/10 pt-2 font-body text-[0.64rem] leading-relaxed text-catchy-ink-soft">
         <div>Camera yaw: {cameraYaw.toFixed(2)} rad</div>
         <div>
           Player: {playerX.toFixed(1)}, {playerZ.toFixed(1)} · {playerSpeed.toFixed(1)} u/s
@@ -425,7 +487,10 @@ function FirstSessionOnboarding({ gameReady }: { gameReady: boolean }) {
       if (MOVEMENT_KEYS.has(event.code)) finish();
     };
     const onPointerDown = (event: PointerEvent) => {
-      if (event.target instanceof Element && event.target.closest(".touch-controls, .dash-control"))
+      if (
+        event.target instanceof Element &&
+        event.target.closest(".touch-controls, .action-controls, .ability-controls")
+      )
         finish();
     };
     const finish = () => {
@@ -461,11 +526,11 @@ function FirstSessionOnboarding({ gameReady }: { gameReady: boolean }) {
   return (
     <div className="first-session-onboarding absolute left-1/2 -translate-x-1/2">
       <div className="hud-card px-4 py-2.5 text-center">
-        <div className="font-display text-sm font-semibold text-sprout-ink">Ready to chase?</div>
-        <div className="mt-0.5 text-xs text-sprout-ink-soft">
+        <div className="font-display text-sm font-semibold text-catchy-ink">Ready to chase?</div>
+        <div className="mt-0.5 text-xs text-catchy-ink-soft">
           {isCoarsePointer
-            ? "Move with the joystick · Dash button"
-            : "Move with WASD or arrows · Shift to dash"}
+            ? "Left stick moves · Right stick turns, jumps and slides · Dash / boost buttons"
+            : "WASD moves · ← / → turns · ↑ jump · ↓ slide · Shift dash · E boost"}
         </div>
       </div>
     </div>

@@ -1,34 +1,32 @@
-import { useFrame, useThree } from "@react-three/fiber";
+import { useFrame } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
-import * as THREE from "three";
 import {
   AGENTS,
   PLAYER,
   RUNNERS,
+  WORLD_STATE,
   respawn,
   selectTarget,
-  startPlayerDash,
   step,
-} from "@/lib/sprout/agents";
-import { GAME_CONFIG } from "@/lib/sprout/config";
-import { consumePlayerDashRequest, inputVector } from "@/lib/sprout/input";
+} from "@/lib/catchy/agents";
+import { GAME_CONFIG } from "@/lib/catchy/config";
+import { cameraTurnInput, consumePlayerActionCommands, inputVector } from "@/lib/catchy/input";
 import { useGameStore } from "@/store/gameStore";
 
-/** Camera-relative controls, deterministic player-only capture, and HUD telemetry. */
+const FIXED_DT = 1 / GAME_CONFIG.simulation.tickHz;
+const MAX_FRAME_DELTA = FIXED_DT * GAME_CONFIG.simulation.maxCatchUpSteps;
+
+/** Fixed 60 Hz gameplay, camera-relative controls, capture flow and sparse HUD telemetry. */
 export function Director() {
-  const { camera } = useThree();
   const captureTimer = useRef(0);
   const targetId = useRef<string | null>(null);
   const telemetryAcc = useRef(0);
+  const accumulator = useRef(0);
   const lastRestartCount = useRef(useGameStore.getState().restartCount);
   const debugTelemetry = useRef(
     typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).get("debug") === "true",
   ).current;
-  const forward = useRef(new THREE.Vector3());
-  const right = useRef(new THREE.Vector3());
-  const direction = useRef(new THREE.Vector3());
-  const input = useRef({ x: 0, z: 0 });
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -42,121 +40,133 @@ export function Director() {
   }, []);
 
   useFrame((_, rawDelta) => {
-    const dt = Math.min(rawDelta, 0.05);
-    let state = useGameStore.getState();
-    if (state.restartCount !== lastRestartCount.current) {
-      lastRestartCount.current = state.restartCount;
-      captureTimer.current = 0;
-      targetId.current = null;
-      telemetryAcc.current = 0;
-    }
-    state.tick(dt);
-    state = useGameStore.getState();
-
-    const raw = inputVector();
-    if (raw) {
-      camera.getWorldDirection(forward.current);
-      forward.current.y = 0;
-      forward.current.normalize();
-      right.current.set(-forward.current.z, 0, forward.current.x);
-      input.current.x = right.current.x * raw.x - forward.current.x * raw.z;
-      input.current.z = right.current.z * raw.x - forward.current.z * raw.z;
-    }
-    const frameInput = raw ? input.current : null;
-    const dashRequested = consumePlayerDashRequest();
-    if (dashRequested && (state.state === "chase" || state.state === "nearby")) {
-      const dashDirection = frameInput ?? {
-        x: Math.sin(PLAYER.heading),
-        z: Math.cos(PLAYER.heading),
-      };
-      startPlayerDash(dashDirection);
-    }
-    const presentation = state.state === "capture" || state.state === "after";
-    step(
-      dt,
-      frameInput,
-      presentation || state.state === "timeup",
-      presentation || state.state === "timeup",
+    accumulator.current = Math.min(
+      accumulator.current + Math.max(0, Math.min(rawDelta, MAX_FRAME_DELTA)),
+      MAX_FRAME_DELTA,
     );
-    const dashStatus = useGameStore.getState().dashStatus;
-    if (dashStatus !== PLAYER.dashState) useGameStore.getState().setDashStatus(PLAYER.dashState);
-    let target = selectTarget(targetId.current, state.capture?.runnerId ?? null);
-    targetId.current = target?.agent.id ?? null;
 
-    if (presentation) {
-      captureTimer.current -= dt;
-      if (captureTimer.current <= 0) {
-        if (state.state === "capture") {
-          useGameStore.getState().enterAfter();
-          captureTimer.current = GAME_CONFIG.capturePresentation.afterSeconds;
+    let ticks = 0;
+    while (accumulator.current >= FIXED_DT && ticks < GAME_CONFIG.simulation.maxCatchUpSteps) {
+      accumulator.current -= FIXED_DT;
+      ticks++;
+
+      let state = useGameStore.getState();
+      if (state.restartCount !== lastRestartCount.current) {
+        lastRestartCount.current = state.restartCount;
+        captureTimer.current = 0;
+        targetId.current = null;
+        telemetryAcc.current = 0;
+      }
+
+      state.tick(FIXED_DT);
+      state = useGameStore.getState();
+      const input = inputVector();
+      const commands = consumePlayerActionCommands();
+      const presentation = state.state === "capture" || state.state === "after";
+      const roundEnded = state.state === "timeup";
+
+      step(
+        FIXED_DT,
+        input,
+        commands,
+        presentation || roundEnded,
+        presentation || roundEnded,
+        cameraTurnInput(),
+      );
+
+      const store = useGameStore.getState();
+      if (store.dashStatus !== PLAYER.dashState) store.setDashStatus(PLAYER.dashState);
+      if (store.speedBoostStatus !== PLAYER.boostState)
+        store.setSpeedBoostStatus(PLAYER.boostState);
+      if (store.boostCueId !== WORLD_STATE.boostCueId) store.setBoostCueId(WORLD_STATE.boostCueId);
+
+      let target = selectTarget(targetId.current, state.capture?.runnerId ?? null);
+      targetId.current = target?.agent.id ?? null;
+
+      if (presentation) {
+        captureTimer.current -= FIXED_DT;
+        if (captureTimer.current <= 0) {
+          if (state.state === "capture") {
+            useGameStore.getState().enterAfter();
+            captureTimer.current = GAME_CONFIG.capturePresentation.afterSeconds;
+          } else {
+            const snapshot = state.capture;
+            const capturedRunner =
+              snapshot && RUNNERS.find((runner) => runner.id === snapshot.runnerId);
+            if (capturedRunner) respawn(capturedRunner);
+            useGameStore.getState().finishCapture();
+            captureTimer.current = 0;
+            state = useGameStore.getState();
+            target = selectTarget(targetId.current);
+            targetId.current = target?.agent.id ?? null;
+          }
+        }
+      } else if (!roundEnded) {
+        if (target && target.dist <= GAME_CONFIG.captureDistance) {
+          useGameStore.getState().beginCapture({
+            runnerId: target.agent.id,
+            position: { x: target.agent.x, y: 0, z: target.agent.z },
+            capturedAt: performance.now(),
+          });
+          useGameStore.getState().addCatch();
+          captureTimer.current = GAME_CONFIG.capturePresentation.captureSeconds;
         } else {
-          const snapshot = state.capture;
-          const capturedRunner =
-            snapshot && RUNNERS.find((runner) => runner.id === snapshot.runnerId);
-          if (capturedRunner) respawn(capturedRunner);
-          useGameStore.getState().finishCapture();
-          captureTimer.current = 0;
-          state = useGameStore.getState();
-          target = selectTarget(targetId.current);
-          targetId.current = target?.agent.id ?? null;
+          const nextState = target && target.dist < GAME_CONFIG.nearbyDistance ? "nearby" : "chase";
+          if (nextState !== state.state) useGameStore.getState().setState(nextState);
         }
       }
-    } else if (state.state !== "timeup") {
-      if (target && target.dist <= GAME_CONFIG.captureDistance) {
-        // Snapshot the live runner before the capture presentation takes control.
-        useGameStore.getState().beginCapture({
-          runnerId: target.agent.id,
-          position: { x: target.agent.x, y: 0, z: target.agent.z },
-          capturedAt: performance.now(),
-        });
-        useGameStore.getState().addCatch();
-        captureTimer.current = GAME_CONFIG.capturePresentation.captureSeconds;
-      } else {
-        const nextState = target && target.dist < GAME_CONFIG.nearbyDistance ? "nearby" : "chase";
-        if (nextState !== state.state) useGameStore.getState().setState(nextState);
-      }
-    }
 
-    telemetryAcc.current += dt;
-    if (telemetryAcc.current >= 0.1) {
-      telemetryAcc.current = 0;
-      const latest = useGameStore.getState();
-      camera.getWorldDirection(forward.current);
-      forward.current.y = 0;
-      forward.current.normalize();
-      right.current.set(-forward.current.z, 0, forward.current.x).normalize();
-      let bearing = 0;
-      if (target) {
-        direction.current.set(target.agent.x - PLAYER.x, 0, target.agent.z - PLAYER.z).normalize();
-        bearing = Math.atan2(
-          direction.current.dot(right.current),
-          direction.current.dot(forward.current),
+      telemetryAcc.current += FIXED_DT;
+      if (telemetryAcc.current >= 0.1) {
+        telemetryAcc.current %= 0.1;
+        const latest = useGameStore.getState();
+        const cameraAnticipation = Math.max(
+          -GAME_CONFIG.camera.turnAnticipationMaxRadians,
+          Math.min(
+            GAME_CONFIG.camera.turnAnticipationMaxRadians,
+            PLAYER.turnRate * GAME_CONFIG.camera.turnAnticipationPerRadianPerSecond,
+          ),
         );
-      }
+        const viewYaw = WORLD_STATE.cameraYaw + cameraAnticipation;
+        const forwardX = Math.sin(viewYaw);
+        const forwardZ = Math.cos(viewYaw);
+        const rightX = Math.cos(viewYaw);
+        const rightZ = -Math.sin(viewYaw);
+        let bearing = 0;
+        if (target) {
+          const dx = target.agent.x - PLAYER.x;
+          const dz = target.agent.z - PLAYER.z;
+          const length = Math.hypot(dx, dz) || 1;
+          bearing = Math.atan2(
+            (dx * rightX + dz * rightZ) / length,
+            (dx * forwardX + dz * forwardZ) / length,
+          );
+        }
 
-      useGameStore.getState().setTelemetry({
-        distance: target?.dist ?? null,
-        bearing,
-        targetId: target?.agent.id ?? null,
-        cameraYaw: debugTelemetry
-          ? Math.atan2(forward.current.x, forward.current.z)
-          : latest.cameraYaw,
-        playerX: debugTelemetry ? PLAYER.x : latest.playerX,
-        playerZ: debugTelemetry ? PLAYER.z : latest.playerZ,
-        playerSpeed: debugTelemetry ? PLAYER.speed : latest.playerSpeed,
-        runners: debugTelemetry
-          ? AGENTS.slice(1).map((runner) => ({
-              id: runner.id,
-              state: runner.state === "respawning" ? "respawning" : "flee",
-              x: runner.x,
-              z: runner.z,
-              speed: runner.speed,
-              active: runner.hidden <= 0,
-            }))
-          : latest.runners,
-      });
+        useGameStore.getState().setTelemetry({
+          distance: target?.dist ?? null,
+          bearing,
+          targetId: target?.agent.id ?? null,
+          cameraYaw: WORLD_STATE.cameraYaw,
+          playerX: debugTelemetry ? PLAYER.x : latest.playerX,
+          playerZ: debugTelemetry ? PLAYER.z : latest.playerZ,
+          playerSpeed: debugTelemetry ? PLAYER.speed : latest.playerSpeed,
+          runners: debugTelemetry
+            ? AGENTS.slice(1).map((runner) => ({
+                id: runner.id,
+                state: runner.state === "respawning" ? "respawning" : "flee",
+                x: runner.x,
+                z: runner.z,
+                speed: runner.speed,
+                active: runner.hidden <= 0,
+              }))
+            : latest.runners,
+        });
+      }
     }
-  });
+
+    WORLD_STATE.renderAlpha = accumulator.current / FIXED_DT;
+  }, -1);
 
   return null;
 }

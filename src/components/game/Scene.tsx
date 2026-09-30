@@ -3,6 +3,7 @@ import { Lightformer } from "@react-three/drei";
 import { EnvironmentCapture } from "./EnvironmentCapture";
 import { Arena, SkyDome } from "./Arena";
 import { Props } from "./Prop";
+import { ArenaInteractions } from "./ArenaInteractions";
 import { Characters } from "./Characters";
 import { CaptureBurst, DashStreak, Dust, TargetBeacon } from "./Effects";
 import { FollowCamera } from "./FollowCamera";
@@ -50,6 +51,7 @@ export function Scene({ qualityTier }: { qualityTier: QualityTier }) {
       <Suspense fallback={null}>
         <Props />
       </Suspense>
+      <ArenaInteractions />
       <Characters />
       <Dust />
       <DashStreak />

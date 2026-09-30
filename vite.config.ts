@@ -10,7 +10,7 @@ import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 // React Three Fiber treats dashed props as nested paths ("data.tsd.source") and
 // crashes, so strip the attribute from 3D scene files.
 const stripTsdSourceFromR3F = {
-  name: "sprout:strip-tsd-source-r3f",
+  name: "catchy:strip-tsd-source-r3f",
   transform(code: string, id: string) {
     if (!/\/src\/components\/game\//.test(id) || !code.includes("data-tsd-source")) return null;
     return {

@@ -1,8 +1,8 @@
 import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { AGENTS, PLAYER, RUNNERS } from "@/lib/sprout/agents";
-import { GAME_CONFIG } from "@/lib/sprout/config";
+import { AGENTS, PLAYER, RUNNERS } from "@/lib/catchy/agents";
+import { GAME_CONFIG } from "@/lib/catchy/config";
 import { useGameStore } from "@/store/gameStore";
 
 const PARTICLE_GEOMETRY = new THREE.SphereGeometry(1, 8, 6);

@@ -2,7 +2,8 @@ import { useEffect } from "react";
 import { useGameStore } from "@/store/gameStore";
 import { GAME_CONFIG } from "./config";
 
-type Cue = "nearby" | "catch" | "score" | "countdown" | "roundEnd" | "button" | "restart" | "dash";
+type Cue =
+  "nearby" | "catch" | "score" | "countdown" | "roundEnd" | "button" | "restart" | "dash" | "boost";
 
 type Note = {
   frequency: number;
@@ -56,6 +57,13 @@ const CUES: Record<Cue, { cooldown: number; notes: Note[] }> = {
     notes: [
       { frequency: 310, duration: 0.07, volume: 0.1, wave: "triangle" },
       { frequency: 740, duration: 0.1, delay: 0.025, volume: 0.075, wave: "sine" },
+    ],
+  },
+  boost: {
+    cooldown: 220,
+    notes: [
+      { frequency: 470, duration: 0.07, volume: 0.09, wave: "triangle" },
+      { frequency: 680, duration: 0.11, delay: 0.035, volume: 0.08, wave: "sine" },
     ],
   },
 };
@@ -174,7 +182,11 @@ export function GameFeedback() {
     const onClick = (event: MouseEvent) => {
       if (!(event.target instanceof Element)) return;
       const button = event.target.closest("button, [role='button']");
-      if (!button || button.matches("[data-sound='restart'], [data-sound='dash']")) return;
+      if (
+        !button ||
+        button.matches("[data-sound='restart'], [data-sound='dash'], [data-sound='boost']")
+      )
+        return;
       playGameSound("button");
     };
 
@@ -207,6 +219,10 @@ export function GameFeedback() {
       if (current.dashStatus === "active" && previous.dashStatus !== "active") {
         playGameSound("dash");
         vibrateGame(GAME_CONFIG.player.dash.hapticMs);
+      }
+      if (current.boostCueId > previous.boostCueId) {
+        playGameSound("boost");
+        vibrateGame(GAME_CONFIG.player.speedBoost.hapticMs);
       }
       if (current.restartCount > previous.restartCount) playGameSound("restart");
     });

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { joystick } from "@/lib/sprout/input";
+import { joystick, setActionJoystick } from "@/lib/catchy/input";
 
-export function Joystick() {
+export function Joystick({ side = "movement" }: { side?: "movement" | "action" }) {
   const base = useRef<HTMLDivElement>(null);
   const layout = useRef<{ centerX: number; centerY: number; max: number } | null>(null);
   const [knob, setKnob] = useState({ x: 0, y: 0 });
   const pointer = useRef<number | null>(null);
+  const isActionStick = side === "action";
 
   const update = (clientX: number, clientY: number) => {
     const el = base.current;
@@ -30,20 +31,31 @@ export function Joystick() {
     setKnob({ x: dx, y: dy });
     const n = Math.max(Math.hypot(dx, dy), 0.001);
     const mag = Math.min(d / bounds.max, 1);
-    joystick.x = (dx / n) * mag * (d > 0 ? 1 : 0);
-    joystick.z = (dy / n) * mag * (d > 0 ? 1 : 0);
-    joystick.active = true;
+    const x = (dx / n) * mag * (d > 0 ? 1 : 0);
+    const y = (dy / n) * mag * (d > 0 ? 1 : 0);
+    if (isActionStick) setActionJoystick(x, y, true);
+    else {
+      joystick.x = x;
+      joystick.z = y;
+      joystick.active = true;
+    }
   };
 
-  const release = useCallback((pointerId?: number) => {
-    if (pointerId !== undefined && pointer.current !== pointerId) return;
-    pointer.current = null;
-    layout.current = null;
-    setKnob({ x: 0, y: 0 });
-    joystick.x = 0;
-    joystick.z = 0;
-    joystick.active = false;
-  }, []);
+  const release = useCallback(
+    (pointerId?: number) => {
+      if (pointerId !== undefined && pointer.current !== pointerId) return;
+      pointer.current = null;
+      layout.current = null;
+      setKnob({ x: 0, y: 0 });
+      if (isActionStick) setActionJoystick(0, 0, false);
+      else {
+        joystick.x = 0;
+        joystick.z = 0;
+        joystick.active = false;
+      }
+    },
+    [isActionStick],
+  );
 
   useEffect(() => {
     const clear = () => release();
@@ -78,7 +90,7 @@ export function Joystick() {
       }}
       onPointerCancel={(e) => release(e.pointerId)}
       onLostPointerCapture={(e) => release(e.pointerId)}
-      className="pointer-events-auto relative size-[var(--joystick-size)] touch-none rounded-full select-none"
+      className={`pointer-events-auto relative touch-stick size-[var(--joystick-size)] touch-none rounded-full select-none ${isActionStick ? "touch-stick-action" : "touch-stick-movement"}`}
       style={{
         background:
           "radial-gradient(circle at 50% 42%, oklch(1 0 0 / 0.42), oklch(1 0 0 / 0.14) 62%, oklch(1 0 0 / 0.06))",
@@ -92,10 +104,18 @@ export function Joystick() {
         className="absolute top-1/2 left-1/2 size-[42%] -translate-x-1/2 -translate-y-1/2 rounded-full transition-transform duration-75"
         style={{
           transform: `translate(calc(-50% + ${knob.x}px), calc(-50% + ${knob.y}px))`,
-          background: "radial-gradient(circle at 40% 32%, oklch(0.99 0.01 95), oklch(0.9 0.05 80))",
+          background: isActionStick
+            ? "radial-gradient(circle at 40% 32%, oklch(0.95 0.06 205), oklch(0.72 0.14 220))"
+            : "radial-gradient(circle at 40% 32%, oklch(0.99 0.01 95), oklch(0.9 0.05 80))",
           boxShadow: "0 6px 14px -4px oklch(0.34 0.07 152 / 0.55)",
         }}
       />
+      {isActionStick && (
+        <>
+          <span className="action-stick-hint action-stick-hint-up">JUMP</span>
+          <span className="action-stick-hint action-stick-hint-down">SLIDE</span>
+        </>
+      )}
     </div>
   );
 }

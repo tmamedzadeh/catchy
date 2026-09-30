@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { ARENA, GAME_CONFIG } from "@/lib/sprout/config";
-import { createTerrainTexture } from "@/lib/sprout/textures";
+import { ARENA, GAME_CONFIG } from "@/lib/catchy/config";
+import { createTerrainTexture } from "@/lib/catchy/textures";
 
 const SAND = "#edb75f";
 const SAND_DARK = "#d88f43";

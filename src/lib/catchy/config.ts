@@ -1,9 +1,14 @@
 /** Shared world, collision, and movement settings for Catchy. */
 export const GAME_CONFIG = {
   arenaRadius: 30,
+  simulation: {
+    tickHz: 60,
+    maxCatchUpSteps: 6,
+  },
   player: {
     radius: 0.55,
     speed: 9.2,
+    facingRotationSpeed: 18,
     spawn: { x: -4, z: 12 },
     dash: {
       durationSeconds: 0.18,
@@ -13,6 +18,23 @@ export const GAME_CONFIG = {
       cameraFovIncrease: 5,
       trailSeconds: 0.22,
       hapticMs: 18,
+    },
+    speedBoost: {
+      durationSeconds: 5,
+      cooldownSeconds: 30,
+      multiplier: 1.5,
+      hapticMs: 16,
+    },
+    jump: {
+      durationSeconds: 0.48,
+      height: 2.05,
+      groundedSeconds: 0.12,
+    },
+    slide: {
+      durationSeconds: 0.7,
+      movementMultiplier: 1.18,
+      bodyHeightMultiplier: 0.62,
+      bodyLowering: 0.16,
     },
   },
   npc: {
@@ -37,6 +59,54 @@ export const GAME_CONFIG = {
   captureDistance: 2,
   nearbyDistance: 9,
   targetSwitchRatio: 0.78,
+  slowZone: {
+    movementMultiplier: 0.55,
+    recoverySeconds: 0.38,
+  },
+  elasticBounce: {
+    restitution: 0.72,
+    outwardImpulse: 2.1,
+  },
+  barrier: {
+    openSeconds: 5,
+    closedSeconds: 5,
+  },
+  camera: {
+    distance: 22,
+    angle: 24,
+    lookAhead: 5,
+    compositionOffset: 0.15,
+    tuningRanges: {
+      distance: { min: 14, max: 32, step: 0.5 },
+      angle: { min: 10, max: 75, step: 1 },
+      lookAhead: { min: 0, max: 5, step: 0.1 },
+      compositionOffset: { min: -0.2, max: 0.25, step: 0.01 },
+    },
+    yawSpeed: 2.25,
+    turnAnticipationPerRadianPerSecond: 0.045,
+    turnAnticipationMaxRadians: 0.16,
+  },
+  interactiveObjects: {
+    speedPad: {
+      x: -16,
+      z: 12,
+      rotation: -0.45,
+      scale: 1,
+      triggerRadius: 2.15,
+      pulseSeconds: 0.42,
+    },
+    slowZone: { x: 5, z: -20, rotation: 0, scale: 1, triggerRadius: 3.3 },
+    elasticBounce: { x: -19, z: 3, rotation: 0, scale: 1, collisionRadius: 1.35 },
+    temporaryBarrier: {
+      x: 11.5,
+      z: 0.8,
+      rotation: 0,
+      scale: 1,
+      width: 0.78,
+      depth: 4.25,
+      height: 1.55,
+    },
+  },
   capturePresentation: {
     captureSeconds: 0.43,
     afterSeconds: 0.31,
@@ -62,12 +132,21 @@ export type CollisionShape =
 
 /** A single map descriptor drives both GLB placement and its collider. */
 export type MapObject = {
+  id?: string;
+  kind?: "prop" | "speedPad" | "slowZone" | "elasticBounce" | "temporaryBarrier";
   model: string;
   position: { x: number; z: number };
   rotation: number;
   scale: number;
   y: number;
   collision: CollisionShape;
+};
+
+export type InteractiveMapObject = MapObject & {
+  id: string;
+  kind: "speedPad" | "slowZone" | "elasticBounce" | "temporaryBarrier";
+  model: "";
+  triggerRadius?: number;
 };
 
 export type Obstacle = MapObject;
@@ -83,7 +162,15 @@ function add(
   y: number,
   collision: CollisionShape,
 ) {
-  const object: MapObject = { model, position: { x, z }, rotation, scale, y, collision };
+  const object: MapObject = {
+    kind: "prop",
+    model,
+    position: { x, z },
+    rotation,
+    scale,
+    y,
+    collision,
+  };
   objects.push(object);
 }
 
@@ -212,3 +299,72 @@ for (let i = 0; i < 14; i++) {
 export const PROPS: MapObject[] = objects;
 export const OBSTACLES: Obstacle[] = objects;
 export const PROP_MODELS = Array.from(new Set(PROPS.map((object) => object.model)));
+
+/** Interactive world descriptors share the same position, transform and collision data model as props. */
+export const INTERACTIVE_OBJECTS: InteractiveMapObject[] = [
+  {
+    id: "speed-pad",
+    kind: "speedPad",
+    model: "",
+    position: {
+      x: GAME_CONFIG.interactiveObjects.speedPad.x,
+      z: GAME_CONFIG.interactiveObjects.speedPad.z,
+    },
+    rotation: GAME_CONFIG.interactiveObjects.speedPad.rotation,
+    scale: GAME_CONFIG.interactiveObjects.speedPad.scale,
+    y: 0.035,
+    collision: { type: "circle", radius: GAME_CONFIG.interactiveObjects.speedPad.triggerRadius },
+    triggerRadius: GAME_CONFIG.interactiveObjects.speedPad.triggerRadius,
+  },
+  {
+    id: "slow-zone",
+    kind: "slowZone",
+    model: "",
+    position: {
+      x: GAME_CONFIG.interactiveObjects.slowZone.x,
+      z: GAME_CONFIG.interactiveObjects.slowZone.z,
+    },
+    rotation: GAME_CONFIG.interactiveObjects.slowZone.rotation,
+    scale: GAME_CONFIG.interactiveObjects.slowZone.scale,
+    y: 0.018,
+    collision: { type: "circle", radius: GAME_CONFIG.interactiveObjects.slowZone.triggerRadius },
+    triggerRadius: GAME_CONFIG.interactiveObjects.slowZone.triggerRadius,
+  },
+  {
+    id: "elastic-bounce",
+    kind: "elasticBounce",
+    model: "",
+    position: {
+      x: GAME_CONFIG.interactiveObjects.elasticBounce.x,
+      z: GAME_CONFIG.interactiveObjects.elasticBounce.z,
+    },
+    rotation: GAME_CONFIG.interactiveObjects.elasticBounce.rotation,
+    scale: GAME_CONFIG.interactiveObjects.elasticBounce.scale,
+    y:
+      GAME_CONFIG.interactiveObjects.elasticBounce.collisionRadius *
+      GAME_CONFIG.interactiveObjects.elasticBounce.scale,
+    collision: {
+      type: "circle",
+      radius: GAME_CONFIG.interactiveObjects.elasticBounce.collisionRadius,
+    },
+  },
+  {
+    id: "temporary-barrier",
+    kind: "temporaryBarrier",
+    model: "",
+    position: {
+      x: GAME_CONFIG.interactiveObjects.temporaryBarrier.x,
+      z: GAME_CONFIG.interactiveObjects.temporaryBarrier.z,
+    },
+    rotation: GAME_CONFIG.interactiveObjects.temporaryBarrier.rotation,
+    scale: GAME_CONFIG.interactiveObjects.temporaryBarrier.scale,
+    y: 0,
+    collision: {
+      type: "box",
+      width: GAME_CONFIG.interactiveObjects.temporaryBarrier.width,
+      depth: GAME_CONFIG.interactiveObjects.temporaryBarrier.depth,
+    },
+  },
+];
+
+export const WORLD_OBJECTS: MapObject[] = [...PROPS, ...INTERACTIVE_OBJECTS];
