@@ -126,8 +126,8 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
         />
       )}
 
-      {/* Catchy branding and round timer */}
-      <div className="hud-brand-timer absolute flex items-center gap-2 sm:gap-3">
+      {/* Catchy branding */}
+      <div className="hud-brand absolute flex items-center">
         <div className="hud-card flex items-center gap-2.5 px-3 py-2 sm:px-4 sm:py-2.5">
           <div className="leading-none">
             <div className="font-display text-base font-semibold text-catchy-ink sm:text-lg">
@@ -135,67 +135,80 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
             </div>
           </div>
         </div>
-        <div
-          className="hud-card flex items-center gap-1.5 px-3 py-2 sm:px-3.5 sm:py-2.5"
+      </div>
+
+      <div className="hud-card hud-game-status absolute grid grid-cols-[minmax(0,0.82fr)_minmax(0,1.2fr)_minmax(0,1.25fr)] items-center gap-1.5 px-2.5 py-2 sm:gap-3 sm:px-3.5 sm:py-2.5">
+        <section className="min-w-0" aria-label="Caught score">
+          <div className="font-display text-[0.56rem] tracking-[0.12em] text-catchy-ink-soft uppercase sm:text-[0.62rem] sm:tracking-[0.16em]">
+            Caught
+          </div>
+          <div
+            key={caught}
+            className="font-display text-xl leading-none text-catchy-accent-2 tabular-nums sm:text-2xl"
+            style={{ animation: "catchy-pop 320ms ease-out" }}
+          >
+            {String(caught).padStart(2, "0")}
+          </div>
+        </section>
+
+        <section
+          className="min-w-0"
+          aria-label="Round time"
           style={time < 10 ? { animation: "catchy-pulse 1s infinite" } : undefined}
         >
-          <span className="text-catchy-accent-2">{ClockIcon}</span>
-          <span className="font-display text-lg tabular-nums text-catchy-ink sm:text-xl">
-            {fmt(time)}
-          </span>
-        </div>
-      </div>
+          <div className="font-display text-[0.56rem] tracking-[0.12em] text-catchy-ink-soft uppercase sm:text-[0.62rem] sm:tracking-[0.16em]">
+            Time
+          </div>
+          <div className="flex items-center gap-1 font-display text-sm text-catchy-ink tabular-nums sm:gap-1.5 sm:text-base">
+            <span className="shrink-0 text-catchy-accent-2">{ClockIcon}</span>
+            <span>{fmt(time)}</span>
+          </div>
+        </section>
 
-      <div className="hud-card hud-score absolute px-3.5 py-2 text-right sm:px-4 sm:py-2.5">
-        <div className="font-display text-[0.6rem] tracking-[0.18em] text-catchy-ink-soft uppercase sm:text-[0.65rem]">
-          Caught
-        </div>
-        <div
-          key={caught}
-          className="font-display text-2xl leading-none text-catchy-accent-2 tabular-nums sm:text-3xl"
-          style={{ animation: "catchy-pop 320ms ease-out" }}
+        {/* Camera-relative nearest-runner finder; neutral when all runners are unavailable. */}
+        <section
+          className="min-w-0"
+          aria-label={targetId ? "Target direction and distance" : "No target"}
         >
-          {String(caught).padStart(2, "0")}
-        </div>
-      </div>
-
-      {/* Camera-relative nearest-runner finder; neutral when all runners are unavailable. */}
-      <div className="hud-card hud-target-finder absolute top-1/2 flex -translate-y-1/2 flex-col items-center gap-1.5 px-3 py-3 sm:px-4">
-        <div className="font-display text-[0.58rem] tracking-[0.16em] text-catchy-ink-soft uppercase sm:text-[0.65rem]">
-          {targetId ? "Target" : "No target"}
-        </div>
-        <div
-          className="relative grid size-14 place-items-center rounded-full sm:size-16"
-          style={{
-            background: "conic-gradient(from 0deg, oklch(0.95 0.04 80), oklch(0.99 0.01 95))",
-            boxShadow: nearby
-              ? "inset 0 0 0 2px oklch(1 0 0 / 0.8), 0 0 0 3px oklch(0.72 0.19 45 / 0.22), 0 0 22px oklch(0.72 0.19 45 / 0.32)"
-              : "inset 0 0 0 2px oklch(1 0 0 / 0.8)",
-          }}
-        >
-          {targetId ? (
-            <svg
-              viewBox="0 0 24 24"
-              className="size-8 transition-transform duration-100 sm:size-9"
-              style={{ transform: `rotate(${bearing}rad)` }}
-              fill="currentColor"
-              aria-label="Direction to nearest runner"
+          <div className="font-display text-[0.56rem] tracking-[0.12em] text-catchy-ink-soft uppercase sm:text-[0.62rem] sm:tracking-[0.16em]">
+            {targetId ? "Target" : "No target"}
+          </div>
+          <div className="flex items-center gap-1 sm:gap-1.5">
+            <div
+              className="relative grid size-6 shrink-0 place-items-center rounded-full sm:size-7"
+              style={{
+                background: "conic-gradient(from 0deg, oklch(0.95 0.04 80), oklch(0.99 0.01 95))",
+                boxShadow: nearby
+                  ? "inset 0 0 0 1px oklch(1 0 0 / 0.8), 0 0 0 2px oklch(0.72 0.19 45 / 0.18), 0 0 10px oklch(0.72 0.19 45 / 0.24)"
+                  : "inset 0 0 0 1px oklch(1 0 0 / 0.8)",
+              }}
             >
-              <path
-                d="M12 3.2 18.4 19 12 15.4 5.6 19 12 3.2Z"
-                className={nearby ? "text-catchy-lime" : "text-catchy-accent-2"}
-                style={{ filter: "drop-shadow(0 1px 2px oklch(0.34 0.07 152 / 0.35))" }}
-              />
-            </svg>
-          ) : (
-            <span className="font-display text-2xl text-catchy-ink-soft">·</span>
-          )}
-        </div>
-        <div className="font-display text-base text-catchy-ink tabular-nums sm:text-lg">
-          {distance === null ? "—" : `${Math.round(distance)} m`}
-        </div>
+              {targetId ? (
+                <svg
+                  viewBox="0 0 24 24"
+                  className="size-4 transition-transform duration-100 sm:size-[1.125rem]"
+                  style={{ transform: "rotate(" + bearing + "rad)" }}
+                  fill="currentColor"
+                  aria-label="Direction to nearest runner"
+                >
+                  <path
+                    d="M12 3.2 18.4 19 12 15.4 5.6 19 12 3.2Z"
+                    className={nearby ? "text-catchy-lime" : "text-catchy-accent-2"}
+                    style={{ filter: "drop-shadow(0 1px 2px oklch(0.34 0.07 152 / 0.35))" }}
+                  />
+                </svg>
+              ) : (
+                <span className="font-display text-base leading-none text-catchy-ink-soft">
+                  {"\u2022"}
+                </span>
+              )}
+            </div>
+            <div className="whitespace-nowrap font-display text-sm text-catchy-ink tabular-nums sm:text-base">
+              {distance === null ? "\u2014" : String(Math.round(distance)) + " m"}
+            </div>
+          </div>
+        </section>
       </div>
-
       <div className="hud-callouts absolute left-1/2 flex -translate-x-1/2 flex-col items-center gap-2">
         {state === "nearby" && (
           <div

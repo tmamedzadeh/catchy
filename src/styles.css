@@ -234,18 +234,16 @@
   display: none;
 }
 
-.hud-brand-timer {
+.hud-brand {
   top: calc(1rem + env(safe-area-inset-top, 0px));
   left: calc(1rem + env(safe-area-inset-left, 0px));
 }
 
-.hud-score {
+.hud-game-status {
   top: calc(1rem + env(safe-area-inset-top, 0px));
-  right: calc(1rem + env(safe-area-inset-right, 0px));
-}
-
-.hud-target-finder {
-  right: max(1rem, calc(env(safe-area-inset-right, 0px) + 0.75rem));
+  right: calc(0.75rem + env(safe-area-inset-right, 0px));
+  width: min(20rem, calc(100vw - 2rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
+  min-height: 4.5rem;
 }
 
 .hud-callouts {
@@ -533,21 +531,23 @@
     --action-joystick-size: 5.5rem;
     --hud-radius: 1rem;
   }
+
+  .hud-game-status {
+    top: calc(0.75rem + env(safe-area-inset-top, 0px));
+    width: min(16rem, calc(100vw - 6.5rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
+    min-height: 4rem;
+  }
 }
 
 @media (min-width: 640px) {
-  .hud-brand-timer {
+  .hud-brand {
     top: calc(1.5rem + env(safe-area-inset-top, 0px));
     left: calc(1.5rem + env(safe-area-inset-left, 0px));
   }
 
-  .hud-score {
+  .hud-game-status {
     top: calc(1.5rem + env(safe-area-inset-top, 0px));
     right: calc(1.5rem + env(safe-area-inset-right, 0px));
-  }
-
-  .hud-target-finder {
-    right: max(1.5rem, calc(env(safe-area-inset-right, 0px) + 1.25rem));
   }
 
   .hud-callouts {
