@@ -138,19 +138,19 @@ export function Character({ index }: { index: number }) {
   const ring = useRef<THREE.Mesh>(null);
 
   const skinMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: p.skin, roughness: 0.75 }),
+    () => new THREE.MeshStandardMaterial({ color: p.skin, roughness: 0.58 }),
     [p.skin],
   );
   const shirtMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: p.shirt, roughness: 0.6 }),
+    () => new THREE.MeshStandardMaterial({ color: p.shirt, roughness: 0.42, envMapIntensity: 0.9 }),
     [p.shirt],
   );
   const pantsMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: p.pants, roughness: 0.7 }),
+    () => new THREE.MeshStandardMaterial({ color: p.pants, roughness: 0.58 }),
     [p.pants],
   );
   const shoeMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: p.shoes, roughness: 0.55 }),
+    () => new THREE.MeshStandardMaterial({ color: p.shoes, roughness: 0.36 }),
     [p.shoes],
   );
   const eyeMat = useMemo(
@@ -229,7 +229,7 @@ export function Character({ index }: { index: number }) {
       {/* selection / contact ring */}
       {highlight && (
         <mesh ref={ring} rotation-x={-Math.PI / 2} position={[0, 0.09, 0]}>
-          <ringGeometry args={[0.58, 0.74, 28]} />
+          <ringGeometry args={[0.72, 0.92, 28]} />
           <meshBasicMaterial
             color={isPlayer ? "#38e6ff" : p.accent}
             transparent
@@ -240,11 +240,11 @@ export function Character({ index }: { index: number }) {
       )}
       {/* soft contact shadow */}
       <mesh rotation-x={-Math.PI / 2} position={[0, 0.08, 0]}>
-        <circleGeometry args={[0.55, 20]} />
-        <meshBasicMaterial color="#5b4326" transparent opacity={0.28} />
+        <circleGeometry args={[0.72, 20]} />
+        <meshBasicMaterial color="#5b4326" transparent opacity={0.36} depthWrite={false} />
       </mesh>
 
-      <group ref={body} position={[0, 0, 0]} scale={p.build * 1.5}>
+      <group ref={body} position={[0, 0, 0]} scale={p.build * 1.9}>
         {/* legs */}
         <group ref={legL} position={[0.13, 0.62, 0]}>
           <mesh position={[0, -0.24, 0]} material={pantsMat} castShadow>
@@ -270,10 +270,18 @@ export function Character({ index }: { index: number }) {
         <mesh position={[0, 0.74, 0]} material={pantsMat} castShadow>
           <capsuleGeometry args={[0.235, 0.08, 6, 14]} />
         </mesh>
-        {/* accent stripe */}
-        <mesh position={[0, 0.96, 0.2]} rotation-x={0.1}>
-          <boxGeometry args={[0.16, 0.34, 0.1]} />
+        {/* bold outfit panel, collar and belt improve readability from the game camera */}
+        <mesh position={[0, 0.98, 0.225]} rotation-x={0.1} castShadow>
+          <boxGeometry args={[0.19, 0.36, 0.075]} />
           <meshStandardMaterial color={p.accent} roughness={0.5} />
+        </mesh>
+        <mesh position={[0, 1.2, 0.17]} rotation-x={0.45} castShadow>
+          <torusGeometry args={[0.17, 0.045, 8, 18, Math.PI]} />
+          <meshStandardMaterial color={p.accent} roughness={0.38} />
+        </mesh>
+        <mesh position={[0, 0.78, 0.18]} castShadow>
+          <boxGeometry args={[0.43, 0.07, 0.08]} />
+          <meshStandardMaterial color={p.shoes} roughness={0.42} />
         </mesh>
 
         {/* arms */}
@@ -311,6 +319,17 @@ export function Character({ index }: { index: number }) {
               <sphereGeometry args={[0.042, 12, 10]} />
             </mesh>
           ))}
+          {/* eye highlights and nose remain readable from the elevated camera */}
+          {[-0.1, 0.1].map((x) => (
+            <mesh key={`eye-glint-${x}`} position={[x - 0.012, 0.049, 0.273]}>
+              <sphereGeometry args={[0.012, 8, 6]} />
+              <meshBasicMaterial color="#fff9e9" />
+            </mesh>
+          ))}
+          <mesh position={[0, -0.025, 0.276]} castShadow>
+            <sphereGeometry args={[0.035, 10, 8]} />
+            <meshStandardMaterial color={p.skin} roughness={0.52} />
+          </mesh>
           {/* brows */}
           {[-0.1, 0.1].map((x) => (
             <mesh key={`b${x}`} position={[x, 0.12, 0.24]} rotation-z={x > 0 ? -0.18 : 0.18}>
@@ -332,6 +351,11 @@ export function Character({ index }: { index: number }) {
           ))}
           <Hair p={p} />
         </group>
+        {/* compact backpack gives the player and runners a stronger running silhouette */}
+        <mesh position={[0, 1.02, -0.245]} scale={[0.78, 1, 0.5]} castShadow>
+          <capsuleGeometry args={[0.2, 0.28, 8, 14]} />
+          <meshStandardMaterial color={p.accent} roughness={0.48} />
+        </mesh>
       </group>
     </group>
   );
