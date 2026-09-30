@@ -204,5 +204,5 @@ function integrate(a: Agent, ax: number, az: number, maxSpeed: number, dt: numbe
     while (diff < -Math.PI) diff += Math.PI * 2;
     a.heading += diff * (1 - Math.exp(-10 * dt));
   }
-  a.phase += a.speed * dt * 1.5;
+  a.phase += a.speed * dt * 0.85;
 }
