@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useGameStore } from "@/store/gameStore";
 import { GAME_CONFIG } from "./config";
 
-type Cue =
+export type Cue =
   | "nearby"
   | "catch"
   | "score"
@@ -100,6 +100,75 @@ const lastPlayed = new Map<Cue, number>();
 const lastVibrated = new Map<Cue, number>();
 const MAX_ACTIVE_VOICES = 6;
 let lastVibrationAt = -Infinity;
+
+export type FeedbackTransition = Pick<
+  ReturnType<typeof useGameStore.getState>,
+  | "state"
+  | "caught"
+  | "time"
+  | "dashStatus"
+  | "speedBoostStatus"
+  | "boostCueId"
+  | "interactionCueId"
+  | "interactionCueKind"
+  | "restartCount"
+>;
+
+export type FeedbackSink = {
+  sound: (cue: Cue) => void;
+  vibrate: (pattern: number | number[], cue: Cue) => void;
+};
+
+/** Translate state transitions into one centralized audio/haptic event each. */
+export function dispatchFeedbackTransition(
+  current: FeedbackTransition,
+  previous: FeedbackTransition,
+  sink: FeedbackSink,
+  deferScore: () => void,
+) {
+  if (current.state === "nearby" && previous.state !== "nearby") sink.sound("nearby");
+  if (current.caught > previous.caught) {
+    sink.sound("catch");
+    deferScore();
+    sink.vibrate(24, "catch");
+  }
+
+  const previousSecond = Math.ceil(previous.time);
+  const currentSecond = Math.ceil(current.time);
+  if (currentSecond !== previousSecond && currentSecond <= 10 && currentSecond > 0) {
+    sink.sound("countdown");
+    if (currentSecond <= 3) sink.vibrate(12, "countdown");
+  }
+
+  if (current.state === "timeup" && previous.state !== "timeup") {
+    sink.sound("roundEnd");
+    sink.vibrate([18, 22, 18], "roundEnd");
+  }
+  if (current.dashStatus === "active" && previous.dashStatus !== "active") {
+    sink.sound("dash");
+    sink.vibrate(GAME_CONFIG.player.dash.hapticMs, "dash");
+  }
+  const speedPadTriggered =
+    current.interactionCueId > previous.interactionCueId &&
+    current.interactionCueKind === "speedPad";
+  if (current.boostCueId > previous.boostCueId && !speedPadTriggered) {
+    sink.sound("boost");
+    sink.vibrate(GAME_CONFIG.player.speedBoost.hapticMs, "boost");
+  }
+  if (current.interactionCueId > previous.interactionCueId) {
+    if (current.interactionCueKind === "speedPad") {
+      sink.sound("boost");
+      sink.vibrate(GAME_CONFIG.player.speedBoost.hapticMs, "boost");
+    } else if (current.interactionCueKind === "slowZone") {
+      sink.sound("slowDown");
+      sink.vibrate(12, "slowDown");
+    } else if (current.interactionCueKind === "elasticBounce") {
+      sink.sound("bounce");
+      sink.vibrate(24, "bounce");
+    }
+  }
+  if (current.restartCount > previous.restartCount) sink.sound("restart");
+}
 
 function getAudioContext() {
   if (audioContext || typeof window === "undefined") return audioContext;
@@ -209,6 +278,7 @@ export function vibrateGame(pattern: number | number[], cue: Cue) {
 /** Store transitions and button clicks are the only sources of game sounds. */
 export function GameFeedback() {
   useEffect(() => {
+    const pendingTimers = new Set<number>();
     const unlock = () => void unlockGameAudio();
     const onClick = (event: MouseEvent) => {
       if (!(event.target instanceof Element)) return;
@@ -226,52 +296,17 @@ export function GameFeedback() {
     window.addEventListener("keydown", unlock, true);
     document.addEventListener("click", onClick, true);
 
-    const unsubscribe = useGameStore.subscribe((current, previous) => {
-      if (current.state === "nearby" && previous.state !== "nearby") {
-        playGameSound("nearby");
-      }
-      if (current.caught > previous.caught) {
-        playGameSound("catch");
-        window.setTimeout(() => playGameSound("score"), 110);
-        vibrateGame(24, "catch");
-      }
-
-      const previousSecond = Math.ceil(previous.time);
-      const currentSecond = Math.ceil(current.time);
-      if (currentSecond !== previousSecond && currentSecond <= 10 && currentSecond > 0) {
-        playGameSound("countdown");
-        if (currentSecond <= 3) vibrateGame(12, "countdown");
-      }
-
-      if (current.state === "timeup" && previous.state !== "timeup") {
-        playGameSound("roundEnd");
-        vibrateGame([18, 22, 18], "roundEnd");
-      }
-      if (current.dashStatus === "active" && previous.dashStatus !== "active") {
-        playGameSound("dash");
-        vibrateGame(GAME_CONFIG.player.dash.hapticMs, "dash");
-      }
-      const speedPadTriggered =
-        current.interactionCueId > previous.interactionCueId &&
-        current.interactionCueKind === "speedPad";
-      if (current.boostCueId > previous.boostCueId && !speedPadTriggered) {
-        playGameSound("boost");
-        vibrateGame(GAME_CONFIG.player.speedBoost.hapticMs, "boost");
-      }
-      if (current.interactionCueId > previous.interactionCueId) {
-        if (current.interactionCueKind === "speedPad") {
-          playGameSound("boost");
-          vibrateGame(GAME_CONFIG.player.speedBoost.hapticMs, "boost");
-        } else if (current.interactionCueKind === "slowZone") {
-          playGameSound("slowDown");
-          vibrateGame(12, "slowDown");
-        } else if (current.interactionCueKind === "elasticBounce") {
-          playGameSound("bounce");
-          vibrateGame(24, "bounce");
-        }
-      }
-      if (current.restartCount > previous.restartCount) playGameSound("restart");
-    });
+    const sink: FeedbackSink = { sound: playGameSound, vibrate: vibrateGame };
+    const deferScore = () => {
+      const timer = window.setTimeout(() => {
+        pendingTimers.delete(timer);
+        playGameSound("score");
+      }, 110);
+      pendingTimers.add(timer);
+    };
+    const unsubscribe = useGameStore.subscribe((current, previous) =>
+      dispatchFeedbackTransition(current, previous, sink, deferScore),
+    );
 
     return () => {
       window.removeEventListener("pointerdown", unlock, true);
@@ -279,6 +314,8 @@ export function GameFeedback() {
       window.removeEventListener("keydown", unlock, true);
       document.removeEventListener("click", onClick, true);
       unsubscribe();
+      for (const timer of pendingTimers) window.clearTimeout(timer);
+      pendingTimers.clear();
     };
   }, []);
 

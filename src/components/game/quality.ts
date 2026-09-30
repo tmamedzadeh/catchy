@@ -16,7 +16,14 @@ export function detectInitialQualityTier(): QualityTier {
   if (typeof window === "undefined" || typeof navigator === "undefined") return "high";
 
   const device = navigator as Navigator & { deviceMemory?: number };
-  const isMobile = window.matchMedia("(pointer: coarse)").matches || window.innerWidth <= 720;
+  let coarsePointer = false;
+  try {
+    coarsePointer =
+      typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+  } catch {
+    coarsePointer = false;
+  }
+  const isMobile = coarsePointer || window.innerWidth <= 720;
   const lowMemory = device.deviceMemory !== undefined && device.deviceMemory <= 3;
   const fewCores = device.hardwareConcurrency > 0 && device.hardwareConcurrency <= 3;
 

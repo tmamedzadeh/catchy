@@ -9,6 +9,7 @@ import { CaptureBurst, DashStreak, Dust, TargetBeacon } from "./Effects";
 import { FollowCamera } from "./FollowCamera";
 import { Director } from "./Director";
 import { QUALITY_LEVELS, type QualityTier } from "./quality";
+import { NonCriticalAssetBoundary } from "./NonCriticalAssetBoundary";
 
 export function Scene({ qualityTier }: { qualityTier: QualityTier }) {
   return (
@@ -49,7 +50,9 @@ export function Scene({ qualityTier }: { qualityTier: QualityTier }) {
 
       <Arena />
       <Suspense fallback={null}>
-        <Props />
+        <NonCriticalAssetBoundary>
+          <Props />
+        </NonCriticalAssetBoundary>
       </Suspense>
       <ArenaInteractions />
       <Characters />

@@ -27,6 +27,7 @@ export type PlayerActionCommands = typeof consumedActions;
 
 function isTextControl(target: EventTarget | null) {
   return (
+    typeof HTMLElement !== "undefined" &&
     target instanceof HTMLElement &&
     Boolean(target.closest("input, textarea, select, [contenteditable='true']"))
   );
@@ -53,6 +54,21 @@ export function requestPlayerSlide() {
 
 export function requestPlayerSpeedBoost() {
   enqueueAction(4);
+}
+
+/** Apply a physical key transition; exported so held-key behavior is directly testable. */
+export function pressInputKey(code: string, target: EventTarget | null = null) {
+  if (!INPUT_CODES.has(code) || isTextControl(target) || keys.has(code)) return false;
+  keys.add(code);
+  if (code === "ShiftLeft" || code === "ShiftRight") requestPlayerDash();
+  else if (code === "ArrowUp") requestPlayerJump();
+  else if (code === "ArrowDown") requestPlayerSlide();
+  else if (code === "KeyE") requestPlayerSpeedBoost();
+  return true;
+}
+
+export function releaseInputKey(code: string) {
+  keys.delete(code);
 }
 
 /** Drain buffered button/key presses once per simulation tick. */
@@ -140,15 +156,9 @@ if (typeof window !== "undefined") {
   window.addEventListener("keydown", (event) => {
     if (!INPUT_CODES.has(event.code) || isTextControl(event.target)) return;
     if (event.code.startsWith("Arrow")) event.preventDefault();
-    const wasDown = keys.has(event.code);
-    if (wasDown) return;
-    keys.add(event.code);
-    if (event.code === "ShiftLeft" || event.code === "ShiftRight") requestPlayerDash();
-    else if (event.code === "ArrowUp") requestPlayerJump();
-    else if (event.code === "ArrowDown") requestPlayerSlide();
-    else if (event.code === "KeyE") requestPlayerSpeedBoost();
+    pressInputKey(event.code, event.target);
   });
-  window.addEventListener("keyup", (event) => keys.delete(event.code));
+  window.addEventListener("keyup", (event) => releaseInputKey(event.code));
   window.addEventListener("blur", clearInput);
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) clearInput();

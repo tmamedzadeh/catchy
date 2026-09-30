@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Joystick } from "./Joystick";
 import { useGameStore } from "@/store/gameStore";
 import { requestPlayerDash, requestPlayerSpeedBoost } from "@/lib/catchy/input";
@@ -96,12 +96,10 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
   const dashStatus = useGameStore((s) => s.dashStatus);
   const speedBoostStatus = useGameStore((s) => s.speedBoostStatus);
   const boostCueId = useGameStore((s) => s.boostCueId);
-  const debugMode = useMemo(
-    () =>
-      typeof window !== "undefined" &&
-      new URLSearchParams(window.location.search).get("debug") === "true",
-    [],
-  );
+  const debugMode =
+    import.meta.env.DEV &&
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("debug") === "true";
   const [flash, setFlash] = useState(0);
 
   useEffect(() => {
@@ -131,22 +129,9 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
       {/* Catchy branding and round timer */}
       <div className="hud-brand-timer absolute flex items-center gap-2 sm:gap-3">
         <div className="hud-card flex items-center gap-2.5 px-3 py-2 sm:px-4 sm:py-2.5">
-          <div
-            className="grid size-8 place-items-center rounded-xl font-display text-xl font-bold text-white sm:size-9"
-            style={{
-              background:
-                "radial-gradient(circle at 35% 30%, oklch(0.84 0.17 60), oklch(0.68 0.2 38))",
-              boxShadow: "inset 0 -3px 0 oklch(0.5 0.15 150 / 0.25)",
-            }}
-          >
-            C
-          </div>
           <div className="leading-none">
             <div className="font-display text-base font-semibold text-catchy-ink sm:text-lg">
               Catchy
-            </div>
-            <div className="mt-0.5 hidden font-display text-[0.6rem] tracking-[0.18em] text-catchy-ink-soft uppercase min-[420px]:block sm:text-[0.65rem]">
-              Tag arena
             </div>
           </div>
         </div>
@@ -541,9 +526,15 @@ function FirstSessionOnboarding({ gameReady }: { gameReady: boolean }) {
     };
   }, [gameReady]);
 
-  const isCoarsePointer =
-    typeof window !== "undefined" &&
-    window.matchMedia("(pointer: coarse), (max-width: 640px)").matches;
+  let isCoarsePointer = false;
+  try {
+    isCoarsePointer =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(pointer: coarse), (max-width: 640px)").matches;
+  } catch {
+    isCoarsePointer = false;
+  }
   if (!visible) return null;
 
   return (

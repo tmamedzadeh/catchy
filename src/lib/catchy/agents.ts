@@ -163,7 +163,7 @@ function emitInteractionCue(kind: InteractionKind, normalX = 0, normalZ = 1) {
   }
 }
 
-function effectiveSpeedMultiplier(agent: Agent) {
+export function effectiveSpeedMultiplier(agent: Agent) {
   return (
     (agent.boostState === "active" ? GAME_CONFIG.player.speedBoost.multiplier : 1) *
     agent.slowMultiplier
@@ -250,7 +250,7 @@ function scaleOf(obstacle: Obstacle) {
 }
 
 /** Test a body circle against the same transformed shape used by its GLB. */
-function overlapsObstacle(x: number, z: number, radius: number, obstacle: Obstacle) {
+export function overlapsObstacle(x: number, z: number, radius: number, obstacle: Obstacle) {
   const dx = x - obstacle.position.x;
   const dz = z - obstacle.position.z;
   const scale = scaleOf(obstacle);
@@ -276,7 +276,7 @@ function overlapsObstacle(x: number, z: number, radius: number, obstacle: Obstac
 type NavLink = { node: number; cost: number };
 type NavNode = { x: number; z: number; links: NavLink[] };
 
-function isWalkablePoint(x: number, z: number, radius: number) {
+export function isWalkablePoint(x: number, z: number, radius: number) {
   if (Math.hypot(x, z) + radius > GAME_CONFIG.arenaRadius - WALL_MARGIN) return false;
   for (const obstacle of OBSTACLES) {
     if (overlapsObstacle(x, z, radius, obstacle)) return false;
@@ -287,7 +287,13 @@ function isWalkablePoint(x: number, z: number, radius: number) {
 }
 
 /** Check waypoint links with the same body radius and obstacle colliders used by movement. */
-function isWalkableSegment(x1: number, z1: number, x2: number, z2: number, radius: number) {
+export function isWalkableSegment(
+  x1: number,
+  z1: number,
+  x2: number,
+  z2: number,
+  radius: number,
+) {
   const length = Math.hypot(x2 - x1, z2 - z1);
   const samples = Math.max(1, Math.ceil(length / NAV_SAMPLE_SPACING));
   for (let i = 1; i < samples; i++) {
@@ -371,9 +377,36 @@ function rebuildNavigationGraph() {
   }
 }
 
+export function getNavigationSummary() {
+  const visited = new Uint8Array(NAV_NODES.length);
+  const queue = new Int32Array(NAV_NODES.length);
+  let components = 0;
+  let directedLinks = 0;
+
+  for (let start = 0; start < NAV_NODES.length; start++) {
+    if (visited[start]) continue;
+    components++;
+    let head = 0;
+    let tail = 0;
+    visited[start] = 1;
+    queue[tail++] = start;
+    while (head < tail) {
+      const node = NAV_NODES[queue[head++]!]!;
+      directedLinks += node.links.length;
+      for (const link of node.links) {
+        if (visited[link.node]) continue;
+        visited[link.node] = 1;
+        queue[tail++] = link.node;
+      }
+    }
+  }
+
+  return { nodes: NAV_NODES.length, directedLinks, components };
+}
+
 rebuildNavigationGraph();
 
-function isSafeSpawn(agent: Agent, x: number, z: number) {
+export function isSafeSpawn(agent: Agent, x: number, z: number) {
   if (Math.hypot(x, z) + agent.radius > GAME_CONFIG.arenaRadius - WALL_MARGIN) return false;
   for (const obstacle of OBSTACLES) {
     if (overlapsObstacle(x, z, agent.radius, obstacle)) return false;
@@ -412,14 +445,14 @@ export function findSafeSpawn(
     if (isSafeSpawn(agent, x, z)) return { x, z };
   }
 
-  // Deterministic whole-map fallback; the open south-west patch guarantees
-  // that a valid spawn exists even when a preferred spot is blocked.
+  // Deterministic whole-map fallback; validate every candidate against the
+  // same live collision and separation rules as the normal search.
   for (let z = -GAME_CONFIG.arenaRadius + 2; z < GAME_CONFIG.arenaRadius - 2; z += 1.5) {
     for (let x = -GAME_CONFIG.arenaRadius + 2; x < GAME_CONFIG.arenaRadius - 2; x += 1.5) {
       if (isSafeSpawn(agent, x, z)) return { x, z };
     }
   }
-  return { x: -12, z: 12 };
+  throw new Error(`No safe spawn is available for ${agent.id}`);
 }
 
 /** Full mutable-world reset used by both the UI button and Space key. */
@@ -586,7 +619,7 @@ function removeNormalVelocity(agent: Agent, nx: number, nz: number) {
 }
 
 /** Resolve circle and rotated-box collisions, removing only inward velocity. */
-function resolveObstacle(agent: Agent, obstacle: Obstacle) {
+export function resolveObstacle(agent: Agent, obstacle: Obstacle) {
   const dx = agent.x - obstacle.position.x;
   const dz = agent.z - obstacle.position.z;
   const shape = obstacle.collision;
@@ -677,7 +710,7 @@ function resolveObstacle(agent: Agent, obstacle: Obstacle) {
   return true;
 }
 
-function resolveWorld(agent: Agent) {
+export function resolveWorld(agent: Agent) {
   for (let pass = 0; pass < 2; pass++) {
     for (const obstacle of OBSTACLES) resolveObstacle(agent, obstacle);
     resolveObstacle(agent, ELASTIC_BOUNCE);
@@ -889,7 +922,7 @@ function advancePlayerDashTimers(dt: number) {
     PLAYER.dashState = "ready";
 }
 
-function advanceAgentActionTimers(agent: Agent, dt: number) {
+export function advanceAgentActionTimers(agent: Agent, dt: number) {
   agent.boostCooldownRemaining = Math.max(0, agent.boostCooldownRemaining - dt);
   if (agent.boostState === "active") {
     agent.boostDurationRemaining = Math.max(0, agent.boostDurationRemaining - dt);
@@ -908,7 +941,7 @@ function advanceAgentActionTimers(agent: Agent, dt: number) {
   agent.slideRemaining = Math.max(0, agent.slideRemaining - dt);
 }
 
-function advanceBarrier(dt: number) {
+export function advanceBarrier(dt: number) {
   WORLD_STATE.barrierRemaining -= dt;
   if (WORLD_STATE.barrierRemaining > 0) return;
   WORLD_STATE.barrierClosed = !WORLD_STATE.barrierClosed;
@@ -923,7 +956,7 @@ function advanceBarrier(dt: number) {
   }
 }
 
-function updateSlowZone(agent: Agent, dt: number) {
+export function updateSlowZone(agent: Agent, dt: number) {
   const inside =
     Math.hypot(agent.x - SLOW_ZONE.position.x, agent.z - SLOW_ZONE.position.z) <=
     (SLOW_ZONE.triggerRadius ?? 0) * SLOW_ZONE.scale;
@@ -938,7 +971,7 @@ function updateSlowZone(agent: Agent, dt: number) {
   agent.onSlowZone = inside;
 }
 
-function updateSpeedPad(agent: Agent) {
+export function updateSpeedPad(agent: Agent) {
   const inside =
     Math.hypot(agent.x - SPEED_PAD.position.x, agent.z - SPEED_PAD.position.z) <=
     (SPEED_PAD.triggerRadius ?? 0) * SPEED_PAD.scale;
@@ -953,22 +986,25 @@ function updateSpeedPad(agent: Agent) {
 
 const playerWorldInput = { x: 0, z: 0 };
 
-function resolvePlayerInput(input: { x: number; z: number } | null) {
+export function resolveCameraRelativeInput(
+  input: { x: number; z: number } | null,
+  cameraYaw = WORLD_STATE.cameraYaw,
+) {
   if (!input) {
     playerWorldInput.x = 0;
     playerWorldInput.z = 0;
     return null;
   }
-  const forwardX = Math.sin(WORLD_STATE.cameraYaw);
-  const forwardZ = Math.cos(WORLD_STATE.cameraYaw);
-  const rightX = Math.cos(WORLD_STATE.cameraYaw);
-  const rightZ = -Math.sin(WORLD_STATE.cameraYaw);
+  const forwardX = Math.sin(cameraYaw);
+  const forwardZ = Math.cos(cameraYaw);
+  const rightX = Math.cos(cameraYaw);
+  const rightZ = -Math.sin(cameraYaw);
   playerWorldInput.x = -forwardX * input.z + rightX * input.x;
   playerWorldInput.z = -forwardZ * input.z + rightZ * input.x;
   return playerWorldInput;
 }
 
-function beginPlayerJump() {
+export function beginPlayerJump() {
   if (
     PLAYER.jumpRemaining > 0 ||
     PLAYER.jumpCooldownRemaining > 0 ||
@@ -982,7 +1018,7 @@ function beginPlayerJump() {
   return true;
 }
 
-function beginPlayerSlide(input: { x: number; z: number } | null) {
+export function beginPlayerSlide(input: { x: number; z: number } | null) {
   if (PLAYER.slideRemaining > 0 || PLAYER.jumpRemaining > 0 || PLAYER.dashState === "active")
     return false;
   const length = input ? Math.hypot(input.x, input.z) : 0;
@@ -1072,7 +1108,7 @@ export function step(
   }
 
   advanceBarrier(dt);
-  const worldInput = resolvePlayerInput(input);
+  const worldInput = resolveCameraRelativeInput(input);
   if (!freezePlayer) {
     if (commands.speedBoost) startSpeedBoost(PLAYER);
     let actionStarted =

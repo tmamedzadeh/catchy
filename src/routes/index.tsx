@@ -28,6 +28,21 @@ function Game() {
   const [gameReady, setGameReady] = useState(() => isAssetQueueComplete());
   const markReady = useCallback(() => setGameReady(true), []);
 
+  useEffect(() => {
+    if (import.meta.env.VITE_CATCHY_E2E !== "true") return;
+    let dispose: (() => void) | undefined;
+    let canceled = false;
+    void import("@/lib/catchy/e2eBridge").then(({ installCatchyE2EBridge }) => {
+      const removeBridge = installCatchyE2EBridge();
+      if (canceled) removeBridge();
+      else dispose = removeBridge;
+    });
+    return () => {
+      canceled = true;
+      dispose?.();
+    };
+  }, []);
+
   return (
     <div className="fixed inset-0 overflow-hidden bg-[#bfe3ff]">
       <GameCanvas />
@@ -39,14 +54,14 @@ function Game() {
 }
 
 function isAssetQueueComplete() {
-  const { active, loaded, progress, total } = useProgress.getState();
-  return progress >= 100 || (!active && total > 0 && loaded >= total);
+  const { active, errors, loaded, progress, total } = useProgress.getState();
+  return progress >= 100 || (!active && total > 0 && loaded + errors.length >= total);
 }
 
 function LoadingScreen({ ready, onReady }: { ready: boolean; onReady: () => void }) {
-  const { active, loaded, progress, total } = useProgress();
+  const { active, errors, loaded, progress, total } = useProgress();
   const [layerVisible, setLayerVisible] = useState(() => !isAssetQueueComplete());
-  const complete = progress >= 100 || (!active && total > 0 && loaded >= total);
+  const complete = progress >= 100 || (!active && total > 0 && loaded + errors.length >= total);
 
   useEffect(() => {
     if (complete) onReady();
