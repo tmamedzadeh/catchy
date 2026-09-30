@@ -151,26 +151,26 @@
 
 :root {
   /* brand */
-  --sprout-ink: oklch(0.22 0.04 230);          /* dark green text */
-  --sprout-ink-soft: oklch(0.45 0.04 230);
-  --sprout-accent: oklch(0.69 0.2 40);        /* orange / coral */
-  --sprout-accent-2: oklch(0.87 0.17 92);      /* deep coral */
-  --sprout-cyan: oklch(0.84 0.14 185);
+  --sprout-ink: oklch(0.34 0.07 152);          /* dark green text */
+  --sprout-ink-soft: oklch(0.52 0.05 152);
+  --sprout-accent: oklch(0.72 0.19 45);        /* orange / coral */
+  --sprout-accent-2: oklch(0.66 0.21 25);      /* deep coral */
+  --sprout-cyan: oklch(0.78 0.14 210);
   --sprout-lime: oklch(0.82 0.18 135);
   --sprout-danger: oklch(0.62 0.23 25);
 
   /* hud surfaces */
   --hud-surface: oklch(0.99 0.012 95 / 0.86);
   --hud-surface-solid: oklch(0.99 0.012 95);
-  --hud-surface-dark: oklch(0.22 0.04 230 / 0.84);
+  --hud-surface-dark: oklch(0.34 0.07 152 / 0.82);
   --hud-border: oklch(1 0 0 / 0.65);
 
   /* radii / shadows / sizes */
   --hud-radius: 1.25rem;
   --hud-radius-sm: 0.875rem;
   --hud-pad: 0.75rem;
-  --hud-shadow: 0 10px 24px -8px oklch(0.22 0.04 230 / 0.4), 0 2px 0 0 oklch(1 0 0 / 0.5) inset;
-  --hud-shadow-soft: 0 8px 20px -10px oklch(0.22 0.04 230 / 0.5);
+  --hud-shadow: 0 10px 24px -8px oklch(0.34 0.07 152 / 0.35), 0 2px 0 0 oklch(1 0 0 / 0.5) inset;
+  --hud-shadow-soft: 0 8px 20px -10px oklch(0.34 0.07 152 / 0.45);
   --btn-ability: 4rem;
   --btn-ability-primary: 5rem;
   --joystick-size: 8.5rem;
@@ -190,8 +190,8 @@
   --color-hud-border: var(--hud-border);
   --radius-hud: var(--hud-radius);
   --radius-hud-sm: var(--hud-radius-sm);
-  --font-display: "Bebas Neue", "Barlow", system-ui, sans-serif;
-  --font-body: "Barlow", system-ui, sans-serif;
+  --font-display: "Fredoka", "Nunito", ui-rounded, system-ui, sans-serif;
+  --font-body: "Nunito", ui-rounded, system-ui, sans-serif;
 }
 
 @utility hud-card {
@@ -208,10 +208,6 @@
   border-radius: var(--hud-radius);
   box-shadow: var(--hud-shadow-soft);
   backdrop-filter: blur(10px);
-}
-
-@layer base {
-  .font-display { letter-spacing: 0.04em; }
 }
 
 @utility hud-shadow-soft {

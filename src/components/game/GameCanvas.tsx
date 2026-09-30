@@ -11,8 +11,8 @@ export function GameCanvas() {
       gl={{ antialias: true, powerPreference: "high-performance" }}
       onCreated={({ gl, scene }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
-        gl.toneMappingExposure = 0.88;
-        scene.background = new THREE.Color("#ffcf9e");
+        gl.toneMappingExposure = 0.95;
+        scene.background = new THREE.Color("#bfe3ff");
       }}
     >
       <Scene />

@@ -138,11 +138,11 @@ export function Character({ index }: { index: number }) {
   const ring = useRef<THREE.Mesh>(null);
 
   const skinMat = useMemo(
-    () => new THREE.MeshPhysicalMaterial({ color: p.skin, roughness: 0.55, sheen: 0.4, sheenColor: new THREE.Color("#ffb59a") }),
+    () => new THREE.MeshStandardMaterial({ color: p.skin, roughness: 0.75 }),
     [p.skin],
   );
   const shirtMat = useMemo(
-    () => new THREE.MeshPhysicalMaterial({ color: p.shirt, roughness: 0.35, clearcoat: 0.6, sheen: 0.5, sheenColor: new THREE.Color(p.accent) }),
+    () => new THREE.MeshStandardMaterial({ color: p.shirt, roughness: 0.6 }),
     [p.shirt],
   );
   const pantsMat = useMemo(
@@ -231,8 +231,7 @@ export function Character({ index }: { index: number }) {
         <mesh ref={ring} rotation-x={-Math.PI / 2} position={[0, 0.09, 0]}>
           <ringGeometry args={[0.58, 0.74, 28]} />
           <meshBasicMaterial
-            color={isPlayer ? "#2ee6d6" : p.shirt}
-            toneMapped={false}
+            color={isPlayer ? "#38e6ff" : p.accent}
             transparent
             opacity={isPlayer ? 0.9 : 0.6}
             side={THREE.DoubleSide}
@@ -306,21 +305,11 @@ export function Character({ index }: { index: number }) {
           <mesh material={skinMat} castShadow scale={[1, 1.04, 0.96]}>
             <sphereGeometry args={[0.275, 24, 18]} />
           </mesh>
-          {/* big expressive eyes */}
+          {/* eyes */}
           {[-0.1, 0.1].map((x) => (
-            <group key={x} position={[x, 0.03, 0.235]}>
-              <mesh scale={[1, 1.25, 0.55]}>
-                <sphereGeometry args={[0.066, 14, 12]} />
-                <meshStandardMaterial color="#ffffff" roughness={0.2} />
-              </mesh>
-              <mesh position={[0, -0.005, 0.03]} material={eyeMat} scale={[1, 1.3, 0.6]}>
-                <sphereGeometry args={[0.042, 12, 10]} />
-              </mesh>
-              <mesh position={[0.014, 0.022, 0.052]}>
-                <sphereGeometry args={[0.012, 8, 6]} />
-                <meshBasicMaterial color="#ffffff" />
-              </mesh>
-            </group>
+            <mesh key={x} position={[x, 0.03, 0.245]} material={eyeMat} scale={[1, 1.3, 0.6]}>
+              <sphereGeometry args={[0.042, 12, 10]} />
+            </mesh>
           ))}
           {/* brows */}
           {[-0.1, 0.1].map((x) => (
