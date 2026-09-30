@@ -198,7 +198,7 @@ export function SpeedTrails() {
           <mesh key={`${ai}-${i}`}>
             <planeGeometry args={[1, 1]} />
             <meshBasicMaterial
-              color={TRAIL_COLORS[ai]}
+              color={TRAIL_COLORS[ai]!}
               transparent
               depthWrite={false}
               side={THREE.DoubleSide}
