@@ -174,14 +174,14 @@ export function Character({ index }: { index: number }) {
     const run = runSmooth.current;
 
     // stride phase: two steps per cycle, frequency scales with speed
-    const ph = agent.phase * 5.2;
+    const ph = agent.phase * 3.1;
     const s = Math.sin(ph);
     const c = Math.cos(ph);
 
     // legs: swing with a knee-lift feel — forward swing is fast, recovery slower
-    const legAmp = 0.85 * run;
-    const liftL = Math.max(0, -c) * 0.07 * run;
-    const liftR = Math.max(0, c) * 0.07 * run;
+    const legAmp = 0.62 * run;
+    const liftL = Math.max(0, -c) * 0.05 * run;
+    const liftR = Math.max(0, c) * 0.05 * run;
     if (legL.current) {
       legL.current.rotation.x = s * legAmp;
       legL.current.position.y = 0.62 + liftL;
@@ -192,7 +192,7 @@ export function Character({ index }: { index: number }) {
     }
 
     // arms: counter-swing, pumped and slightly bent forward when running
-    const armAmp = 0.75 * run;
+    const armAmp = 0.5 * run;
     if (armL.current) {
       armL.current.rotation.x = -s * armAmp - run * 0.45;
       armL.current.rotation.z = 0.24 + run * 0.1;
@@ -204,16 +204,16 @@ export function Character({ index }: { index: number }) {
 
     // torso: bounce at stride frequency, lean into the run, subtle side roll
     if (body.current) {
-      body.current.position.y = Math.abs(c) * 0.085 * run;
-      body.current.rotation.x = 0.05 + run * 0.24;
-      body.current.rotation.z = s * 0.06 * run;
+      body.current.position.y = Math.abs(c) * 0.04 * run;
+      body.current.rotation.x = 0.05 + run * 0.18;
+      body.current.rotation.z = s * 0.025 * run;
     }
 
     // head: small counter-bob and nod so it doesn't look glued on
     if (head.current) {
-      head.current.rotation.z = -s * 0.07 * run;
-      head.current.rotation.x = -run * 0.14 + Math.abs(c) * 0.04 * run;
-      head.current.position.y = 1.44 - Math.abs(c) * 0.02 * run;
+      head.current.rotation.z = -s * 0.03 * run;
+      head.current.rotation.x = -run * 0.1 + Math.abs(c) * 0.02 * run;
+      head.current.position.y = 1.44 - Math.abs(c) * 0.012 * run;
     }
     if (ring.current) {
       const t = performance.now() * 0.002;
