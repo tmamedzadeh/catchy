@@ -33,6 +33,7 @@ export type Agent = {
   dashState: DashState;
   dashCooldownRemaining: number;
   dashDurationRemaining: number;
+  dashBounceMultiplier: number;
   dashDirectionX: number;
   dashDirectionZ: number;
   dashActivationId: number;
@@ -44,6 +45,8 @@ export type Agent = {
   boostCooldownRemaining: number;
   slowMultiplier: number;
   onSpeedPad: boolean;
+  onSlowZone: boolean;
+  onElasticBounce: boolean;
   jumpRemaining: number;
   jumpCooldownRemaining: number;
   jumpHeight: number;
@@ -92,6 +95,7 @@ function makeAgent(index: number): Agent {
     dashState: "ready",
     dashCooldownRemaining: 0,
     dashDurationRemaining: 0,
+    dashBounceMultiplier: 1,
     dashDirectionX: 0,
     dashDirectionZ: 1,
     dashActivationId: 0,
@@ -103,6 +107,8 @@ function makeAgent(index: number): Agent {
     boostCooldownRemaining: 0,
     slowMultiplier: 1,
     onSpeedPad: false,
+    onSlowZone: false,
+    onElasticBounce: false,
     jumpRemaining: 0,
     jumpCooldownRemaining: 0,
     jumpHeight: 0,
@@ -121,6 +127,8 @@ export const AGENTS: Agent[] = initialPositions.map((_, index) => makeAgent(inde
 export const PLAYER = AGENTS[0]!;
 export const RUNNERS = AGENTS.slice(1);
 
+export type InteractionKind = "speedPad" | "slowZone" | "elasticBounce" | "dash";
+
 const SPEED_PAD = INTERACTIVE_OBJECTS.find((item) => item.kind === "speedPad")!;
 const SLOW_ZONE = INTERACTIVE_OBJECTS.find((item) => item.kind === "slowZone")!;
 const ELASTIC_BOUNCE = INTERACTIVE_OBJECTS.find((item) => item.kind === "elasticBounce")!;
@@ -133,8 +141,27 @@ export const WORLD_STATE = {
   barrierRemaining: GAME_CONFIG.barrier.openSeconds,
   speedPadPulseRemaining: 0,
   boostCueId: 0,
+  interactionCueId: 0,
+  interactionCueKind: null as InteractionKind | null,
+  interactionCueX: 0,
+  interactionCueZ: 0,
+  bounceImpactId: 0,
+  bounceNormalX: 0,
+  bounceNormalZ: 1,
   renderAlpha: 0,
 };
+
+function emitInteractionCue(kind: InteractionKind, normalX = 0, normalZ = 1) {
+  WORLD_STATE.interactionCueId++;
+  WORLD_STATE.interactionCueKind = kind;
+  WORLD_STATE.interactionCueX = PLAYER.x;
+  WORLD_STATE.interactionCueZ = PLAYER.z;
+  if (kind === "elasticBounce") {
+    WORLD_STATE.bounceImpactId++;
+    WORLD_STATE.bounceNormalX = normalX;
+    WORLD_STATE.bounceNormalZ = normalZ;
+  }
+}
 
 function effectiveSpeedMultiplier(agent: Agent) {
   return (
@@ -147,19 +174,18 @@ export function startSpeedBoost(agent: Agent) {
   if (agent.boostState !== "ready") return false;
   agent.boostState = "active";
   agent.boostDurationRemaining = GAME_CONFIG.player.speedBoost.durationSeconds;
-  WORLD_STATE.boostCueId++;
+  agent.boostCooldownRemaining = GAME_CONFIG.player.speedBoost.cooldownSeconds;
+  if (agent.role === "player") WORLD_STATE.boostCueId++;
   return true;
 }
 
 function finishSpeedBoost(agent: Agent) {
   agent.boostDurationRemaining = 0;
-  agent.boostCooldownRemaining = GAME_CONFIG.player.speedBoost.cooldownSeconds;
-  agent.boostState = "cooldown";
+  agent.boostState = agent.boostCooldownRemaining > 0 ? "cooldown" : "ready";
 }
 
 export function cancelPlayerActions(resetCooldown = false) {
   if (PLAYER.dashState === "active") cancelPlayerDash();
-  if (PLAYER.boostState === "active") finishSpeedBoost(PLAYER);
   PLAYER.jumpRemaining = 0;
   PLAYER.jumpHeight = 0;
   PLAYER.slideRemaining = 0;
@@ -185,16 +211,19 @@ export function startPlayerDash(direction: { x: number; z: number }) {
   PLAYER.dashStartX = PLAYER.x;
   PLAYER.dashStartZ = PLAYER.z;
   PLAYER.dashDurationRemaining = dash.durationSeconds;
+  PLAYER.dashBounceMultiplier = 1;
   PLAYER.dashCooldownRemaining = dash.cooldownSeconds;
   PLAYER.dashCameraRemaining = dash.cameraImpulseSeconds;
   PLAYER.dashState = "active";
   PLAYER.dashActivationId++;
+  emitInteractionCue("dash");
   return true;
 }
 
 /** Cancel any active burst and optionally clear the full cooldown for a new round. */
 export function resetPlayerDash(clearCooldown = true) {
   PLAYER.dashDurationRemaining = 0;
+  PLAYER.dashBounceMultiplier = 1;
   PLAYER.dashCameraRemaining = 0;
   if (clearCooldown) PLAYER.dashCooldownRemaining = 0;
   PLAYER.dashState = PLAYER.dashCooldownRemaining > 0 ? "cooldown" : "ready";
@@ -400,6 +429,13 @@ export function resetSimulation() {
   WORLD_STATE.barrierRemaining = GAME_CONFIG.barrier.openSeconds;
   WORLD_STATE.speedPadPulseRemaining = 0;
   WORLD_STATE.boostCueId = 0;
+  WORLD_STATE.interactionCueId = 0;
+  WORLD_STATE.interactionCueKind = null;
+  WORLD_STATE.interactionCueX = 0;
+  WORLD_STATE.interactionCueZ = 0;
+  WORLD_STATE.bounceImpactId = 0;
+  WORLD_STATE.bounceNormalX = 0;
+  WORLD_STATE.bounceNormalZ = 1;
   WORLD_STATE.cameraYaw = PLAYER.heading;
   WORLD_STATE.previousCameraYaw = PLAYER.heading;
   WORLD_STATE.renderAlpha = 0;
@@ -430,6 +466,7 @@ export function resetSimulation() {
     agent.dashState = "ready";
     agent.dashCooldownRemaining = 0;
     agent.dashDurationRemaining = 0;
+    agent.dashBounceMultiplier = 1;
     agent.dashDirectionX = 0;
     agent.dashDirectionZ = 1;
     agent.dashStartX = spawn.x;
@@ -440,6 +477,8 @@ export function resetSimulation() {
     agent.boostCooldownRemaining = 0;
     agent.slowMultiplier = 1;
     agent.onSpeedPad = false;
+    agent.onSlowZone = false;
+    agent.onElasticBounce = false;
     agent.jumpRemaining = 0;
     agent.jumpCooldownRemaining = 0;
     agent.jumpHeight = 0;
@@ -530,6 +569,8 @@ export function respawn(agent: Agent) {
   agent.boostCooldownRemaining = 0;
   agent.slowMultiplier = 1;
   agent.onSpeedPad = false;
+  agent.onSlowZone = false;
+  agent.onElasticBounce = false;
   agent.jumpRemaining = 0;
   agent.jumpHeight = 0;
   agent.slideRemaining = 0;
@@ -554,26 +595,44 @@ function resolveObstacle(agent: Agent, obstacle: Obstacle) {
   if (shape.type === "circle") {
     const minDistance = shape.radius * scale + agent.radius + WALL_MARGIN;
     const d = Math.hypot(dx, dz);
-    if (d >= minDistance) return false;
-    const nx = d > 0.0001 ? dx / d : 1;
-    const nz = d > 0.0001 ? dz / d : 0;
+    const isElasticBounce = obstacle.kind === "elasticBounce";
+    const bounceReleaseDistance = GAME_CONFIG.elasticBounce.releaseDistance;
+    if (d >= minDistance) {
+      if (isElasticBounce && d >= minDistance + bounceReleaseDistance)
+        agent.onElasticBounce = false;
+      return false;
+    }
+    const speedBeforeImpact = Math.hypot(agent.vx, agent.vz);
+    const nx = d > 0.0001 ? dx / d : speedBeforeImpact > 0.0001 ? -agent.vx / speedBeforeImpact : 1;
+    const nz = d > 0.0001 ? dz / d : speedBeforeImpact > 0.0001 ? -agent.vz / speedBeforeImpact : 0;
     agent.x = obstacle.position.x + nx * minDistance;
     agent.z = obstacle.position.z + nz * minDistance;
-    if (obstacle.kind === "elasticBounce") {
+    if (isElasticBounce) {
       const into = agent.vx * nx + agent.vz * nz;
-      if (into < 0) {
-        const bounce = GAME_CONFIG.elasticBounce;
-        agent.vx -= (1 + bounce.restitution) * into * nx;
-        agent.vz -= (1 + bounce.restitution) * into * nz;
-        agent.vx += nx * bounce.outwardImpulse;
-        agent.vz += nz * bounce.outwardImpulse;
-        if (agent.role === "player" && agent.dashState === "active") {
-          const speed = Math.hypot(agent.vx, agent.vz) || 1;
-          agent.dashDirectionX = agent.vx / speed;
-          agent.dashDirectionZ = agent.vz / speed;
+      const alreadyInContact = agent.onElasticBounce;
+      agent.onElasticBounce = true;
+      if (into < 0 && !alreadyInContact) {
+        const normalVelocity = agent.vx * nx + agent.vz * nz;
+        agent.vx = agent.vx - 2 * normalVelocity * nx;
+        agent.vz = agent.vz - 2 * normalVelocity * nz;
+        if (agent.role === "player") {
+          // Keep the reflected impact angle, then add a player-only speed kick.
+          const bounceMultiplier = GAME_CONFIG.elasticBounce.playerSpeedMultiplier;
+          const currentDashMultiplier =
+            agent.dashState === "active" ? agent.dashBounceMultiplier : 1;
+          const impactMultiplier = bounceMultiplier / currentDashMultiplier;
+          agent.vx *= impactMultiplier;
+          agent.vz *= impactMultiplier;
+          if (agent.dashState === "active") {
+            agent.dashBounceMultiplier = bounceMultiplier;
+            const speed = Math.hypot(agent.vx, agent.vz) || 1;
+            agent.dashDirectionX = agent.vx / speed;
+            agent.dashDirectionZ = agent.vz / speed;
+          }
         }
+        if (agent.role === "player") emitInteractionCue("elasticBounce", nx, nz);
         agent.routeTimer = 0;
-      }
+      } else if (alreadyInContact) removeNormalVelocity(agent, nx, nz);
     } else removeNormalVelocity(agent, nx, nz);
     return true;
   }
@@ -815,7 +874,8 @@ function move(
 function movePlayerDash(dt: number) {
   const dashSpeed =
     (GAME_CONFIG.player.dash.distance / GAME_CONFIG.player.dash.durationSeconds) *
-    effectiveSpeedMultiplier(PLAYER);
+    effectiveSpeedMultiplier(PLAYER) *
+    PLAYER.dashBounceMultiplier;
   PLAYER.vx = PLAYER.dashDirectionX * dashSpeed;
   PLAYER.vz = PLAYER.dashDirectionZ * dashSpeed;
   integrateMovement(PLAYER, dt);
@@ -830,13 +890,12 @@ function advancePlayerDashTimers(dt: number) {
 }
 
 function advanceAgentActionTimers(agent: Agent, dt: number) {
+  agent.boostCooldownRemaining = Math.max(0, agent.boostCooldownRemaining - dt);
   if (agent.boostState === "active") {
     agent.boostDurationRemaining = Math.max(0, agent.boostDurationRemaining - dt);
     if (agent.boostDurationRemaining === 0) finishSpeedBoost(agent);
-  } else if (agent.boostState === "cooldown") {
-    agent.boostCooldownRemaining = Math.max(0, agent.boostCooldownRemaining - dt);
-    if (agent.boostCooldownRemaining === 0) agent.boostState = "ready";
-  }
+  } else if (agent.boostState === "cooldown" && agent.boostCooldownRemaining === 0)
+    agent.boostState = "ready";
 
   agent.jumpCooldownRemaining = Math.max(0, agent.jumpCooldownRemaining - dt);
   agent.jumpRemaining = Math.max(0, agent.jumpRemaining - dt);
@@ -868,20 +927,26 @@ function updateSlowZone(agent: Agent, dt: number) {
   const inside =
     Math.hypot(agent.x - SLOW_ZONE.position.x, agent.z - SLOW_ZONE.position.z) <=
     (SLOW_ZONE.triggerRadius ?? 0) * SLOW_ZONE.scale;
-  if (inside) agent.slowMultiplier = GAME_CONFIG.slowZone.movementMultiplier;
-  else {
+  if (inside) {
+    if (agent.role === "player" && !agent.onSlowZone) emitInteractionCue("slowZone");
+    agent.slowMultiplier = GAME_CONFIG.slowZone.movementMultiplier;
+  } else {
     const recovery = Math.max(0.01, GAME_CONFIG.slowZone.recoverySeconds);
     agent.slowMultiplier = 1 + (agent.slowMultiplier - 1) * Math.exp(-dt / recovery);
     if (Math.abs(1 - agent.slowMultiplier) < 0.002) agent.slowMultiplier = 1;
   }
+  agent.onSlowZone = inside;
 }
 
 function updateSpeedPad(agent: Agent) {
   const inside =
     Math.hypot(agent.x - SPEED_PAD.position.x, agent.z - SPEED_PAD.position.z) <=
     (SPEED_PAD.triggerRadius ?? 0) * SPEED_PAD.scale;
-  if (inside && !agent.onSpeedPad && startSpeedBoost(agent)) {
-    WORLD_STATE.speedPadPulseRemaining = GAME_CONFIG.interactiveObjects.speedPad.pulseSeconds;
+  if (inside && !agent.onSpeedPad) {
+    if (startSpeedBoost(agent)) {
+      if (agent.role === "player") emitInteractionCue("speedPad");
+      WORLD_STATE.speedPadPulseRemaining = GAME_CONFIG.interactiveObjects.speedPad.pulseSeconds;
+    }
   }
   agent.onSpeedPad = inside;
 }
@@ -1028,6 +1093,7 @@ export function step(
       PLAYER.dashDurationRemaining = Math.max(0, PLAYER.dashDurationRemaining - dashDt);
       movementDt -= dashDt;
       if (PLAYER.dashDurationRemaining === 0) {
+        PLAYER.dashBounceMultiplier = 1;
         PLAYER.dashState = PLAYER.dashCooldownRemaining > 0 ? "cooldown" : "ready";
         const speed = Math.hypot(PLAYER.vx, PLAYER.vz);
         const maxSpeed = GAME_CONFIG.player.speed * effectiveSpeedMultiplier(PLAYER);

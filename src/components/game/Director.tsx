@@ -78,7 +78,17 @@ export function Director() {
       if (store.dashStatus !== PLAYER.dashState) store.setDashStatus(PLAYER.dashState);
       if (store.speedBoostStatus !== PLAYER.boostState)
         store.setSpeedBoostStatus(PLAYER.boostState);
-      if (store.boostCueId !== WORLD_STATE.boostCueId) store.setBoostCueId(WORLD_STATE.boostCueId);
+      if (
+        store.boostCueId !== WORLD_STATE.boostCueId ||
+        store.interactionCueId !== WORLD_STATE.interactionCueId ||
+        store.interactionCueKind !== WORLD_STATE.interactionCueKind
+      ) {
+        store.setSimulationFeedbackCues(
+          WORLD_STATE.boostCueId,
+          WORLD_STATE.interactionCueId,
+          WORLD_STATE.interactionCueKind,
+        );
+      }
 
       let target = selectTarget(targetId.current, state.capture?.runnerId ?? null);
       targetId.current = target?.agent.id ?? null;

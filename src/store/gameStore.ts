@@ -4,6 +4,7 @@ import {
   WORLD_STATE,
   cancelPlayerActions,
   resetSimulation,
+  type InteractionKind,
   type BoostState,
   type DashState,
 } from "@/lib/catchy/agents";
@@ -67,9 +68,15 @@ type Store = {
   dashStatus: DashState;
   speedBoostStatus: BoostState;
   boostCueId: number;
+  interactionCueId: number;
+  interactionCueKind: InteractionKind | null;
   setDashStatus: (status: DashState) => void;
   setSpeedBoostStatus: (status: BoostState) => void;
-  setBoostCueId: (id: number) => void;
+  setSimulationFeedbackCues: (
+    boostCueId: number,
+    interactionCueId: number,
+    interactionCueKind: InteractionKind | null,
+  ) => void;
   setTelemetry: (telemetry: Telemetry) => void;
   tick: (dt: number) => void;
   addCatch: () => void;
@@ -165,11 +172,20 @@ export const useGameStore = create<Store>((set, get) => ({
   dashStatus: "ready",
   speedBoostStatus: "ready",
   boostCueId: 0,
+  interactionCueId: 0,
+  interactionCueKind: null,
   setDashStatus: (status) =>
     set((state) => (state.dashStatus === status ? state : { dashStatus: status })),
   setSpeedBoostStatus: (status) =>
     set((state) => (state.speedBoostStatus === status ? state : { speedBoostStatus: status })),
-  setBoostCueId: (id) => set((state) => (state.boostCueId === id ? state : { boostCueId: id })),
+  setSimulationFeedbackCues: (boostCueId, interactionCueId, interactionCueKind) =>
+    set((state) =>
+      state.boostCueId === boostCueId &&
+      state.interactionCueId === interactionCueId &&
+      state.interactionCueKind === interactionCueKind
+        ? state
+        : { boostCueId, interactionCueId, interactionCueKind },
+    ),
   setTelemetry: (telemetry) => set(telemetry),
   tick: (dt) => {
     const { time, state } = get();
@@ -208,6 +224,8 @@ export const useGameStore = create<Store>((set, get) => ({
       dashStatus: "ready",
       speedBoostStatus: "ready",
       boostCueId: 0,
+      interactionCueId: 0,
+      interactionCueKind: null,
     }));
   },
 }));

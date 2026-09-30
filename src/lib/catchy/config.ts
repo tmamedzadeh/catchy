@@ -64,8 +64,8 @@ export const GAME_CONFIG = {
     recoverySeconds: 0.38,
   },
   elasticBounce: {
-    restitution: 0.72,
-    outwardImpulse: 2.1,
+    releaseDistance: 0.14,
+    playerSpeedMultiplier: 2.2,
   },
   barrier: {
     openSeconds: 5,
@@ -119,7 +119,6 @@ export const ARENA = {
   radius: GAME_CONFIG.arenaRadius,
   rimHeight: 1.15,
   rimThickness: 1.1,
-  grassRing: 3.4,
 };
 
 export const SCALE = {
@@ -175,7 +174,6 @@ function add(
 }
 
 const STONE_WALL: CollisionShape = { type: "box", width: 0.98, depth: 0.52 };
-const HEDGE_WALL: CollisionShape = { type: "box", width: 1, depth: 0.68 };
 
 /** A run of low stone blocks. Rotation is shared by the mesh and collider. */
 function wallRun(
@@ -194,49 +192,9 @@ function wallRun(
   }
 }
 
-function hedgeRun(x: number, z: number, angle: number, count: number, scale = 1.7) {
-  const step = scale * 0.96;
-  for (let i = 0; i < count; i++) {
-    const px = x + Math.cos(angle) * step * i;
-    const pz = z + Math.sin(angle) * step * i;
-    add("hedge-large", px, pz, -angle, scale, 0, HEDGE_WALL);
-  }
-}
-
-/** Decorative clusters keep collision volumes attached to the actual bushes. */
-function garden(x: number, z: number, spread = 2.2, seed = 1) {
-  const rnd = mulberry(seed);
-  const bushes = ["plant_bushDetailed", "plant_bushLarge", "plant_bush"];
-  for (let i = 0; i < 3; i++) {
-    const scale = 2.6 + rnd() * 1.2;
-    add(
-      bushes[Math.floor(rnd() * bushes.length)]!,
-      x + (rnd() - 0.5) * spread,
-      z + (rnd() - 0.5) * spread,
-      rnd() * 6.28,
-      scale,
-      0,
-      { type: "circle", radius: 0.22 },
-    );
-  }
-}
-
-function mulberry(a: number) {
-  return function () {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 // Asymmetric layout: open running plain, fountain loop, eastern choke point,
-// northern risk zone, and a short southern shortcut.
+// and a short southern shortcut.
 add("fountain-round", 2, -1, 0, 3.1, 0, { type: "circle", radius: 1.3 });
-garden(6.4, -4.2, 2.6, 11);
-garden(-2.2, 2.6, 2.4, 12);
-garden(-7.2, 7.2, 2, 13);
 add("lantern", 6.6, 1.8, 0, 2.2, 0, { type: "circle", radius: 0.24 });
 add("lantern", -2.6, -4.4, 0, 2.2, 0, { type: "circle", radius: 0.24 });
 
@@ -244,17 +202,12 @@ add("lantern", -2.6, -4.4, 0, 2.2, 0, { type: "circle", radius: 0.24 });
 wallRun(11.5, -7.5, Math.PI / 2, 4);
 wallRun(11.5, 3.4, Math.PI / 2, 3);
 add("lantern", 13.4, -1.6, 0, 2.2, 0, { type: "circle", radius: 0.24 });
-garden(15.8, 3.7, 2, 31);
 
 // Loop wall north-west.
 wallRun(-14, -9, 0, 5);
 wallRun(-14, -9, Math.PI / 2, 3);
-garden(-9.5, -12.5, 2.6, 21);
 add("crate", -10.4, -5.3, 0.5, 1.35, 0, { type: "box", width: 0.72, depth: 0.72 });
 add("barrel", -8.9, -5.9, -0.2, 1.15, 0, { type: "circle", radius: 0.38 });
-
-// RISK ZONE fence north.
-hedgeRun(-6, -17.5, 0, 6);
 
 // SHORTCUT lane south-east, framed by crates and barrels.
 add("crate", 15.5, 9.5, 0.3, 1.5, 0, { type: "box", width: 0.72, depth: 0.72 });
@@ -287,13 +240,6 @@ const palmSpots: [number, number, string, number][] = [
 ];
 for (const [x, z, model, scale] of palmSpots) {
   add(model, x, z, (x + z) * 0.3, scale, 0, { type: "circle", radius: 0.2 });
-}
-
-// Rim greenery pockets remain passable between their individual bushes.
-for (let i = 0; i < 14; i++) {
-  const a = (i / 14) * Math.PI * 2 + 0.31;
-  const r = GAME_CONFIG.arenaRadius - 2.4;
-  garden(Math.cos(a) * r, Math.sin(a) * r, 2.6, 100 + i);
 }
 
 export const PROPS: MapObject[] = objects;

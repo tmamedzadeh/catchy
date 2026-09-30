@@ -330,29 +330,35 @@
   opacity: 0.66;
 }
 
-.dash-control-ring {
+.dash-control-ring,
+.boost-control-ring {
   transform: rotate(-90deg);
   overflow: visible;
 }
 
 .dash-control-ring-track,
-.dash-control-ring-progress {
+.dash-control-ring-progress,
+.boost-control-ring-track,
+.boost-control-ring-progress {
   fill: none;
   stroke-width: 2.5;
 }
 
-.dash-control-ring-track {
+.dash-control-ring-track,
+.boost-control-ring-track {
   stroke: oklch(1 0 0 / 0.2);
 }
 
-.dash-control-ring-progress {
+.dash-control-ring-progress,
+.boost-control-ring-progress {
   stroke: oklch(0.9 0.18 135);
   stroke-linecap: round;
   stroke-dasharray: 126;
   stroke-dashoffset: 0;
 }
 
-.dash-control-ring-progress.is-cooling {
+.dash-control-ring-progress.is-cooling,
+.boost-control-ring-progress.is-cooling {
   stroke-dashoffset: 126;
   animation-name: dash-cooldown-ring;
   animation-timing-function: linear;

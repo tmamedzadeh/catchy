@@ -3,7 +3,17 @@ import { useGameStore } from "@/store/gameStore";
 import { GAME_CONFIG } from "./config";
 
 type Cue =
-  "nearby" | "catch" | "score" | "countdown" | "roundEnd" | "button" | "restart" | "dash" | "boost";
+  | "nearby"
+  | "catch"
+  | "score"
+  | "countdown"
+  | "roundEnd"
+  | "button"
+  | "restart"
+  | "dash"
+  | "boost"
+  | "slowDown"
+  | "bounce";
 
 type Note = {
   frequency: number;
@@ -66,6 +76,20 @@ const CUES: Record<Cue, { cooldown: number; notes: Note[] }> = {
       { frequency: 680, duration: 0.11, delay: 0.035, volume: 0.08, wave: "sine" },
     ],
   },
+  slowDown: {
+    cooldown: 420,
+    notes: [
+      { frequency: 360, duration: 0.11, volume: 0.07, wave: "triangle" },
+      { frequency: 260, duration: 0.13, delay: 0.06, volume: 0.06, wave: "sine" },
+    ],
+  },
+  bounce: {
+    cooldown: 180,
+    notes: [
+      { frequency: 270, duration: 0.075, volume: 0.12, wave: "triangle" },
+      { frequency: 590, duration: 0.12, delay: 0.035, volume: 0.09, wave: "sine" },
+    ],
+  },
 };
 
 let audioContext: AudioContext | null = null;
@@ -73,7 +97,9 @@ let masterGain: GainNode | null = null;
 let resumePromise: Promise<void> | null = null;
 let activeVoices = 0;
 const lastPlayed = new Map<Cue, number>();
+const lastVibrated = new Map<Cue, number>();
 const MAX_ACTIVE_VOICES = 6;
+let lastVibrationAt = -Infinity;
 
 function getAudioContext() {
   if (audioContext || typeof window === "undefined") return audioContext;
@@ -156,7 +182,7 @@ export function playGameSound(cue: Cue) {
   playNotes(context, CUES[cue].notes);
 }
 
-export function vibrateGame(pattern: number | number[]) {
+export function vibrateGame(pattern: number | number[], cue: Cue) {
   if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function") return;
   let hasTouch = navigator.maxTouchPoints > 0;
   try {
@@ -168,6 +194,11 @@ export function vibrateGame(pattern: number | number[]) {
     return;
   }
   if (!hasTouch) return;
+  const now = typeof performance === "undefined" ? Date.now() : performance.now();
+  const previous = lastVibrated.get(cue) ?? -Infinity;
+  if (now - previous < CUES[cue].cooldown || now - lastVibrationAt < 80) return;
+  lastVibrated.set(cue, now);
+  lastVibrationAt = now;
   try {
     navigator.vibrate(pattern);
   } catch {
@@ -202,27 +233,42 @@ export function GameFeedback() {
       if (current.caught > previous.caught) {
         playGameSound("catch");
         window.setTimeout(() => playGameSound("score"), 110);
-        vibrateGame(24);
+        vibrateGame(24, "catch");
       }
 
       const previousSecond = Math.ceil(previous.time);
       const currentSecond = Math.ceil(current.time);
       if (currentSecond !== previousSecond && currentSecond <= 10 && currentSecond > 0) {
         playGameSound("countdown");
-        if (currentSecond <= 3) vibrateGame(12);
+        if (currentSecond <= 3) vibrateGame(12, "countdown");
       }
 
       if (current.state === "timeup" && previous.state !== "timeup") {
         playGameSound("roundEnd");
-        vibrateGame([18, 22, 18]);
+        vibrateGame([18, 22, 18], "roundEnd");
       }
       if (current.dashStatus === "active" && previous.dashStatus !== "active") {
         playGameSound("dash");
-        vibrateGame(GAME_CONFIG.player.dash.hapticMs);
+        vibrateGame(GAME_CONFIG.player.dash.hapticMs, "dash");
       }
-      if (current.boostCueId > previous.boostCueId) {
+      const speedPadTriggered =
+        current.interactionCueId > previous.interactionCueId &&
+        current.interactionCueKind === "speedPad";
+      if (current.boostCueId > previous.boostCueId && !speedPadTriggered) {
         playGameSound("boost");
-        vibrateGame(GAME_CONFIG.player.speedBoost.hapticMs);
+        vibrateGame(GAME_CONFIG.player.speedBoost.hapticMs, "boost");
+      }
+      if (current.interactionCueId > previous.interactionCueId) {
+        if (current.interactionCueKind === "speedPad") {
+          playGameSound("boost");
+          vibrateGame(GAME_CONFIG.player.speedBoost.hapticMs, "boost");
+        } else if (current.interactionCueKind === "slowZone") {
+          playGameSound("slowDown");
+          vibrateGame(12, "slowDown");
+        } else if (current.interactionCueKind === "elasticBounce") {
+          playGameSound("bounce");
+          vibrateGame(24, "bounce");
+        }
       }
       if (current.restartCount > previous.restartCount) playGameSound("restart");
     });

@@ -95,6 +95,7 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
   const restart = useGameStore((s) => s.restart);
   const dashStatus = useGameStore((s) => s.dashStatus);
   const speedBoostStatus = useGameStore((s) => s.speedBoostStatus);
+  const boostCueId = useGameStore((s) => s.boostCueId);
   const debugMode = useMemo(
     () =>
       typeof window !== "undefined" &&
@@ -281,7 +282,12 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
       </div>
       <div className="ability-controls absolute flex items-center gap-2">
         <DashControl gameReady={gameReady} state={state} status={dashStatus} />
-        <SpeedBoostControl gameReady={gameReady} state={state} status={speedBoostStatus} />
+        <SpeedBoostControl
+          gameReady={gameReady}
+          state={state}
+          status={speedBoostStatus}
+          cueId={boostCueId}
+        />
       </div>
 
       <FirstSessionOnboarding gameReady={gameReady} />
@@ -358,21 +364,23 @@ function SpeedBoostControl({
   gameReady,
   state,
   status,
+  cueId,
 }: {
   gameReady: boolean;
   state: ReturnType<typeof useGameStore.getState>["state"];
   status: ReturnType<typeof useGameStore.getState>["speedBoostStatus"];
+  cueId: number;
 }) {
   const isChasing = state === "chase" || state === "nearby";
   const enabled = gameReady && isChasing && status === "ready";
-  const label = status === "active" ? "LIVE" : status === "cooldown" ? "WAIT" : "BOOST";
+  const label = status === "active" ? "ACTIVE" : status === "cooldown" ? "RECHARGING" : "READY";
 
   return (
     <div className="boost-control">
       <button
         type="button"
         data-sound="boost"
-        aria-label={enabled ? "Speed boost" : `Speed boost ${isChasing ? status : "unavailable"}`}
+        aria-label={`Speed boost ${isChasing ? status : "unavailable"}`}
         title={label}
         disabled={!enabled}
         onPointerDown={(event) => {
@@ -383,13 +391,28 @@ function SpeedBoostControl({
         }}
         onPointerCancel={(event) => event.preventDefault()}
         onContextMenu={(event) => event.preventDefault()}
-        className="boost-control-button pointer-events-auto grid place-items-center rounded-full font-display font-bold text-white transition-transform active:scale-95 disabled:cursor-default"
+        className="boost-control-button pointer-events-auto relative grid place-items-center rounded-full font-display font-bold text-white transition-transform active:scale-95 disabled:cursor-default"
       >
-        <span className="flex flex-col items-center leading-none">
+        <svg
+          className="boost-control-ring absolute inset-0 size-full"
+          viewBox="0 0 48 48"
+          aria-hidden="true"
+        >
+          <circle className="boost-control-ring-track" cx="24" cy="24" r="20" />
+          <circle
+            key={cueId}
+            className={`boost-control-ring-progress ${status === "ready" ? "" : "is-cooling"}`}
+            cx="24"
+            cy="24"
+            r="20"
+            style={{ animationDuration: `${GAME_CONFIG.player.speedBoost.cooldownSeconds}s` }}
+          />
+        </svg>
+        <span className="relative flex flex-col items-center leading-none">
           <svg viewBox="0 0 24 24" className="mb-0.5 size-5" fill="currentColor" aria-hidden="true">
             <path d="M14.2 1.8 5.1 13.2h5.7l-.8 9 8.9-12h-5.7l1-8.4Z" />
           </svg>
-          <span className="text-[0.5rem] tracking-wide">{isChasing ? label : "LOCK"}</span>
+          <span className="text-[0.33rem] tracking-tight">{isChasing ? label : "LOCK"}</span>
         </span>
       </button>
     </div>

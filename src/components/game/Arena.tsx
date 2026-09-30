@@ -5,8 +5,6 @@ import { createTerrainTexture } from "@/lib/catchy/textures";
 
 const SAND = "#edb75f";
 const SAND_DARK = "#d88f43";
-const GRASS = "#58b83c";
-const GRASS_DARK = "#368c31";
 const STONE = "#d3c4aa";
 const ROCK = "#93735c";
 
@@ -123,13 +121,12 @@ function StoneRim() {
   );
 }
 
-/** Ground disc, grass rim, boundary wall and the cliff the arena sits on. */
+/** Sand ground disc, boundary wall and the cliff the arena sits on. */
 export function Arena() {
   const R = GAME_CONFIG.arenaRadius;
   const textures = useMemo(
     () => ({
       sand: createTerrainTexture("sand", 12),
-      grass: createTerrainTexture("grass", 15),
       rock: createTerrainTexture("rock", 8),
       stone: createTerrainTexture("stone", 18),
     }),
@@ -154,15 +151,9 @@ export function Arena() {
         <meshStandardMaterial color="#6f5b43" roughness={0.95} />
       </mesh>
 
-      {/* grass ring (outer) */}
-      <mesh rotation-x={-Math.PI / 2} position={[0, 0.02, 0]} receiveShadow>
-        <circleGeometry args={[R, 64]} />
-        <meshStandardMaterial map={textures.grass} color={GRASS} roughness={0.82} />
-      </mesh>
-
       {/* sand play surface */}
       <mesh rotation-x={-Math.PI / 2} position={[0, 0.05, 0]} receiveShadow>
-        <circleGeometry args={[R - ARENA.grassRing, 64]} />
+        <circleGeometry args={[R, 64]} />
         <meshStandardMaterial map={textures.sand} color={SAND} roughness={0.8} />
       </mesh>
 
