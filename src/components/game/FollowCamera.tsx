@@ -17,17 +17,16 @@ export function FollowCamera() {
     const dt = Math.min(rawDelta, 0.05);
     const { camHeight, camAngle, state } = useGameStore.getState();
     const rad = (camAngle * Math.PI) / 180;
-    // horizontal distance derives from height only, so the angle slider
-    // tilts the view without raising or lowering the camera
+    // horizontal distance derives from the height slider only
     const dist = camHeight * 0.9;
 
     // portrait screens see less width, so pull back to keep the arena readable
     const aspect = (camera as THREE.PerspectiveCamera).aspect ?? 1.6;
     const portrait = aspect < 1 ? 1.45 : aspect < 1.4 ? 1.15 : 1;
     const zoom = (state === "capture" ? 0.72 : 1) * portrait;
-    const h = camHeight * (state === "capture" ? 0.8 : 1) * portrait;
-    // pitch the view by aiming the look target below/above the player
-    const lookY = Math.max(0.4, h - dist * zoom * Math.tan(rad));
+    // angle sets elevation above the player; the camera always looks at the
+    // avatar's feet, so it stays in frame at any angle
+    const h = Math.max(2.5, dist * zoom * Math.tan(rad)) * (state === "capture" ? 0.8 : 1) * portrait;
 
     // trail behind the player's heading
     const back = PLAYER.heading + Math.PI;
@@ -38,9 +37,9 @@ export function FollowCamera() {
     pos.current.lerp(new THREE.Vector3(tx, h, tz), k);
     look.current.lerp(
       new THREE.Vector3(
-        PLAYER.x + Math.sin(PLAYER.heading) * 3,
-        lookY,
-        PLAYER.z + Math.cos(PLAYER.heading) * 3,
+        PLAYER.x + Math.sin(PLAYER.heading) * 2,
+        0.9,
+        PLAYER.z + Math.cos(PLAYER.heading) * 2,
       ),
       k,
     );
