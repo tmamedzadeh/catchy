@@ -64,15 +64,15 @@ function Hair({ p }: { p: Palette }) {
     case "cap":
       return (
         <group position={[0, 0.16, 0]}>
-          <mesh castShadow>
+          <mesh>
             <sphereGeometry args={[0.285, 20, 14, 0, Math.PI * 2, 0, Math.PI / 2]} />
             <meshStandardMaterial color={p.accent} roughness={0.6} />
           </mesh>
-          <mesh position={[0, -0.01, 0.24]} rotation-x={-0.12} castShadow>
+          <mesh position={[0, -0.01, 0.24]} rotation-x={-0.12}>
             <boxGeometry args={[0.36, 0.05, 0.24]} />
             <meshStandardMaterial color={p.shirt} roughness={0.6} />
           </mesh>
-          <mesh position={[0, -0.12, -0.16]} castShadow>
+          <mesh position={[0, -0.12, -0.16]}>
             <sphereGeometry args={[0.2, 16, 12]} />
             {mat}
           </mesh>
@@ -81,11 +81,11 @@ function Hair({ p }: { p: Palette }) {
     case "ponytail":
       return (
         <group position={[0, 0.1, 0]}>
-          <mesh castShadow>
+          <mesh>
             <sphereGeometry args={[0.295, 20, 16, 0, Math.PI * 2, 0, Math.PI * 0.62]} />
             {mat}
           </mesh>
-          <mesh position={[0, -0.05, -0.28]} rotation-x={0.5} castShadow>
+          <mesh position={[0, -0.05, -0.28]} rotation-x={0.5}>
             <capsuleGeometry args={[0.11, 0.42, 6, 12]} />
             {mat}
           </mesh>
@@ -94,11 +94,11 @@ function Hair({ p }: { p: Palette }) {
     case "bun":
       return (
         <group position={[0, 0.11, 0]}>
-          <mesh castShadow>
+          <mesh>
             <sphereGeometry args={[0.3, 20, 16, 0, Math.PI * 2, 0, Math.PI * 0.68]} />
             {mat}
           </mesh>
-          <mesh position={[0, 0.2, -0.16]} castShadow>
+          <mesh position={[0, 0.2, -0.16]}>
             <sphereGeometry args={[0.17, 16, 12]} />
             {mat}
           </mesh>
@@ -107,12 +107,12 @@ function Hair({ p }: { p: Palette }) {
     default:
       return (
         <group position={[0, 0.12, 0]}>
-          <mesh castShadow>
+          <mesh>
             <sphereGeometry args={[0.29, 20, 16, 0, Math.PI * 2, 0, Math.PI * 0.55]} />
             {mat}
           </mesh>
           {[-0.14, 0, 0.14].map((x, i) => (
-            <mesh key={i} position={[x, 0.16, -0.02]} rotation-z={x * 1.6} castShadow>
+            <mesh key={i} position={[x, 0.16, -0.02]} rotation-z={x * 1.6}>
               <coneGeometry args={[0.09, 0.26, 8]} />
               {mat}
             </mesh>
@@ -160,7 +160,7 @@ export function Character({ index }: { index: number }) {
 
   const runSmooth = useRef(0);
 
-  useFrame((_, rawDelta) => {
+  useFrame(({ clock }, rawDelta) => {
     const dt = Math.min(rawDelta, 0.05);
     const g = root.current;
     if (!g) return;
@@ -216,7 +216,7 @@ export function Character({ index }: { index: number }) {
       head.current.position.y = 1.44 - Math.abs(c) * 0.012 * run;
     }
     if (ring.current) {
-      const t = performance.now() * 0.002;
+      const t = clock.elapsedTime * 2;
       ring.current.scale.setScalar(1 + Math.sin(t * 2) * 0.06);
     }
   });
@@ -251,7 +251,7 @@ export function Character({ index }: { index: number }) {
           <mesh position={[0, -0.24, 0]} material={pantsMat} castShadow>
             <capsuleGeometry args={[0.105, 0.34, 6, 12]} />
           </mesh>
-          <mesh position={[0, -0.5, 0.06]} material={shoeMat} castShadow>
+          <mesh position={[0, -0.5, 0.06]} material={shoeMat}>
             <boxGeometry args={[0.2, 0.14, 0.3]} />
           </mesh>
         </group>
@@ -259,7 +259,7 @@ export function Character({ index }: { index: number }) {
           <mesh position={[0, -0.24, 0]} material={pantsMat} castShadow>
             <capsuleGeometry args={[0.105, 0.34, 6, 12]} />
           </mesh>
-          <mesh position={[0, -0.5, 0.06]} material={shoeMat} castShadow>
+          <mesh position={[0, -0.5, 0.06]} material={shoeMat}>
             <boxGeometry args={[0.2, 0.14, 0.3]} />
           </mesh>
         </group>
@@ -272,39 +272,39 @@ export function Character({ index }: { index: number }) {
           <capsuleGeometry args={[0.235, 0.08, 6, 14]} />
         </mesh>
         {/* bold outfit panel, collar and belt improve readability from the game camera */}
-        <mesh position={[0, 0.98, 0.225]} rotation-x={0.1} castShadow>
+        <mesh position={[0, 0.98, 0.225]} rotation-x={0.1}>
           <boxGeometry args={[0.19, 0.36, 0.075]} />
           <meshStandardMaterial color={p.accent} roughness={0.5} />
         </mesh>
-        <mesh position={[0, 1.2, 0.17]} rotation-x={0.45} castShadow>
+        <mesh position={[0, 1.2, 0.17]} rotation-x={0.45}>
           <torusGeometry args={[0.17, 0.045, 8, 18, Math.PI]} />
           <meshStandardMaterial color={p.accent} roughness={0.38} />
         </mesh>
-        <mesh position={[0, 0.78, 0.18]} castShadow>
+        <mesh position={[0, 0.78, 0.18]}>
           <boxGeometry args={[0.43, 0.07, 0.08]} />
           <meshStandardMaterial color={p.shoes} roughness={0.42} />
         </mesh>
 
         {/* arms */}
         <group ref={armL} position={[0.3, 1.16, 0]}>
-          <mesh position={[0, -0.22, 0]} material={shirtMat} castShadow>
+          <mesh position={[0, -0.22, 0]} material={shirtMat}>
             <capsuleGeometry args={[0.078, 0.2, 6, 12]} />
           </mesh>
-          <mesh position={[0, -0.4, 0]} material={skinMat} castShadow>
+          <mesh position={[0, -0.4, 0]} material={skinMat}>
             <capsuleGeometry args={[0.072, 0.14, 6, 12]} />
           </mesh>
-          <mesh position={[0, -0.54, 0]} material={skinMat} castShadow>
+          <mesh position={[0, -0.54, 0]} material={skinMat}>
             <sphereGeometry args={[0.095, 12, 10]} />
           </mesh>
         </group>
         <group ref={armR} position={[-0.3, 1.16, 0]}>
-          <mesh position={[0, -0.22, 0]} material={shirtMat} castShadow>
+          <mesh position={[0, -0.22, 0]} material={shirtMat}>
             <capsuleGeometry args={[0.078, 0.2, 6, 12]} />
           </mesh>
-          <mesh position={[0, -0.4, 0]} material={skinMat} castShadow>
+          <mesh position={[0, -0.4, 0]} material={skinMat}>
             <capsuleGeometry args={[0.072, 0.14, 6, 12]} />
           </mesh>
-          <mesh position={[0, -0.54, 0]} material={skinMat} castShadow>
+          <mesh position={[0, -0.54, 0]} material={skinMat}>
             <sphereGeometry args={[0.095, 12, 10]} />
           </mesh>
         </group>
@@ -327,7 +327,7 @@ export function Character({ index }: { index: number }) {
               <meshBasicMaterial color="#fff9e9" />
             </mesh>
           ))}
-          <mesh position={[0, -0.025, 0.276]} castShadow>
+          <mesh position={[0, -0.025, 0.276]}>
             <sphereGeometry args={[0.035, 10, 8]} />
             <meshStandardMaterial color={p.skin} roughness={0.52} />
           </mesh>
@@ -353,7 +353,7 @@ export function Character({ index }: { index: number }) {
           <Hair p={p} />
         </group>
         {/* compact backpack gives the player and runners a stronger running silhouette */}
-        <mesh position={[0, 1.02, -0.245]} scale={[0.78, 1, 0.5]} castShadow>
+        <mesh position={[0, 1.02, -0.245]} scale={[0.78, 1, 0.5]}>
           <capsuleGeometry args={[0.2, 0.28, 8, 14]} />
           <meshStandardMaterial color={p.accent} roughness={0.48} />
         </mesh>

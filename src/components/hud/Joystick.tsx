@@ -3,33 +3,42 @@ import { joystick } from "@/lib/sprout/input";
 
 export function Joystick() {
   const base = useRef<HTMLDivElement>(null);
+  const layout = useRef<{ centerX: number; centerY: number; max: number } | null>(null);
   const [knob, setKnob] = useState({ x: 0, y: 0 });
   const pointer = useRef<number | null>(null);
 
   const update = (clientX: number, clientY: number) => {
     const el = base.current;
     if (!el) return;
-    const r = el.getBoundingClientRect();
-    const cx = r.left + r.width / 2;
-    const cy = r.top + r.height / 2;
-    const max = r.width * 0.34;
-    let dx = clientX - cx;
-    let dy = clientY - cy;
+    let bounds = layout.current;
+    if (!bounds) {
+      const rect = el.getBoundingClientRect();
+      bounds = {
+        centerX: rect.left + rect.width / 2,
+        centerY: rect.top + rect.height / 2,
+        max: rect.width * 0.34,
+      };
+      layout.current = bounds;
+    }
+    let dx = clientX - bounds.centerX;
+    let dy = clientY - bounds.centerY;
     const d = Math.hypot(dx, dy);
-    if (d > max) {
-      dx = (dx / d) * max;
-      dy = (dy / d) * max;
+    if (d > bounds.max) {
+      dx = (dx / d) * bounds.max;
+      dy = (dy / d) * bounds.max;
     }
     setKnob({ x: dx, y: dy });
     const n = Math.max(Math.hypot(dx, dy), 0.001);
-    const mag = Math.min(d / max, 1);
+    const mag = Math.min(d / bounds.max, 1);
     joystick.x = (dx / n) * mag * (d > 0 ? 1 : 0);
     joystick.z = (dy / n) * mag * (d > 0 ? 1 : 0);
     joystick.active = true;
   };
 
-  const release = useCallback(() => {
+  const release = useCallback((pointerId?: number) => {
+    if (pointerId !== undefined && pointer.current !== pointerId) return;
     pointer.current = null;
+    layout.current = null;
     setKnob({ x: 0, y: 0 });
     joystick.x = 0;
     joystick.z = 0;
@@ -50,19 +59,25 @@ export function Joystick() {
     <div
       ref={base}
       onPointerDown={(e) => {
-        if (pointer.current !== null) return;
+        if (pointer.current !== null || e.button !== 0) return;
+        if (e.pointerType !== "mouse") e.preventDefault();
         pointer.current = e.pointerId;
-        e.currentTarget.setPointerCapture(e.pointerId);
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+          release(e.pointerId);
+          return;
+        }
         update(e.clientX, e.clientY);
       }}
       onPointerMove={(e) => {
         if (pointer.current === e.pointerId) update(e.clientX, e.clientY);
       }}
       onPointerUp={(e) => {
-        if (pointer.current === e.pointerId) release();
+        release(e.pointerId);
       }}
-      onPointerCancel={release}
-      onLostPointerCapture={release}
+      onPointerCancel={(e) => release(e.pointerId)}
+      onLostPointerCapture={(e) => release(e.pointerId)}
       className="pointer-events-auto relative size-[var(--joystick-size)] touch-none rounded-full select-none"
       style={{
         background:

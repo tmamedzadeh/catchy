@@ -1,13 +1,18 @@
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
+import { PerformanceMonitor } from "@react-three/drei";
+import { useCallback, useLayoutEffect, useState } from "react";
 import * as THREE from "three";
 import { Scene } from "./Scene";
+import { detectInitialQualityTier, getTierDpr, type QualityTier } from "./quality";
 
 export function GameCanvas() {
+  const initialTier = detectInitialQualityTier();
+
   return (
     <Canvas
       className="game-canvas"
       shadows="soft"
-      dpr={[1, 1.75]}
+      dpr={getTierDpr(initialTier)}
       camera={{ position: [0, 22, 24], fov: 48, near: 0.5, far: 400 }}
       gl={{ antialias: true, powerPreference: "high-performance" }}
       onCreated={({ gl, scene }) => {
@@ -16,7 +21,40 @@ export function GameCanvas() {
         scene.background = new THREE.Color("#a9ddff");
       }}
     >
-      <Scene />
+      <AdaptiveQuality initialTier={initialTier} />
     </Canvas>
+  );
+}
+
+function AdaptiveQuality({ initialTier }: { initialTier: QualityTier }) {
+  const [tier, setTier] = useState(initialTier);
+  const setDpr = useThree((state) => state.setDpr);
+
+  useLayoutEffect(() => {
+    setDpr(getTierDpr(tier));
+  }, [setDpr, tier]);
+
+  const onDecline = useCallback(() => {
+    setTier((current) => (current === "high" ? "medium" : "low"));
+  }, []);
+  const onIncline = useCallback(() => {
+    setTier((current) => (current === "low" ? "medium" : "high"));
+  }, []);
+  const onFallback = useCallback(() => setTier("low"), []);
+
+  return (
+    <>
+      <PerformanceMonitor
+        iterations={6}
+        ms={600}
+        threshold={0.8}
+        flipflops={4}
+        bounds={(refreshRate) => (refreshRate > 100 ? [48, 78] : [42, 58])}
+        onDecline={onDecline}
+        onIncline={onIncline}
+        onFallback={onFallback}
+      />
+      <Scene qualityTier={tier} />
+    </>
   );
 }

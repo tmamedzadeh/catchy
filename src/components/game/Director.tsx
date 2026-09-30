@@ -13,6 +13,10 @@ export function Director() {
   const targetId = useRef<string | null>(null);
   const telemetryAcc = useRef(0);
   const lastRestartCount = useRef(useGameStore.getState().restartCount);
+  const debugTelemetry = useRef(
+    typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("debug") === "true",
+  ).current;
   const forward = useRef(new THREE.Vector3());
   const right = useRef(new THREE.Vector3());
   const direction = useRef(new THREE.Vector3());
@@ -99,8 +103,6 @@ export function Director() {
     if (telemetryAcc.current >= 0.1) {
       telemetryAcc.current = 0;
       const latest = useGameStore.getState();
-      target = selectTarget(targetId.current, latest.capture?.runnerId ?? null);
-      targetId.current = target?.agent.id ?? null;
       camera.getWorldDirection(forward.current);
       forward.current.y = 0;
       forward.current.normalize();
@@ -118,18 +120,22 @@ export function Director() {
         distance: target?.dist ?? null,
         bearing,
         targetId: target?.agent.id ?? null,
-        cameraYaw: Math.atan2(forward.current.x, forward.current.z),
-        playerX: PLAYER.x,
-        playerZ: PLAYER.z,
-        playerSpeed: PLAYER.speed,
-        runners: AGENTS.slice(1).map((runner) => ({
-          id: runner.id,
-          state: runner.state === "respawning" ? "respawning" : "flee",
-          x: runner.x,
-          z: runner.z,
-          speed: runner.speed,
-          active: runner.hidden <= 0,
-        })),
+        cameraYaw: debugTelemetry
+          ? Math.atan2(forward.current.x, forward.current.z)
+          : latest.cameraYaw,
+        playerX: debugTelemetry ? PLAYER.x : latest.playerX,
+        playerZ: debugTelemetry ? PLAYER.z : latest.playerZ,
+        playerSpeed: debugTelemetry ? PLAYER.speed : latest.playerSpeed,
+        runners: debugTelemetry
+          ? AGENTS.slice(1).map((runner) => ({
+              id: runner.id,
+              state: runner.state === "respawning" ? "respawning" : "flee",
+              x: runner.x,
+              z: runner.z,
+              speed: runner.speed,
+              active: runner.hidden <= 0,
+            }))
+          : latest.runners,
       });
     }
   });

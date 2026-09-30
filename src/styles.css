@@ -229,6 +229,121 @@
   display: none;
 }
 
+.hud-brand-timer {
+  top: calc(1rem + env(safe-area-inset-top, 0px));
+  left: calc(1rem + env(safe-area-inset-left, 0px));
+}
+
+.hud-score {
+  top: calc(1rem + env(safe-area-inset-top, 0px));
+  right: calc(1rem + env(safe-area-inset-right, 0px));
+}
+
+.hud-target-finder {
+  right: max(1rem, calc(env(safe-area-inset-right, 0px) + 0.75rem));
+}
+
+.hud-callouts {
+  top: calc(5rem + env(safe-area-inset-top, 0px));
+}
+
+.touch-controls {
+  bottom: max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
+  left: max(1.25rem, calc(env(safe-area-inset-left, 0px) + 1rem));
+}
+
+.first-session-onboarding {
+  top: calc(5.2rem + env(safe-area-inset-top, 0px));
+  z-index: 20;
+  width: min(19rem, calc(100vw - 2rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
+  pointer-events: none;
+  animation: sprout-pop 260ms ease-out;
+}
+
+.round-end-overlay {
+  padding:
+    max(1rem, calc(env(safe-area-inset-top, 0px) + 0.75rem))
+    max(1rem, calc(env(safe-area-inset-right, 0px) + 0.75rem))
+    max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem))
+    max(1rem, calc(env(safe-area-inset-left, 0px) + 0.75rem));
+}
+
+.round-end-overlay > div {
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.game-loading-screen {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: max(1.25rem, env(safe-area-inset-top, 0px)) max(1.25rem, env(safe-area-inset-right, 0px))
+    max(1.25rem, env(safe-area-inset-bottom, 0px)) max(1.25rem, env(safe-area-inset-left, 0px));
+  background: #bfe3ff;
+  color: var(--sprout-ink);
+  transition: opacity 280ms ease-out;
+}
+
+.game-loading-screen-ready {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.game-loading-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem;
+  border: 1.5px solid oklch(1 0 0 / 0.7);
+  border-radius: 1.5rem;
+  background: oklch(0.99 0.012 95 / 0.82);
+  box-shadow: var(--hud-shadow);
+  backdrop-filter: blur(10px);
+}
+
+.game-loading-mark {
+  display: grid;
+  width: 3.5rem;
+  height: 3.5rem;
+  margin-bottom: 0.65rem;
+  place-items: center;
+  border-radius: 1.1rem;
+  background: radial-gradient(circle at 35% 30%, oklch(0.84 0.17 60), oklch(0.68 0.2 38));
+  box-shadow: inset 0 -3px 0 oklch(0.5 0.15 150 / 0.25);
+  color: white;
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.game-loading-dots {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 1rem;
+}
+
+.game-loading-dots span {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--sprout-accent);
+  animation: sprout-pulse 850ms ease-in-out infinite;
+}
+
+.game-loading-dots span:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.game-loading-dots span:nth-child(3) {
+  animation-delay: 240ms;
+}
+
+.capture-flash {
+  background: radial-gradient(ellipse at center, oklch(1 0.07 90 / 0.16), oklch(0.78 0.16 60 / 0.1) 38%, transparent 72%);
+}
+
 @media (pointer: coarse), (max-width: 640px) {
   .touch-controls {
     display: block;
@@ -267,9 +382,43 @@
   }
 }
 
+@keyframes sprout-capture-flash {
+  0% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 @media (max-width: 640px) {
   :root {
     --joystick-size: 5.5rem;
     --hud-radius: 1rem;
+  }
+}
+
+@media (min-width: 640px) {
+  .hud-brand-timer {
+    top: calc(1.5rem + env(safe-area-inset-top, 0px));
+    left: calc(1.5rem + env(safe-area-inset-left, 0px));
+  }
+
+  .hud-score {
+    top: calc(1.5rem + env(safe-area-inset-top, 0px));
+    right: calc(1.5rem + env(safe-area-inset-right, 0px));
+  }
+
+  .hud-target-finder {
+    right: max(1.5rem, calc(env(safe-area-inset-right, 0px) + 1.25rem));
+  }
+
+  .hud-callouts {
+    top: calc(6rem + env(safe-area-inset-top, 0px));
+  }
+
+  .touch-controls {
+    bottom: max(2rem, calc(env(safe-area-inset-bottom, 0px) + 1.5rem));
+    left: max(2rem, calc(env(safe-area-inset-left, 0px) + 1.5rem));
   }
 }

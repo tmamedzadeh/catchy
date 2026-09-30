@@ -4,6 +4,8 @@ import * as THREE from "three";
 import { AGENTS, RUNNERS } from "@/lib/sprout/agents";
 import { useGameStore } from "@/store/gameStore";
 
+const PARTICLE_GEOMETRY = new THREE.SphereGeometry(1, 8, 6);
+
 /** Dust puffs kicked up behind every running character. */
 export function Dust() {
   const group = useRef<THREE.Group>(null);
@@ -24,16 +26,29 @@ export function Dust() {
     if (!g) return;
     if (previousRestart.current !== restartCount) {
       previousRestart.current = restartCount;
-      data.forEach((particle, index) => {
+      for (let index = 0; index < data.length; index++) {
+        const particle = data[index]!;
         particle.life = 0.8;
         const mesh = g.children[index] as THREE.Mesh;
         mesh.visible = false;
         mesh.scale.setScalar(0);
-      });
+        (mesh.material as THREE.MeshBasicMaterial).opacity = 0;
+      }
     }
-    data.forEach((d, i) => {
+    for (let i = 0; i < data.length; i++) {
+      const d = data[i]!;
       const m = g.children[i] as THREE.Mesh;
       const a = AGENTS[d.ai]!;
+      if (a.speed <= 2.5 || a.hidden > 0) {
+        d.life = 0;
+        if (m.visible) {
+          m.visible = false;
+          m.scale.setScalar(0);
+          (m.material as THREE.MeshBasicMaterial).opacity = 0;
+        }
+        continue;
+      }
+
       d.life -= dt;
       if (d.life <= 0) {
         d.life = 0.8;
@@ -41,18 +56,16 @@ export function Dust() {
       }
       const t = 1 - d.life / 0.8;
       m.position.y += dt * 0.5;
-      const visible = a.speed > 2.5 && a.hidden <= 0;
-      m.visible = visible;
+      m.visible = true;
       m.scale.setScalar(0.2 + t * 0.55);
-      (m.material as THREE.MeshBasicMaterial).opacity = visible ? 0.32 * (1 - t) : 0;
-    });
+      (m.material as THREE.MeshBasicMaterial).opacity = 0.32 * (1 - t);
+    }
   });
 
   return (
     <group ref={group}>
       {data.map((_, i) => (
-        <mesh key={i}>
-          <sphereGeometry args={[1, 8, 6]} />
+        <mesh key={i} geometry={PARTICLE_GEOMETRY} dispose={null}>
           <meshBasicMaterial color="#f4e0bd" transparent opacity={0.3} depthWrite={false} />
         </mesh>
       ))}
@@ -78,9 +91,11 @@ export function CaptureBurst() {
     const g = group.current;
     if (!g) return;
     if (!active || !capture) {
-      animation.current.runnerId = null;
-      animation.current.elapsed = 0;
-      g.visible = false;
+      if (g.visible || animation.current.runnerId !== null) {
+        animation.current.runnerId = null;
+        animation.current.elapsed = 0;
+        g.visible = false;
+      }
       return;
     }
 
@@ -96,25 +111,25 @@ export function CaptureBurst() {
     }
     g.visible = true;
     g.position.set(capture.position.x, capture.position.y + 1.4, capture.position.z);
-    hearts.forEach((h, i) => {
+    const progress = Math.min(animation.current.elapsed / 0.75, 1);
+    for (let i = 0; i < hearts.length; i++) {
+      const h = hearts[i]!;
       const m = g.children[i] as THREE.Mesh;
-      const p = Math.min(animation.current.elapsed / 0.75, 1);
       m.position.set(
-        Math.cos(h.a) * h.r * (0.6 + p * 2.4),
-        p * 2.2 + Math.sin(p * 6 + i) * 0.1,
-        Math.sin(h.a) * h.r * (0.6 + p * 2.4),
+        Math.cos(h.a) * h.r * (0.6 + progress * 2.4),
+        progress * 2.2 + Math.sin(progress * 6 + i) * 0.1,
+        Math.sin(h.a) * h.r * (0.6 + progress * 2.4),
       );
-      m.rotation.z = Math.sin(p * 5 + i) * 0.4;
-      m.scale.setScalar(0.28 * (1 - p * 0.4));
-      (m.material as THREE.MeshBasicMaterial).opacity = 1 - p;
-    });
+      m.rotation.z = Math.sin(progress * 5 + i) * 0.4;
+      m.scale.setScalar(0.28 * (1 - progress * 0.4));
+      (m.material as THREE.MeshBasicMaterial).opacity = 1 - progress;
+    }
   });
 
   return (
     <group ref={group} visible={false}>
       {hearts.map((_, i) => (
-        <mesh key={i}>
-          <sphereGeometry args={[1, 8, 6]} />
+        <mesh key={i} geometry={PARTICLE_GEOMETRY} dispose={null}>
           <meshBasicMaterial color={i % 2 ? "#ff5c86" : "#ffd166"} transparent depthWrite={false} />
         </mesh>
       ))}
@@ -137,7 +152,13 @@ export function TargetBeacon() {
       x = capture.position.x;
       z = capture.position.z;
     } else {
-      const target = RUNNERS.find((runner) => runner.id === state.targetId && runner.hidden <= 0);
+      let target = null;
+      for (const runner of RUNNERS) {
+        if (runner.id === state.targetId && runner.hidden <= 0) {
+          target = runner;
+          break;
+        }
+      }
       if (!target) {
         g.visible = false;
         return;
@@ -152,29 +173,43 @@ export function TargetBeacon() {
     g.visible = true;
     g.position.set(x, 0, z);
     const t = clock.elapsedTime;
-    const pulse = (t % 1.4) / 1.4;
+    const pulse = (t % 1.05) / 1.05;
     const ring = g.children[0] as THREE.Mesh;
-    ring.scale.setScalar(0.75 + pulse * 0.95);
-    (ring.material as THREE.MeshBasicMaterial).opacity = 0.85 * (1 - pulse);
+    const close = state.state === "nearby";
+    const color = close ? "#83f17b" : "#ffc14d";
+    ring.scale.setScalar(0.68 + pulse * 1.35);
+    const ringMaterial = ring.material as THREE.MeshBasicMaterial;
+    ringMaterial.color.set(color);
+    ringMaterial.opacity = 0.96 * (1 - pulse);
     const beam = g.children[1] as THREE.Mesh;
-    (beam.material as THREE.MeshBasicMaterial).opacity = 0.3 + Math.sin(t * 3) * 0.07;
+    const beamMaterial = beam.material as THREE.MeshBasicMaterial;
+    beamMaterial.color.set(color);
+    beamMaterial.opacity = (close ? 0.48 : 0.36) + Math.sin(t * 3.5) * 0.08;
+    const tip = g.children[2] as THREE.Mesh;
+    tip.position.y = 4.45 + Math.sin(t * 3.2) * 0.12;
+    tip.rotation.y = t * 0.8;
+    (tip.material as THREE.MeshBasicMaterial).color.set(color);
   });
 
   return (
     <group ref={ref}>
       <mesh rotation-x={-Math.PI / 2} position={[0, 0.11, 0]}>
-        <ringGeometry args={[0.42, 0.58, 28]} />
-        <meshBasicMaterial color="#ff9a3d" transparent opacity={0.5} side={THREE.DoubleSide} />
+        <ringGeometry args={[0.52, 0.76, 32]} />
+        <meshBasicMaterial color="#ffc14d" transparent opacity={0.5} side={THREE.DoubleSide} />
       </mesh>
-      <mesh position={[0, 3.8, 0]}>
-        <cylinderGeometry args={[0.1, 0.2, 1.1, 12, 1, true]} />
+      <mesh position={[0, 1.9, 0]}>
+        <cylinderGeometry args={[0.11, 0.22, 3.4, 12, 1, true]} />
         <meshBasicMaterial
-          color="#ffb347"
+          color="#ffc14d"
           transparent
-          opacity={0.18}
+          opacity={0.24}
           side={THREE.DoubleSide}
           depthWrite={false}
         />
+      </mesh>
+      <mesh position={[0, 4.45, 0]}>
+        <coneGeometry args={[0.42, 0.76, 4]} />
+        <meshBasicMaterial color="#ffc14d" transparent opacity={0.92} depthWrite={false} />
       </mesh>
     </group>
   );

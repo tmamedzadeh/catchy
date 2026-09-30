@@ -2,6 +2,18 @@ import { useEffect, useMemo, useState } from "react";
 import { Joystick } from "./Joystick";
 import { CAM_DEFAULTS, useGameStore } from "@/store/gameStore";
 
+const ONBOARDING_KEY = "catchy-first-session-controls-v1";
+const MOVEMENT_KEYS = new Set([
+  "KeyW",
+  "KeyA",
+  "KeyS",
+  "KeyD",
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+]);
+
 const ClockIcon = (
   <svg
     viewBox="0 0 24 24"
@@ -65,23 +77,13 @@ function Slider({
   );
 }
 
-export function HUD() {
+export function HUD({ gameReady }: { gameReady: boolean }) {
   const state = useGameStore((s) => s.state);
   const caught = useGameStore((s) => s.caught);
   const time = useGameStore((s) => s.time);
   const distance = useGameStore((s) => s.distance);
   const bearing = useGameStore((s) => s.bearing);
   const targetId = useGameStore((s) => s.targetId);
-  const camHeight = useGameStore((s) => s.camHeight);
-  const camAngle = useGameStore((s) => s.camAngle);
-  const setCamHeight = useGameStore((s) => s.setCamHeight);
-  const setCamAngle = useGameStore((s) => s.setCamAngle);
-  const resetCamera = useGameStore((s) => s.resetCamera);
-  const cameraYaw = useGameStore((s) => s.cameraYaw);
-  const playerX = useGameStore((s) => s.playerX);
-  const playerZ = useGameStore((s) => s.playerZ);
-  const playerSpeed = useGameStore((s) => s.playerSpeed);
-  const runners = useGameStore((s) => s.runners);
   const restart = useGameStore((s) => s.restart);
   const debugMode = useMemo(
     () =>
@@ -110,13 +112,13 @@ export function HUD() {
       {state === "capture" && (
         <div
           key={flash}
-          className="absolute inset-0 bg-white"
-          style={{ animation: "sprout-flash 420ms ease-out forwards" }}
+          className="capture-flash absolute inset-0"
+          style={{ animation: "sprout-capture-flash 380ms ease-out forwards" }}
         />
       )}
 
       {/* Catchy branding and round timer */}
-      <div className="absolute top-4 left-4 flex items-center gap-2 sm:top-6 sm:left-6 sm:gap-3">
+      <div className="hud-brand-timer absolute flex items-center gap-2 sm:gap-3">
         <div className="hud-card flex items-center gap-2.5 px-3 py-2 sm:px-4 sm:py-2.5">
           <div
             className="grid size-8 place-items-center rounded-xl font-display text-xl font-bold text-white sm:size-9"
@@ -148,7 +150,7 @@ export function HUD() {
         </div>
       </div>
 
-      <div className="hud-card absolute top-4 right-4 px-3.5 py-2 text-right sm:top-6 sm:right-6 sm:px-4 sm:py-2.5">
+      <div className="hud-card hud-score absolute px-3.5 py-2 text-right sm:px-4 sm:py-2.5">
         <div className="font-display text-[0.6rem] tracking-[0.18em] text-sprout-ink-soft uppercase sm:text-[0.65rem]">
           Caught
         </div>
@@ -162,15 +164,17 @@ export function HUD() {
       </div>
 
       {/* Camera-relative nearest-runner finder; neutral when all runners are unavailable. */}
-      <div className="hud-card absolute top-1/2 right-4 flex -translate-y-1/2 flex-col items-center gap-1.5 px-3 py-3 sm:right-6 sm:px-4">
+      <div className="hud-card hud-target-finder absolute top-1/2 flex -translate-y-1/2 flex-col items-center gap-1.5 px-3 py-3 sm:px-4">
         <div className="font-display text-[0.58rem] tracking-[0.16em] text-sprout-ink-soft uppercase sm:text-[0.65rem]">
-          {targetId ? "Nearest runner" : "No target"}
+          {targetId ? "Target" : "No target"}
         </div>
         <div
           className="relative grid size-14 place-items-center rounded-full sm:size-16"
           style={{
             background: "conic-gradient(from 0deg, oklch(0.95 0.04 80), oklch(0.99 0.01 95))",
-            boxShadow: "inset 0 0 0 2px oklch(1 0 0 / 0.8)",
+            boxShadow: nearby
+              ? "inset 0 0 0 2px oklch(1 0 0 / 0.8), 0 0 0 3px oklch(0.72 0.19 45 / 0.22), 0 0 22px oklch(0.72 0.19 45 / 0.32)"
+              : "inset 0 0 0 2px oklch(1 0 0 / 0.8)",
           }}
         >
           {targetId ? (
@@ -181,7 +185,11 @@ export function HUD() {
               fill="currentColor"
               aria-label="Direction to nearest runner"
             >
-              <path d="M12 3.2 18.4 19 12 15.4 5.6 19 12 3.2Z" className="text-sprout-accent-2" />
+              <path
+                d="M12 3.2 18.4 19 12 15.4 5.6 19 12 3.2Z"
+                className={nearby ? "text-sprout-lime" : "text-sprout-accent-2"}
+                style={{ filter: "drop-shadow(0 1px 2px oklch(0.34 0.07 152 / 0.35))" }}
+              />
             </svg>
           ) : (
             <span className="font-display text-2xl text-sprout-ink-soft">·</span>
@@ -192,7 +200,7 @@ export function HUD() {
         </div>
       </div>
 
-      <div className="absolute top-20 left-1/2 flex -translate-x-1/2 flex-col items-center gap-2 sm:top-24">
+      <div className="hud-callouts absolute left-1/2 flex -translate-x-1/2 flex-col items-center gap-2">
         {state === "nearby" && (
           <div
             className="rounded-full px-4 py-1.5 font-display text-sm text-white sm:text-base"
@@ -202,12 +210,12 @@ export function HUD() {
               animation: "sprout-pop 260ms ease-out",
             }}
           >
-            Runner nearby!
+            {distance !== null && distance <= 4.5 ? "Close! Go for the tag" : "Runner nearby!"}
           </div>
         )}
         {state === "capture" && (
           <div
-            className="font-display text-5xl text-white sm:text-7xl"
+            className="capture-tag font-display text-5xl text-white sm:text-7xl"
             style={{
               textShadow: "0 4px 0 oklch(0.66 0.21 25), 0 10px 26px oklch(0.34 0.07 152 / 0.45)",
               animation: "sprout-pop 320ms ease-out",
@@ -227,7 +235,7 @@ export function HUD() {
       </div>
 
       {state === "timeup" && (
-        <div className="absolute inset-0 grid place-items-center bg-sprout-ink/45 backdrop-blur-[2px]">
+        <div className="round-end-overlay absolute inset-0 grid place-items-center bg-sprout-ink/45 backdrop-blur-[2px]">
           <div
             className="hud-card pointer-events-auto w-[min(22rem,86vw)] px-6 py-7 text-center"
             style={{ animation: "sprout-pop 340ms ease-out" }}
@@ -240,6 +248,7 @@ export function HUD() {
               {caught} runner{caught === 1 ? "" : "s"} caught
             </div>
             <button
+              data-sound="restart"
               onClick={restart}
               className="mt-5 w-full rounded-2xl px-5 py-3 font-display text-lg text-white transition-transform active:scale-95"
               style={{
@@ -254,59 +263,139 @@ export function HUD() {
         </div>
       )}
 
-      <div className="touch-controls absolute bottom-5 left-5 sm:bottom-8 sm:left-8">
+      <div className="touch-controls absolute">
         <Joystick />
       </div>
 
-      {debugMode && (
-        <div className="hud-card pointer-events-auto absolute top-24 left-4 w-[min(14rem,88vw)] space-y-3 p-3.5 sm:top-28 sm:left-6">
-          <div className="font-display text-[0.72rem] font-semibold tracking-[0.14em] text-sprout-ink uppercase">
-            Camera tuning
-          </div>
-          <Slider
-            label="Height / zoom"
-            value={camHeight}
-            min={14}
-            max={32}
-            step={0.5}
-            unit=""
-            onChange={setCamHeight}
-          />
-          <Slider
-            label="Angle"
-            value={camAngle}
-            min={10}
-            max={75}
-            step={1}
-            unit="°"
-            onChange={setCamAngle}
-          />
-          <button
-            onClick={resetCamera}
-            className="w-full rounded-xl border border-sprout-ink/15 bg-white/70 px-3 py-1.5 font-display text-xs text-sprout-ink transition-colors hover:bg-white"
-          >
-            Reset camera ({CAM_DEFAULTS.height.toFixed(1)} / {CAM_DEFAULTS.angle}°)
-          </button>
-          <div className="border-t border-sprout-ink/10 pt-2 font-body text-[0.64rem] leading-relaxed text-sprout-ink-soft">
-            <div>Camera yaw: {cameraYaw.toFixed(2)} rad</div>
-            <div>
-              Player: {playerX.toFixed(1)}, {playerZ.toFixed(1)} · {playerSpeed.toFixed(1)} u/s
-            </div>
-            <div>
-              Target: {targetId ?? "none"}
-              {distance === null ? "" : ` · ${distance.toFixed(1)} u`}
-            </div>
-            {runners.map((runner) => (
-              <div key={runner.id}>
-                {runner.id}: {runner.state}
-                {runner.active
-                  ? ` · ${runner.x.toFixed(1)}, ${runner.z.toFixed(1)} · ${runner.speed.toFixed(1)} u/s`
-                  : ""}
-              </div>
-            ))}
-          </div>
+      <FirstSessionOnboarding gameReady={gameReady} />
+
+      {debugMode && <CameraTuningPanel />}
+    </div>
+  );
+}
+
+function CameraTuningPanel() {
+  const camHeight = useGameStore((s) => s.camHeight);
+  const camAngle = useGameStore((s) => s.camAngle);
+  const setCamHeight = useGameStore((s) => s.setCamHeight);
+  const setCamAngle = useGameStore((s) => s.setCamAngle);
+  const resetCamera = useGameStore((s) => s.resetCamera);
+  const cameraYaw = useGameStore((s) => s.cameraYaw);
+  const playerX = useGameStore((s) => s.playerX);
+  const playerZ = useGameStore((s) => s.playerZ);
+  const playerSpeed = useGameStore((s) => s.playerSpeed);
+  const targetId = useGameStore((s) => s.targetId);
+  const distance = useGameStore((s) => s.distance);
+  const runners = useGameStore((s) => s.runners);
+
+  return (
+    <div className="hud-card pointer-events-auto absolute top-24 left-4 w-[min(14rem,88vw)] space-y-3 p-3.5 sm:top-28 sm:left-6">
+      <div className="font-display text-[0.72rem] font-semibold tracking-[0.14em] text-sprout-ink uppercase">
+        Camera tuning
+      </div>
+      <Slider
+        label="Height / zoom"
+        value={camHeight}
+        min={14}
+        max={32}
+        step={0.5}
+        unit=""
+        onChange={setCamHeight}
+      />
+      <Slider
+        label="Angle"
+        value={camAngle}
+        min={10}
+        max={75}
+        step={1}
+        unit="°"
+        onChange={setCamAngle}
+      />
+      <button
+        onClick={resetCamera}
+        className="w-full rounded-xl border border-sprout-ink/15 bg-white/70 px-3 py-1.5 font-display text-xs text-sprout-ink transition-colors hover:bg-white"
+      >
+        Reset camera ({CAM_DEFAULTS.height.toFixed(1)} / {CAM_DEFAULTS.angle}°)
+      </button>
+      <div className="border-t border-sprout-ink/10 pt-2 font-body text-[0.64rem] leading-relaxed text-sprout-ink-soft">
+        <div>Camera yaw: {cameraYaw.toFixed(2)} rad</div>
+        <div>
+          Player: {playerX.toFixed(1)}, {playerZ.toFixed(1)} · {playerSpeed.toFixed(1)} u/s
         </div>
-      )}
+        <div>
+          Target: {targetId ?? "none"}
+          {distance === null ? "" : ` · ${distance.toFixed(1)} u`}
+        </div>
+        {runners.map((runner) => (
+          <div key={runner.id}>
+            {runner.id}: {runner.state}
+            {runner.active
+              ? ` · ${runner.x.toFixed(1)}, ${runner.z.toFixed(1)} · ${runner.speed.toFixed(1)} u/s`
+              : ""}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FirstSessionOnboarding({ gameReady }: { gameReady: boolean }) {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (!gameReady) return;
+    try {
+      if (window.localStorage.getItem(ONBOARDING_KEY) === "done") return;
+    } catch {
+      // Keep the hint available in private contexts where storage is unavailable.
+    }
+
+    let finished = false;
+    let timeout = 0;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (MOVEMENT_KEYS.has(event.code)) finish();
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Element && event.target.closest(".touch-controls")) finish();
+    };
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      setVisible(false);
+      try {
+        window.localStorage.setItem(ONBOARDING_KEY, "done");
+      } catch {
+        // Keep the round playable if storage is disabled.
+      }
+      window.clearTimeout(timeout);
+      window.removeEventListener("keydown", onKeyDown, true);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+    };
+
+    setVisible(true);
+    window.addEventListener("keydown", onKeyDown, true);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    timeout = window.setTimeout(finish, 6500);
+    return () => {
+      window.clearTimeout(timeout);
+      window.removeEventListener("keydown", onKeyDown, true);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, [gameReady]);
+
+  const isCoarsePointer =
+    typeof window !== "undefined" &&
+    window.matchMedia("(pointer: coarse), (max-width: 640px)").matches;
+  if (!visible) return null;
+
+  return (
+    <div className="first-session-onboarding absolute left-1/2 -translate-x-1/2">
+      <div className="hud-card px-4 py-2.5 text-center">
+        <div className="font-display text-sm font-semibold text-sprout-ink">Ready to chase?</div>
+        <div className="mt-0.5 text-xs text-sprout-ink-soft">
+          {isCoarsePointer ? "Move with the joystick" : "Move with WASD or arrow keys"}
+        </div>
+      </div>
     </div>
   );
 }

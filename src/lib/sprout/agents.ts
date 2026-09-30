@@ -257,7 +257,13 @@ export function selectTarget(
   lockedTargetId: string | null = null,
 ): { agent: Agent; dist: number } | null {
   if (lockedTargetId) {
-    const locked = RUNNERS.find((runner) => runner.id === lockedTargetId);
+    let locked: Agent | undefined;
+    for (const runner of RUNNERS) {
+      if (runner.id === lockedTargetId) {
+        locked = runner;
+        break;
+      }
+    }
     if (locked) {
       selectedTarget.agent = locked;
       selectedTarget.dist = Math.hypot(locked.x - PLAYER.x, locked.z - PLAYER.z);
@@ -277,7 +283,13 @@ export function selectTarget(
   }
   if (!nearest) return null;
 
-  const current = RUNNERS.find((runner) => runner.id === currentTargetId && runner.hidden <= 0);
+  let current: Agent | undefined;
+  for (const runner of RUNNERS) {
+    if (runner.id === currentTargetId && runner.hidden <= 0) {
+      current = runner;
+      break;
+    }
+  }
   if (current) {
     const currentDistance = Math.hypot(current.x - PLAYER.x, current.z - PLAYER.z);
     if (
