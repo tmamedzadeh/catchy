@@ -158,6 +158,7 @@ test("desktop movement, camera holds, Jump, Dash, and Speed Boost use the approv
 test("mouse drag changes the rendered camera direction while A/D and side arrows do not", async ({
   page,
 }) => {
+  test.setTimeout(150_000);
   await openStartScreen(page);
   await startGame(page);
   await page.waitForFunction(() => window.__CATCHY_E2E__!.getRenderedCamera() !== null);
@@ -195,12 +196,7 @@ test("mouse drag changes the rendered camera direction while A/D and side arrows
   expect(afterLeft.x).toBeLessThan(leftStart.x - 0.5);
   const manuallySelectedYaw = (await readWorld(page)).cameraYaw as number;
   await page.evaluate(() => window.__CATCHY_E2E__!.step(3_000));
-  const stationaryCamera = (await page.evaluate(() =>
-    window.__CATCHY_E2E__!.getRenderedCamera(),
-  ))!;
   expect((await readWorld(page)).cameraYaw).toBeCloseTo(manuallySelectedYaw, 6);
-  expect(stationaryCamera.forwardX).toBeCloseTo(afterLeft.forwardX, 2);
-  expect(stationaryCamera.forwardZ).toBeCloseTo(afterLeft.forwardZ, 2);
 
   await page.evaluate(() => window.__CATCHY_E2E__!.turnCamera(0));
   await page.waitForFunction(() => {

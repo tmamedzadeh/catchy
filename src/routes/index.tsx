@@ -206,9 +206,6 @@ function LoadingScreen({ ready, onReady }: { ready: boolean; onReady: () => void
       className={`game-loading-screen ${ready ? "game-loading-screen-ready" : ""}`}
     >
       <div className="game-loading-card">
-        <div className="game-loading-mark" aria-hidden="true">
-          C
-        </div>
         <div className="font-display text-3xl font-semibold tracking-tight">Catchy</div>
         <div className="mt-1 text-sm text-catchy-ink-soft">Getting the arena ready</div>
         <div className="game-loading-dots" aria-hidden="true">

@@ -1262,7 +1262,7 @@ export function step(
       GAME_CONFIG.camera.tuningRanges.distance.min,
       Math.min(
         GAME_CONFIG.camera.tuningRanges.distance.max,
-        WORLD_STATE.cameraDistance + cameraZoom * 0.045,
+        WORLD_STATE.cameraDistance - cameraZoom * 0.045,
       ),
     );
     WORLD_STATE.cameraManualRemaining = GAME_CONFIG.camera.manualPersistenceSeconds;

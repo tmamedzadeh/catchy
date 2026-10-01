@@ -982,14 +982,17 @@ describe("camera-relative movement and reset", () => {
   it.each([
     { deltaX: 24, expectedYaw: -0.288 },
     { deltaX: -24, expectedYaw: 0.288 },
-  ])("maps horizontal drag $deltaX to the matching screen-space orbit yaw", ({ deltaX, expectedYaw }) => {
-    WORLD_STATE.cameraYaw = 0;
-    WORLD_STATE.previousCameraYaw = 0;
+  ])(
+    "maps horizontal drag $deltaX to the matching screen-space orbit yaw",
+    ({ deltaX, expectedYaw }) => {
+      WORLD_STATE.cameraYaw = 0;
+      WORLD_STATE.previousCameraYaw = 0;
 
-    step(DT, null, noCommands, false, false, 0, "normal", { x: deltaX, y: 0 });
+      step(DT, null, noCommands, false, false, 0, "normal", { x: deltaX, y: 0 });
 
-    expect(WORLD_STATE.cameraYaw).toBeCloseTo(expectedYaw, 8);
-  });
+      expect(WORLD_STATE.cameraYaw).toBeCloseTo(expectedYaw, 8);
+    },
+  );
 
   it("clamps camera pitch and pinch zoom to safe camera bounds", () => {
     WORLD_STATE.cameraDistance = GAME_CONFIG.camera.distance;
@@ -1000,11 +1003,26 @@ describe("camera-relative movement and reset", () => {
     expect(WORLD_STATE.cameraPitch).toBe(10);
 
     step(DT, null, noCommands, true, false, 0, "normal", { x: 0, y: 0 }, 1000);
-    expect(WORLD_STATE.cameraDistance).toBe(GAME_CONFIG.camera.tuningRanges.distance.max);
-    step(DT, null, noCommands, true, false, 0, "normal", { x: 0, y: 0 }, -1000);
     expect(WORLD_STATE.cameraDistance).toBe(GAME_CONFIG.camera.tuningRanges.distance.min);
+    step(DT, null, noCommands, true, false, 0, "normal", { x: 0, y: 0 }, -1000);
+    expect(WORLD_STATE.cameraDistance).toBe(GAME_CONFIG.camera.tuningRanges.distance.max);
     expect(Number.isFinite(WORLD_STATE.cameraDistance)).toBe(true);
   });
+
+  it.each([
+    { gesture: "fingers apart", pinchDelta: 20, cameraDistanceDelta: -0.9 },
+    { gesture: "fingers together", pinchDelta: -20, cameraDistanceDelta: 0.9 },
+  ])(
+    "maps $gesture pinch movement to camera distance change $cameraDistanceDelta",
+    ({ pinchDelta, cameraDistanceDelta }) => {
+      const initialDistance = GAME_CONFIG.camera.distance;
+      WORLD_STATE.cameraDistance = initialDistance;
+
+      step(DT, null, noCommands, true, false, 0, "normal", { x: 0, y: 0 }, pinchDelta);
+
+      expect(WORLD_STATE.cameraDistance).toBeCloseTo(initialDistance + cameraDistanceDelta, 8);
+    },
+  );
 
   it("rotates W, S, A and D at right-angle and arbitrary camera yaw", () => {
     const wAt90 = { ...resolveCameraRelativeInput({ x: 0, z: 1 }, Math.PI / 2)! };

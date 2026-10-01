@@ -8,14 +8,14 @@ describe("mobile camera pinch deltas", () => {
     expect(result.delta).toBe(0);
   });
 
-  it("reports zoom-out as an outward positive distance change", () => {
+  it("reports positive pointer-distance change when fingers move apart", () => {
     expect(pinchZoomDelta(100, { x: 0, y: 0 }, { x: 130, y: 0 })).toEqual({
       distance: 130,
       delta: 30,
     });
   });
 
-  it("reports zoom-in as an inward negative distance change", () => {
+  it("reports negative pointer-distance change when fingers move together", () => {
     expect(pinchZoomDelta(100, { x: 0, y: 0 }, { x: 72, y: 0 })).toEqual({
       distance: 72,
       delta: -28,
