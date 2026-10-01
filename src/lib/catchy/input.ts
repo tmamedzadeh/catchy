@@ -21,6 +21,7 @@ let queueTail = 0;
 export const joystick = { x: 0, z: 0, active: false };
 export const cameraDrag = { x: 0, y: 0, active: false };
 const pendingCameraDrag = { x: 0, y: 0 };
+let pendingCameraZoom = 0;
 const movement = { x: 0, z: 0 };
 const consumedActions = { dash: false, speedBoost: false, jump: false };
 let jumpActionEnabled = true;
@@ -125,6 +126,18 @@ export function endCameraDrag() {
   cameraDrag.active = false;
   pendingCameraDrag.x = 0;
   pendingCameraDrag.y = 0;
+  pendingCameraZoom = 0;
+}
+
+/** Accumulate pinch distance changes until the next fixed simulation tick. */
+export function addCameraZoom(deltaDistance: number) {
+  pendingCameraZoom += Number.isFinite(deltaDistance) ? deltaDistance : 0;
+}
+
+export function consumeCameraZoom() {
+  const zoom = pendingCameraZoom;
+  pendingCameraZoom = 0;
+  return zoom;
 }
 
 export function consumeCameraDrag() {
@@ -143,6 +156,7 @@ export function clearInput() {
   endCameraDrag();
   cameraDrag.x = 0;
   cameraDrag.y = 0;
+  pendingCameraZoom = 0;
   queueHead = 0;
   queueTail = 0;
   consumedActions.dash = false;

@@ -1,19 +1,26 @@
 import { useEffect, useRef } from "react";
-import { addCameraDrag, endCameraDrag } from "@/lib/catchy/input";
+import { addCameraDrag, addCameraZoom, endCameraDrag } from "@/lib/catchy/input";
+import { pinchZoomDelta } from "@/lib/catchy/pinch";
+
+type OwnedPointer = { x: number; y: number };
 
 /** Camera owns only pointers that did not begin on another HUD control. */
 export function CameraSurface() {
-  const pointer = useRef<number | null>(null);
-  const last = useRef({ x: 0, y: 0 });
+  const pointers = useRef(new Map<number, OwnedPointer>());
+  const pinchDistance = useRef<number | null>(null);
 
-  const release = (pointerId?: number) => {
-    if (pointerId !== undefined && pointer.current !== pointerId) return;
-    pointer.current = null;
-    endCameraDrag();
+  const release = (pointerId: number) => {
+    pointers.current.delete(pointerId);
+    if (pointers.current.size < 2) pinchDistance.current = null;
+    if (pointers.current.size === 0) endCameraDrag();
   };
 
   useEffect(() => {
-    const clear = () => release();
+    const clear = () => {
+      pointers.current.clear();
+      pinchDistance.current = null;
+      endCameraDrag();
+    };
     window.addEventListener("blur", clear);
     document.addEventListener("visibilitychange", clear);
     return () => {
@@ -27,18 +34,31 @@ export function CameraSurface() {
       aria-hidden="true"
       className="camera-surface pointer-events-auto absolute inset-0 touch-none"
       onPointerDown={(event) => {
-        if (pointer.current !== null || (event.pointerType === "mouse" && event.button !== 0))
-          return;
+        if (event.pointerType === "mouse" && event.button !== 0) return;
         event.preventDefault();
-        pointer.current = event.pointerId;
-        last.current = { x: event.clientX, y: event.clientY };
+        pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
         event.currentTarget.setPointerCapture(event.pointerId);
+        if (pointers.current.size === 2) {
+          const [a, b] = [...pointers.current.values()];
+          pinchDistance.current = pinchZoomDelta(null, a!, b!).distance;
+        }
       }}
       onPointerMove={(event) => {
-        if (pointer.current !== event.pointerId) return;
+        const point = pointers.current.get(event.pointerId);
+        if (!point) return;
         event.preventDefault();
-        addCameraDrag(event.clientX - last.current.x, event.clientY - last.current.y);
-        last.current = { x: event.clientX, y: event.clientY };
+        const dx = event.clientX - point.x;
+        const dy = event.clientY - point.y;
+        point.x = event.clientX;
+        point.y = event.clientY;
+        if (pointers.current.size >= 2) {
+          const [a, b] = [...pointers.current.values()];
+          const pinch = pinchZoomDelta(pinchDistance.current, a!, b!);
+          pinchDistance.current = pinch.distance;
+          addCameraZoom(pinch.delta);
+        } else {
+          addCameraDrag(dx, dy);
+        }
       }}
       onPointerUp={(event) => release(event.pointerId)}
       onPointerCancel={(event) => release(event.pointerId)}

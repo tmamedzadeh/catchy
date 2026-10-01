@@ -15,6 +15,7 @@ import {
   cameraModeInput,
   cameraTurnInput,
   consumeCameraDrag,
+  consumeCameraZoom,
   consumePlayerActionCommands,
   inputVector,
   registerInputResetHandler,
@@ -60,6 +61,7 @@ function simulateTick(dt: number) {
     cameraTurnInput(),
     cameraModeInput(),
     consumeCameraDrag(),
+    consumeCameraZoom(),
   );
 
   const store = useGameStore.getState();

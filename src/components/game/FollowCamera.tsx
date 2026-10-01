@@ -41,7 +41,7 @@ export function FollowCamera() {
     const portrait = aspect < 1 ? 1.42 : aspect < 1.4 ? 1.14 : 1;
     const tactical = mode === "tactical";
     const captureZoom = !tactical && (state === "capture" || state === "after") ? 0.78 : 1;
-    const normalDistance = camHeight * 0.9 * portrait * captureZoom;
+    const normalDistance = WORLD_STATE.cameraDistance * 0.9 * portrait * captureZoom;
     const targetDistance = tactical
       ? GAME_CONFIG.camera.tacticalDistance * 0.9 * portrait
       : normalDistance;

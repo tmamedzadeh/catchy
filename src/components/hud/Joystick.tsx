@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { joystick } from "@/lib/catchy/input";
 import { calculateJoystickVector, measureJoystickGeometry } from "@/lib/catchy/joystick";
 
 export function Joystick() {
   const base = useRef<HTMLDivElement>(null);
   const knobElement = useRef<HTMLDivElement>(null);
-  const [knob, setKnob] = useState({ x: 0, y: 0 });
   const pointer = useRef<number | null>(null);
 
   const readGeometry = () => {
@@ -27,7 +26,7 @@ export function Joystick() {
     const geometry = readGeometry();
     if (!geometry) return;
     const vector = calculateJoystickVector(clientX, clientY, geometry);
-    setKnob({ x: vector.knobX, y: vector.knobY });
+    knobElement.current?.style.setProperty("transform", `translate(calc(-50% + ${vector.knobX}px), calc(-50% + ${vector.knobY}px))`);
     joystick.x = vector.x;
     joystick.z = -vector.y;
     joystick.active = true;
@@ -36,7 +35,7 @@ export function Joystick() {
   const release = useCallback((pointerId?: number) => {
     if (pointerId !== undefined && pointer.current !== pointerId) return;
     pointer.current = null;
-    setKnob({ x: 0, y: 0 });
+    knobElement.current?.style.setProperty("transform", "translate(-50%, -50%)");
     joystick.x = 0;
     joystick.z = 0;
     joystick.active = false;
@@ -89,7 +88,7 @@ export function Joystick() {
       }}
     >
       <div className="absolute inset-[18%] z-0 rounded-full border border-white/35" />
-      <div className="pointer-events-none absolute inset-[18%] z-0 rounded-full border-white/35" />
+      <div className="pointer-events-none absolute inset-[28%] z-10 rounded-full border-white/35" />
       <div />
       className="pointer-events-none absolute top-1/2 left-1/2 z-10 grid size-[34%] -translate-x-1/2
       -translate-y-1/2 place-items-center rounded-full border border-white/75"
@@ -102,7 +101,7 @@ export function Joystick() {
           // -translate-* utilities set the independent `translate` property,
           // which composes with `transform` and shifts the neutral knob off
           // the outer circle's center.
-          transform: `translate(calc(-50% + ${knob.x}px), calc(-50% + ${knob.y}px))`,
+          transform: "translate(-50%, -50%)",
           background: "radial-gradient(circle at 40% 32%, oklch(0.99 0.01 95), oklch(0.9 0.05 80))",
           boxShadow: "0 6px 14px -4px oklch(0.34 0.07 152 / 0.55)",
         }}

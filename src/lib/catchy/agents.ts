@@ -158,6 +158,8 @@ export const WORLD_STATE = {
   cameraPitch: 0,
   /** Keeps a manually selected orbit angle briefly before heading follow resumes. */
   cameraManualRemaining: 0,
+  /** Distance is mutable simulation state so pinch never needs React renders. */
+  cameraDistance: GAME_CONFIG.camera.distance,
   barrierClosed: false,
   barrierRemaining: GAME_CONFIG.barrier.openSeconds,
   speedPadPulseRemaining: 0,
@@ -532,6 +534,7 @@ export function resetSimulation() {
   WORLD_STATE.previousCameraYaw = PLAYER.heading;
   WORLD_STATE.cameraPitch = 0;
   WORLD_STATE.cameraManualRemaining = 0;
+  WORLD_STATE.cameraDistance = GAME_CONFIG.camera.distance;
   WORLD_STATE.renderAlpha = 0;
   if (barrierWasClosed) rebuildNavigationGraph();
   for (const agent of AGENTS) agent.hidden = 1;
@@ -1209,6 +1212,7 @@ export function step(
   cameraTurnAxis = 0,
   cameraMode: "normal" | "recenter" | "tactical" = "normal",
   cameraDrag = { x: 0, y: 0 },
+  cameraZoom = 0,
 ) {
   for (const agent of AGENTS) {
     agent.previousX = agent.x;
@@ -1218,6 +1222,16 @@ export function step(
   PLAYER.previousJumpHeight = PLAYER.jumpHeight;
   WORLD_STATE.previousCameraYaw = WORLD_STATE.cameraYaw;
   WORLD_STATE.cameraManualRemaining = Math.max(0, WORLD_STATE.cameraManualRemaining - dt);
+  if (cameraZoom !== 0 && cameraMode === "normal") {
+    WORLD_STATE.cameraDistance = Math.max(
+      GAME_CONFIG.camera.tuningRanges.distance.min,
+      Math.min(
+        GAME_CONFIG.camera.tuningRanges.distance.max,
+        WORLD_STATE.cameraDistance - cameraZoom * 0.045,
+      ),
+    );
+    WORLD_STATE.cameraManualRemaining = GAME_CONFIG.camera.manualPersistenceSeconds;
+  }
   if (cameraMode === "recenter") {
     const difference = Math.atan2(
       Math.sin(PLAYER.heading - WORLD_STATE.cameraYaw),
@@ -1264,7 +1278,10 @@ export function step(
   }
 
   advanceBarrier(dt);
-  const worldInput = resolveCameraRelativeInput(input);
+  // Snapshot the camera basis before movement. Follow is updated from the resulting
+  // heading above, never allowed to redefine this tick's movement frame.
+  const movementCameraYaw = WORLD_STATE.cameraYaw;
+  const worldInput = resolveCameraRelativeInput(input, movementCameraYaw);
   if (freezePlayer) clearPlayerJump();
   if (!freezePlayer) {
     if (commands.speedBoost) activatePlayerBoost();
