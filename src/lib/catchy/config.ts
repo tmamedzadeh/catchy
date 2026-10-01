@@ -96,9 +96,9 @@ export const GAME_CONFIG = {
   },
   camera: {
     distance: 23,
-    angle: 27,
-    lookAhead: 1.8,
-    compositionOffset: 0.12,
+    angle: 17,
+    lookAhead: 2.6,
+    compositionOffset: 0.25,
     recenterSpeed: 16,
     tacticalDistance: 35,
     tacticalAngle: 65,

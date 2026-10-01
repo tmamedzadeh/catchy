@@ -167,8 +167,16 @@ test("mouse drag changes the rendered camera direction while A/D and side arrows
   await page.mouse.down();
   await page.mouse.move(x - 72, y, { steps: 5 });
   await page.mouse.up();
+  // The E2E build advances simulation only through this bridge; consume the
+  // pointerup delta just as the next production fixed tick would.
+  await page.evaluate(() => window.__CATCHY_E2E__!.step(40));
+  await page.evaluate(() => window.__CATCHY_E2E__!.step(20));
   await page.waitForFunction(() => window.__CATCHY_E2E__!.getWorld().cameraYaw < -0.2);
-  await page.waitForTimeout(100);
+  await page.waitForFunction(
+    (startX) => window.__CATCHY_E2E__!.getRenderedCamera()!.forwardX < startX - 0.08,
+    leftStart.forwardX,
+    { timeout: 10_000 },
+  );
   const afterLeft = (await page.evaluate(() => window.__CATCHY_E2E__!.getRenderedCamera()))!;
   expect(afterLeft.forwardX).toBeLessThan(leftStart.forwardX - 0.08);
 
@@ -182,8 +190,14 @@ test("mouse drag changes the rendered camera direction while A/D and side arrows
   await page.mouse.down();
   await page.mouse.move(x + 72, y, { steps: 5 });
   await page.mouse.up();
+  await page.evaluate(() => window.__CATCHY_E2E__!.step(40));
+  await page.evaluate(() => window.__CATCHY_E2E__!.step(20));
   await page.waitForFunction(() => window.__CATCHY_E2E__!.getWorld().cameraYaw > 0.2);
-  await page.waitForTimeout(100);
+  await page.waitForFunction(
+    (startX) => window.__CATCHY_E2E__!.getRenderedCamera()!.forwardX > startX + 0.08,
+    rightStart.forwardX,
+    { timeout: 10_000 },
+  );
   const afterRight = (await page.evaluate(() => window.__CATCHY_E2E__!.getRenderedCamera()))!;
   expect(afterRight.forwardX).toBeGreaterThan(rightStart.forwardX + 0.08);
 
@@ -192,32 +206,40 @@ test("mouse drag changes the rendered camera direction while A/D and side arrows
     game.reset();
     game.turnCamera(0);
   });
-  await page.waitForFunction(() => {
-    const camera = window.__CATCHY_E2E__!.getRenderedCamera();
-    return camera !== null && Math.abs(camera.forwardY + Math.sin((27 * Math.PI) / 180)) < 0.08;
-  });
+  await page.waitForFunction(() => window.__CATCHY_E2E__!.getRenderedCamera() !== null);
+  await page.waitForTimeout(450);
   const verticalStart = (await page.evaluate(() => window.__CATCHY_E2E__!.getRenderedCamera()))!;
   await page.mouse.move(x, y);
   await page.mouse.down();
   await page.mouse.move(x, y - 48, { steps: 4 });
   await page.mouse.up();
+  await page.evaluate(() => window.__CATCHY_E2E__!.step(40));
+  await page.evaluate(() => window.__CATCHY_E2E__!.step(20));
   await page.waitForFunction(() => window.__CATCHY_E2E__!.getWorld().cameraPitch < -1);
-  await page.waitForTimeout(120);
-  const afterUp = (await page.evaluate(() => window.__CATCHY_E2E__!.getRenderedCamera()))!;
-  expect(afterUp.forwardY).toBeGreaterThan(verticalStart.forwardY + 0.02);
+  await page.waitForFunction(
+    (startY) => window.__CATCHY_E2E__!.getRenderedCamera()!.forwardY > startY + 0.02,
+    verticalStart.forwardY,
+  );
 
-  await page.evaluate(() => window.__CATCHY_E2E__!.turnCamera(0));
-  await page.waitForFunction(() => Math.abs(window.__CATCHY_E2E__!.getWorld().cameraPitch) < 0.1);
-  await page.waitForTimeout(150);
+  await page.evaluate(() => {
+    const game = window.__CATCHY_E2E__!;
+    game.reset();
+    game.turnCamera(0);
+  });
+  await page.waitForFunction(() => window.__CATCHY_E2E__!.getRenderedCamera() !== null);
+  await page.waitForTimeout(450);
   const verticalReset = (await page.evaluate(() => window.__CATCHY_E2E__!.getRenderedCamera()))!;
   await page.mouse.move(x, y);
   await page.mouse.down();
   await page.mouse.move(x, y + 48, { steps: 4 });
   await page.mouse.up();
+  await page.evaluate(() => window.__CATCHY_E2E__!.step(40));
+  await page.evaluate(() => window.__CATCHY_E2E__!.step(20));
   await page.waitForFunction(() => window.__CATCHY_E2E__!.getWorld().cameraPitch > 1);
-  await page.waitForTimeout(120);
-  const afterDown = (await page.evaluate(() => window.__CATCHY_E2E__!.getRenderedCamera()))!;
-  expect(afterDown.forwardY).toBeLessThan(verticalReset.forwardY - 0.02);
+  await page.waitForFunction(
+    (startY) => window.__CATCHY_E2E__!.getRenderedCamera()!.forwardY < startY - 0.02,
+    verticalReset.forwardY,
+  );
 
   await page.evaluate(() => {
     const game = window.__CATCHY_E2E__!;
