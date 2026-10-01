@@ -10,9 +10,7 @@ Desktop:
 - **Mouse drag** rotates the camera.
 - **Up Arrow** holds Camera Recenter.
 - **Down Arrow** holds Tactical Overview.
-- **Shift** uses Dash.
-- **E** uses Speed Boost.
-- **Space** jumps.
+- **Space** jumps, **Shift** uses Dash, and **E** uses Speed Up.
 - Restart is available from the round end screen.
 
 Mobile:
@@ -20,7 +18,7 @@ Mobile:
 - The left joystick controls movement only.
 - Drag the gameplay area to rotate the camera.
 - Bottom-right: Dash is left of Jump, with Jump rightmost.
-- Speed Up is above the Dash/Jump row.
+- Speed Up is above Jump on the right.
 - Camera follow is automatic; there is no second joystick on mobile.
 - Touch ownership is explicit: the left stick moves, action buttons trigger one action, and all other gameplay touches drag the camera. The stick and camera can be used simultaneously.
 

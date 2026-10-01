@@ -771,8 +771,8 @@ describe("camera-relative movement and reset", () => {
   it.each([
     { name: "W at zero yaw", yaw: 0, input: { x: 0, z: 1 }, world: { x: 0, z: 1 } },
     { name: "S at zero yaw", yaw: 0, input: { x: 0, z: -1 }, world: { x: 0, z: -1 } },
-    { name: "A at zero yaw", yaw: 0, input: { x: -1, z: 0 }, world: { x: -1, z: 0 } },
-    { name: "D at zero yaw", yaw: 0, input: { x: 1, z: 0 }, world: { x: 1, z: 0 } },
+    { name: "A at zero yaw", yaw: 0, input: { x: -1, z: 0 }, world: { x: 1, z: 0 } },
+    { name: "D at zero yaw", yaw: 0, input: { x: 1, z: 0 }, world: { x: -1, z: 0 } },
     {
       name: "W at 90 degree yaw",
       yaw: Math.PI / 2,
@@ -784,8 +784,8 @@ describe("camera-relative movement and reset", () => {
       yaw: 0.37,
       input: { x: 0.4, z: 0.9 },
       world: {
-        x: 0.4 * Math.cos(0.37) + 0.9 * Math.sin(0.37),
-        z: -0.4 * Math.sin(0.37) + 0.9 * Math.cos(0.37),
+        x: -0.4 * Math.cos(0.37) + 0.9 * Math.sin(0.37),
+        z: 0.4 * Math.sin(0.37) + 0.9 * Math.cos(0.37),
       },
     },
   ])("maps $name into world movement", ({ yaw, input, world: expected }) => {
@@ -858,8 +858,8 @@ describe("camera-relative movement and reset", () => {
   });
 
   it.each([
-    { name: "A", input: { x: -1, z: 0 }, expected: { x: -1, z: 0 } },
-    { name: "D", input: { x: 1, z: 0 }, expected: { x: 1, z: 0 } },
+    { name: "A", input: { x: -1, z: 0 }, expected: { x: 1, z: 0 } },
+    { name: "D", input: { x: 1, z: 0 }, expected: { x: -1, z: 0 } },
     { name: "S", input: { x: 0, z: -1 }, expected: { x: 0, z: -1 } },
   ])("keeps a held $name trajectory straight while Follow turns", ({ input, expected }) => {
     put(PLAYER, -4, 12);
@@ -928,35 +928,55 @@ describe("camera-relative movement and reset", () => {
     expect(maxCameraStep).toBeLessThan(0.25);
   });
 
-  it("keeps player facing independent of camera drag and resumes Follow smoothly", () => {
+  it("keeps manual camera yaw while stationary and resumes Follow smoothly on movement", () => {
+    put(PLAYER, -4, 12);
     PLAYER.heading = 1.2;
     WORLD_STATE.cameraYaw = 0;
     WORLD_STATE.previousCameraYaw = 0;
     WORLD_STATE.cameraManualRemaining = 0;
-    step(DT, null, noCommands, true, false, 0, "normal", { x: -20, y: -100 });
+    step(DT, null, noCommands, false, false, 0, "normal", { x: -20, y: -100 });
     expect(PLAYER.heading).toBe(1.2);
     expect(WORLD_STATE.cameraYaw).toBeLessThan(0);
     expect(WORLD_STATE.cameraPitch).toBeLessThan(0);
     const manualYaw = WORLD_STATE.cameraYaw;
+    const manualRemaining = WORLD_STATE.cameraManualRemaining;
 
-    for (let tick = 0; tick < 20; tick++) step(DT, null, noCommands, true);
-    expect(WORLD_STATE.cameraYaw).toBeCloseTo(manualYaw, 3);
-    expect(WORLD_STATE.cameraManualRemaining).toBeGreaterThan(0);
+    for (let tick = 0; tick < 180; tick++) step(DT, null, noCommands, false);
+    expect(Math.hypot(PLAYER.vx, PLAYER.vz)).toBeLessThan(
+      GAME_CONFIG.camera.followMovementSpeedThreshold,
+    );
+    expect(WORLD_STATE.cameraYaw).toBeCloseTo(manualYaw, 8);
+    expect(WORLD_STATE.cameraManualRemaining).toBeCloseTo(manualRemaining, 8);
+    expect(PLAYER.heading).toBeCloseTo(1.2, 8);
 
-    const yawBeforeResume = WORLD_STATE.cameraYaw;
+    // Positive X input is semantic camera-right and gives the camera a new
+    // player heading that is visibly different from the manually selected yaw.
+    for (let tick = 0; tick < 45; tick++)
+      step(DT, { x: 1, z: 0 }, noCommands, false, false, 0, "normal", { x: 0, y: 0 }, 0, "D");
+    expect(WORLD_STATE.cameraManualRemaining).toBe(0);
+    const headingAtFollow = PLAYER.heading;
+    const yawAtFollow = WORLD_STATE.cameraYaw;
+    const angularError = (a: number, b: number) =>
+      Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+    expect(angularError(headingAtFollow, yawAtFollow)).toBeGreaterThan(0.3);
+
+    const followErrors: number[] = [];
     let largestFollowStep = 0;
     for (let tick = 0; tick < 60; tick++) {
       const before = WORLD_STATE.cameraYaw;
-      step(DT, null, noCommands, true);
+      step(DT, { x: 1, z: 0 }, noCommands, false, false, 0, "normal", { x: 0, y: 0 }, 0, "D");
       const delta = Math.atan2(
         Math.sin(WORLD_STATE.cameraYaw - before),
         Math.cos(WORLD_STATE.cameraYaw - before),
       );
       largestFollowStep = Math.max(largestFollowStep, Math.abs(delta));
+      followErrors.push(angularError(PLAYER.heading, WORLD_STATE.cameraYaw));
     }
-    expect(Math.abs(WORLD_STATE.cameraYaw - yawBeforeResume)).toBeGreaterThan(0.5);
-    expect(Math.abs(WORLD_STATE.cameraYaw - PLAYER.heading)).toBeLessThan(0.12);
+    expect(angularError(WORLD_STATE.cameraYaw, yawAtFollow)).toBeGreaterThan(0.5);
+    expect(angularError(WORLD_STATE.cameraYaw, PLAYER.heading)).toBeLessThan(0.12);
     expect(largestFollowStep).toBeLessThan(0.25);
+    for (let index = 31; index < followErrors.length; index++)
+      expect(followErrors[index]).toBeLessThanOrEqual(followErrors[index - 1]! + 0.01);
   });
 
   it("clamps camera pitch and pinch zoom to safe camera bounds", () => {
@@ -981,8 +1001,8 @@ describe("camera-relative movement and reset", () => {
     const dAt90 = { ...resolveCameraRelativeInput({ x: 1, z: 0 }, Math.PI / 2)! };
     expect(wAt90.x).toBeCloseTo(1, 8);
     expect(sAt90.x).toBeCloseTo(-1, 8);
-    expect(aAt90.z).toBeCloseTo(1, 8);
-    expect(dAt90.z).toBeCloseTo(-1, 8);
+    expect(aAt90.z).toBeCloseTo(-1, 8);
+    expect(dAt90.z).toBeCloseTo(1, 8);
     const arbitrary = resolveCameraRelativeInput({ x: 0, z: 1 }, 0.37)!;
     expect(Math.hypot(arbitrary.x, arbitrary.z)).toBeCloseTo(1, 8);
     expect(resolveCameraRelativeInput(null)).toBeNull();

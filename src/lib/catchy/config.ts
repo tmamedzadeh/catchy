@@ -114,6 +114,7 @@ export const GAME_CONFIG = {
     },
     yawSpeed: 2.25,
     manualPersistenceSeconds: 0.65,
+    followMovementSpeedThreshold: 0.4,
     turnAnticipationPerRadianPerSecond: 0.045,
     turnAnticipationMaxRadians: 0.16,
   },

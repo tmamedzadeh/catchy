@@ -159,7 +159,7 @@ export const WORLD_STATE = {
   movementCameraYaw: PLAYER.heading,
   movementInputFrame: null as string | null,
   cameraPitch: 0,
-  /** Keeps a manually selected orbit angle briefly before heading follow resumes. */
+  /** Movement-only grace before heading follow resumes; frozen while the player is still. */
   cameraManualRemaining: 0,
   /** Distance is mutable simulation state so pinch never needs React renders. */
   cameraDistance: Number(GAME_CONFIG.camera.distance),
@@ -1165,13 +1165,15 @@ export function resolveCameraRelativeInput(
     playerWorldInput.z = 0;
     return null;
   }
+  // Canonical semantic axes: input.z is positive FORWARD and input.x is
+  // positive RIGHT. At yaw zero, the camera looks toward world +Z. Three.js
+  // renders screen-right as camera-forward × world-up, which is world -X in
+  // that pose. Derive that rendered basis here so A/D agree with what players
+  // see instead of treating world +X as camera-right.
   const forwardX = Math.sin(cameraYaw);
   const forwardZ = Math.cos(cameraYaw);
-  const rightX = Math.cos(cameraYaw);
-  const rightZ = -Math.sin(cameraYaw);
-  // The semantic input vector is (left/right, backward/forward). Resolve both
-  // axes against the same camera basis so movement and facing never depend on
-  // keyboard-specific world-space signs.
+  const rightX = -forwardZ;
+  const rightZ = forwardX;
   playerWorldInput.x = forwardX * input.z + rightX * input.x;
   playerWorldInput.z = forwardZ * input.z + rightZ * input.x;
   return playerWorldInput;
@@ -1245,7 +1247,16 @@ export function step(
   }
   PLAYER.previousJumpHeight = PLAYER.jumpHeight;
   WORLD_STATE.previousCameraYaw = WORLD_STATE.cameraYaw;
-  WORLD_STATE.cameraManualRemaining = Math.max(0, WORLD_STATE.cameraManualRemaining - dt);
+  const playerIsMovingForCameraFollow =
+    Math.hypot(PLAYER.vx, PLAYER.vz) > GAME_CONFIG.camera.followMovementSpeedThreshold;
+  const hasManualCameraInput =
+    cameraTurnAxis !== 0 ||
+    cameraZoom !== 0 ||
+    cameraDrag.x !== 0 ||
+    cameraDrag.y !== 0;
+  if (playerIsMovingForCameraFollow && !hasManualCameraInput) {
+    WORLD_STATE.cameraManualRemaining = Math.max(0, WORLD_STATE.cameraManualRemaining - dt);
+  }
   if (cameraZoom !== 0 && cameraMode === "normal") {
     WORLD_STATE.cameraDistance = Math.max(
       GAME_CONFIG.camera.tuningRanges.distance.min,
@@ -1273,7 +1284,10 @@ export function step(
       // Manual orbit owns the camera while dragging and for a short release
       // grace period, preventing an immediate snap behind a turning player.
       WORLD_STATE.cameraManualRemaining = GAME_CONFIG.camera.manualPersistenceSeconds;
-    } else if (WORLD_STATE.cameraManualRemaining <= 0) {
+    } else if (
+      playerIsMovingForCameraFollow &&
+      WORLD_STATE.cameraManualRemaining <= 0
+    ) {
       const followDifference = Math.atan2(
         Math.sin(PLAYER.heading - WORLD_STATE.cameraYaw),
         Math.cos(PLAYER.heading - WORLD_STATE.cameraYaw),

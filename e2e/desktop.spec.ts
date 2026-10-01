@@ -40,10 +40,10 @@ test("desktop movement, camera holds, Jump, Dash, and Speed Boost use the approv
   await startGame(page);
 
   const directions = [
-    { key: "w", name: "W", x: 0, z: 1 },
-    { key: "s", name: "S", x: 0, z: -1 },
-    { key: "a", name: "A", x: -1, z: 0 },
-    { key: "d", name: "D", x: 1, z: 0 },
+    { key: "w", name: "W", axis: "forward", sign: 1 },
+    { key: "s", name: "S", axis: "forward", sign: -1 },
+    { key: "a", name: "A", axis: "right", sign: -1 },
+    { key: "d", name: "D", axis: "right", sign: 1 },
   ] as const;
   for (const control of directions) {
     await page.evaluate(() => {
@@ -52,6 +52,20 @@ test("desktop movement, camera holds, Jump, Dash, and Speed Boost use the approv
       game.turnCamera(0);
       game.placePlayer(-4, 12);
     });
+    await page.waitForFunction(() => {
+      const camera = window.__CATCHY_E2E__!.getRenderedCamera();
+      return camera !== null && Math.abs(camera.forwardX) < 0.04 && camera.forwardZ > 0.9;
+    });
+    const renderedCamera = (await page.evaluate(() =>
+      window.__CATCHY_E2E__!.getRenderedCamera(),
+    ))!;
+    const forwardLength = Math.hypot(renderedCamera.forwardX, renderedCamera.forwardZ);
+    const cameraForward = {
+      x: renderedCamera.forwardX / forwardLength,
+      z: renderedCamera.forwardZ / forwardLength,
+    };
+    // Three.js screen-right is rendered camera-forward × world-up.
+    const cameraRight = { x: -cameraForward.z, z: cameraForward.x };
     const before = await readPlayer(page);
     await page.keyboard.down(control.key);
     await page.evaluate(() => window.__CATCHY_E2E__!.step(900));
@@ -59,13 +73,13 @@ test("desktop movement, camera holds, Jump, Dash, and Speed Boost use the approv
     const after = await readPlayer(page);
     const dx = (after.x as number) - (before.x as number);
     const dz = (after.z as number) - (before.z as number);
+    const expected = control.axis === "forward" ? cameraForward : cameraRight;
+    const progress = (dx * expected.x + dz * expected.z) * control.sign;
+    const crossTrack = Math.abs(dx * expected.z - dz * expected.x);
+    expect(progress, `${control.name} must move in the rendered camera-relative direction`).toBeGreaterThan(6);
     expect(
-      dx * control.x + dz * control.z,
-      `${control.name} must move in its world direction`,
-    ).toBeGreaterThan(6);
-    expect(
-      Math.abs(dx * control.z - dz * control.x),
-      `${control.name} must not orbit`,
+      crossTrack,
+      `${control.name} must move straight instead of orbiting as Follow turns`,
     ).toBeLessThan(0.8);
     expect(Math.hypot(dx, dz), `${control.name} must change player position`).toBeGreaterThan(6);
     const movementHeading = Math.atan2(after.vx as number, after.vz as number);
@@ -179,6 +193,14 @@ test("mouse drag changes the rendered camera direction while A/D and side arrows
   );
   const afterLeft = (await page.evaluate(() => window.__CATCHY_E2E__!.getRenderedCamera()))!;
   expect(afterLeft.forwardX).toBeLessThan(leftStart.forwardX - 0.08);
+  const manuallySelectedYaw = (await readWorld(page)).cameraYaw as number;
+  await page.evaluate(() => window.__CATCHY_E2E__!.step(3_000));
+  const stationaryCamera = (await page.evaluate(() =>
+    window.__CATCHY_E2E__!.getRenderedCamera(),
+  ))!;
+  expect((await readWorld(page)).cameraYaw).toBeCloseTo(manuallySelectedYaw, 6);
+  expect(stationaryCamera.forwardX).toBeCloseTo(afterLeft.forwardX, 2);
+  expect(stationaryCamera.forwardZ).toBeCloseTo(afterLeft.forwardZ, 2);
 
   await page.evaluate(() => window.__CATCHY_E2E__!.turnCamera(0));
   await page.waitForFunction(() => {

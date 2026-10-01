@@ -259,7 +259,11 @@ function opposedKeyInput(positiveKey: string, negativeKey: string) {
   return axis;
 }
 
-/** Camera-local movement axes. World-space direction is resolved at the current camera yaw. */
+/**
+ * Semantic movement axes: positive x is RIGHT and positive z is FORWARD.
+ * Physical A/D/W/S key mapping stays here; the simulation resolves those
+ * semantics against the rendered camera basis.
+ */
 export function inputVector(): { x: number; z: number } | null {
   if (joystick.active) {
     if (joystick.x === 0 && joystick.z === 0) return null;
