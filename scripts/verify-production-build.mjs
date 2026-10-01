@@ -1,17 +1,66 @@
-import { readFile, readdir } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 
-const publicRoot = join(process.cwd(), ".output", "public");
-const assetsRoot = join(publicRoot, "assets");
 const sourceRoot = join(process.cwd(), "src");
 const forbidden = /__CATCHY_E2E__|installCatchyE2EBridge|e2eBridge|Camera tuning/;
+
+const vercelOutput = {
+  name: "Vercel",
+  publicRoot: join(process.cwd(), ".vercel", "output", "static"),
+  bundleRoots: [
+    join(process.cwd(), ".vercel", "output", "static", "assets"),
+    join(process.cwd(), ".vercel", "output", "functions", "__server.func"),
+  ],
+};
+const nitroOutput = {
+  name: "Nitro",
+  publicRoot: join(process.cwd(), ".output", "public"),
+  bundleRoots: [
+    join(process.cwd(), ".output", "public", "assets"),
+    join(process.cwd(), ".output", "server"),
+  ],
+};
+const outputLayouts = process.env["VERCEL"]
+  ? [vercelOutput, nitroOutput]
+  : [nitroOutput, vercelOutput];
+
+async function exists(path) {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+let productionOutput;
+for (const layout of outputLayouts) {
+  if (await exists(join(layout.publicRoot, "manifest.webmanifest"))) {
+    productionOutput = layout;
+    break;
+  }
+}
+if (!productionOutput) {
+  for (const layout of outputLayouts) {
+    if (await exists(layout.publicRoot)) {
+      productionOutput = layout;
+      break;
+    }
+  }
+}
+
+if (!productionOutput) {
+  throw new Error("Production output not found in .vercel/output or .output.");
+}
+
+const { publicRoot } = productionOutput;
 
 async function inspect(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   for (const entry of entries) {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) await inspect(path);
-    else if (/\.(?:js|css|html|map)$/i.test(entry.name)) {
+    else if (/\.(?:cjs|js|mjs|css|html|map)$/i.test(entry.name)) {
       const contents = await readFile(path, "utf8");
       if (forbidden.test(`${entry.name}\n${contents}`)) {
         throw new Error(`Production output contains test or debug code: ${path}`);
@@ -65,6 +114,10 @@ async function verifyPwaIcons() {
 }
 
 await inspectApplicationSource(sourceRoot);
-await inspect(assetsRoot);
+for (const bundleRoot of productionOutput.bundleRoots) {
+  if (await exists(bundleRoot)) await inspect(bundleRoot);
+}
 await verifyPwaIcons();
-console.log("Production output passed app-debug, bundle, and PWA-icon verification.");
+console.log(
+  `${productionOutput.name} production output passed app-debug, bundle, and PWA-icon verification.`,
+);
