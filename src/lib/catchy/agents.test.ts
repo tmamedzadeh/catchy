@@ -327,6 +327,86 @@ describe("runner navigation and temporary barrier", () => {
     expect(new Set(RUNNERS.map((runner) => runner.routePhaseOffset)).size).toBe(RUNNERS.length);
   });
 
+  it("chooses comfortable player-distance goals and flees strongly when too close", () => {
+    activeRunners();
+    put(PLAYER, 0, 0);
+    const runner = RUNNERS[0]!;
+    put(runner, 16, 0);
+    for (const other of RUNNERS.slice(1)) other.hidden = 10;
+    runner.routeTimer = 0;
+    step(DT, null, noCommands, true);
+    const preferredGoalDistance = Math.hypot(runner.routeGoalX, runner.routeGoalZ);
+    expect(preferredGoalDistance).toBeGreaterThan(GAME_CONFIG.npc.navigation.minFleeDistance);
+    expect(preferredGoalDistance).toBeLessThan(GAME_CONFIG.npc.navigation.maxFleeDistance);
+
+    put(runner, 8, 0);
+    runner.routeTimer = 0;
+    step(DT, null, noCommands, true);
+    const urgentGoalDistance = Math.hypot(runner.routeGoalX, runner.routeGoalZ);
+    expect(urgentGoalDistance).toBeGreaterThan(GAME_CONFIG.npc.navigation.minFleeDistance - 1);
+    expect(urgentGoalDistance).toBeGreaterThan(8);
+    expect(urgentGoalDistance).toBeLessThan(GAME_CONFIG.npc.navigation.maxFleeDistance + 2);
+  });
+
+  it("keeps runners roaming around the player without sustained wall camping", () => {
+    activeRunners();
+    const lastPositions = RUNNERS.map((runner) => ({ x: runner.x, z: runner.z }));
+    const traveled = RUNNERS.map(() => 0);
+    const samples: Array<{
+      distances: number[];
+      radii: number[];
+      pairwise: number[];
+      goalSeparation: number;
+    }> = [];
+
+    for (let tick = 0; tick < GAME_CONFIG.simulation.tickHz * 20; tick++) {
+      step(DT, null, noCommands, true);
+      for (let index = 0; index < RUNNERS.length; index++) {
+        const runner = RUNNERS[index]!;
+        const previous = lastPositions[index]!;
+        traveled[index]! += Math.hypot(runner.x - previous.x, runner.z - previous.z);
+        previous.x = runner.x;
+        previous.z = runner.z;
+      }
+      if (tick >= GAME_CONFIG.simulation.tickHz * 5 && tick % GAME_CONFIG.simulation.tickHz === 0) {
+        const goals = RUNNERS.map((runner) => ({ x: runner.routeGoalX, z: runner.routeGoalZ }));
+        samples.push({
+          distances: RUNNERS.map((runner) => Math.hypot(runner.x - PLAYER.x, runner.z - PLAYER.z)),
+          radii: RUNNERS.map((runner) => Math.hypot(runner.x, runner.z)),
+          pairwise: [
+            Math.hypot(RUNNERS[0]!.x - RUNNERS[1]!.x, RUNNERS[0]!.z - RUNNERS[1]!.z),
+            Math.hypot(RUNNERS[0]!.x - RUNNERS[2]!.x, RUNNERS[0]!.z - RUNNERS[2]!.z),
+            Math.hypot(RUNNERS[1]!.x - RUNNERS[2]!.x, RUNNERS[1]!.z - RUNNERS[2]!.z),
+          ],
+          goalSeparation: Math.min(
+            Math.hypot(goals[0]!.x - goals[1]!.x, goals[0]!.z - goals[1]!.z),
+            Math.hypot(goals[0]!.x - goals[2]!.x, goals[0]!.z - goals[2]!.z),
+            Math.hypot(goals[1]!.x - goals[2]!.x, goals[1]!.z - goals[2]!.z),
+          ),
+        });
+      }
+    }
+
+    expect(samples.length).toBeGreaterThanOrEqual(14);
+    expect(traveled.every((distance) => distance > 80)).toBe(true);
+    const mean = (values: number[]) =>
+      values.reduce((sum, value) => sum + value, 0) / values.length;
+    for (let index = 0; index < RUNNERS.length; index++) {
+      const averageDistance = mean(samples.map((sample) => sample.distances[index]!));
+      expect(averageDistance).toBeGreaterThan(GAME_CONFIG.npc.navigation.minFleeDistance - 2);
+      expect(averageDistance).toBeLessThan(GAME_CONFIG.npc.navigation.maxFleeDistance + 3);
+      const wallOccupancy =
+        samples.filter(
+          (sample) => sample.radii[index]! > GAME_CONFIG.npc.navigation.boundarySteeringFullRadius,
+        ).length / samples.length;
+      expect(wallOccupancy).toBeLessThan(0.25);
+    }
+    expect(mean(samples.map((sample) => mean(sample.pairwise)))).toBeGreaterThan(5);
+    expect(mean(samples.map((sample) => sample.goalSeparation))).toBeGreaterThan(
+      GAME_CONFIG.npc.navigation.preferredGoalSeparation * 0.4,
+    );
+  });
+
   it("steers clustered runners apart with a local separation field", () => {
     activeRunners();
     put(PLAYER, 0, -20);
@@ -713,6 +793,185 @@ describe("camera-relative movement and reset", () => {
     expect(world).not.toBeNull();
     expect(world!.x).toBeCloseTo(expected.x, 7);
     expect(world!.z).toBeCloseTo(expected.z, 7);
+  });
+
+  it.each([
+    { name: "W", yaw: 0, input: { x: 0, z: 1 }, expected: { x: 0, z: 1 } },
+    { name: "S", yaw: 0, input: { x: 0, z: -1 }, expected: { x: 0, z: -1 } },
+    { name: "A", yaw: 0, input: { x: -1, z: 0 }, expected: { x: -1, z: 0 } },
+    { name: "D", yaw: 0, input: { x: 1, z: 0 }, expected: { x: 1, z: 0 } },
+    {
+      name: "W after camera turn",
+      yaw: Math.PI / 2,
+      input: { x: 0, z: 1 },
+      expected: { x: 1, z: 0 },
+    },
+    {
+      name: "S after camera turn",
+      yaw: Math.PI / 2,
+      input: { x: 0, z: -1 },
+      expected: { x: -1, z: 0 },
+    },
+    {
+      name: "A after camera turn",
+      yaw: Math.PI / 2,
+      input: { x: -1, z: 0 },
+      expected: { x: 0, z: 1 },
+    },
+    {
+      name: "D after camera turn",
+      yaw: Math.PI / 2,
+      input: { x: 1, z: 0 },
+      expected: { x: 0, z: -1 },
+    },
+  ])("moves $name in its actual world direction over fixed ticks", ({ yaw, input, expected }) => {
+    put(PLAYER, -4, 12);
+    PLAYER.heading = yaw;
+    WORLD_STATE.cameraYaw = yaw;
+    WORLD_STATE.previousCameraYaw = yaw;
+    WORLD_STATE.movementCameraYaw = yaw;
+    WORLD_STATE.movementInputFrame = null;
+    WORLD_STATE.cameraManualRemaining = 0;
+    const start = { x: PLAYER.x, z: PLAYER.z };
+
+    for (let tick = 0; tick < 42; tick++) {
+      step(
+        DT,
+        input,
+        noCommands,
+        false,
+        false,
+        0,
+        "normal",
+        { x: 0, y: 0 },
+        0,
+        `key:${input.x}:${input.z}`,
+      );
+    }
+
+    const dx = PLAYER.x - start.x;
+    const dz = PLAYER.z - start.z;
+    expect(Math.hypot(dx, dz)).toBeGreaterThan(4);
+    expect(dx * expected.x + dz * expected.z).toBeGreaterThan(4);
+    expect(Math.abs(dx * expected.z - dz * expected.x)).toBeLessThan(0.25);
+    expect(PLAYER.speed).toBeGreaterThan(0);
+  });
+
+  it.each([
+    { name: "A", input: { x: -1, z: 0 }, expected: { x: -1, z: 0 } },
+    { name: "D", input: { x: 1, z: 0 }, expected: { x: 1, z: 0 } },
+    { name: "S", input: { x: 0, z: -1 }, expected: { x: 0, z: -1 } },
+  ])("keeps a held $name trajectory straight while Follow turns", ({ input, expected }) => {
+    put(PLAYER, -4, 12);
+    PLAYER.heading = 0;
+    WORLD_STATE.cameraYaw = 0;
+    WORLD_STATE.previousCameraYaw = 0;
+    WORLD_STATE.movementCameraYaw = 0;
+    WORLD_STATE.movementInputFrame = null;
+    const start = { x: PLAYER.x, z: PLAYER.z };
+    const positions: Array<{ x: number; z: number }> = [];
+
+    for (let tick = 0; tick < 60; tick++) {
+      step(
+        DT,
+        input,
+        noCommands,
+        false,
+        false,
+        0,
+        "normal",
+        { x: 0, y: 0 },
+        0,
+        `held:${input.x}:${input.z}`,
+      );
+      if (tick % 10 === 9) positions.push({ x: PLAYER.x, z: PLAYER.z });
+    }
+
+    const dx = PLAYER.x - start.x;
+    const dz = PLAYER.z - start.z;
+    expect(Math.hypot(dx, dz)).toBeGreaterThan(7);
+    expect(Math.abs(dx * expected.z - dz * expected.x)).toBeLessThan(0.2);
+    expect(Math.abs(WORLD_STATE.cameraYaw)).toBeGreaterThan(0.2);
+    for (const position of positions) {
+      const offsetX = position.x - start.x;
+      const offsetZ = position.z - start.z;
+      expect(Math.abs(offsetX * expected.z - offsetZ * expected.x)).toBeLessThan(0.2);
+    }
+  });
+
+  it("turns through a backward reversal smoothly and faces the actual movement", () => {
+    put(PLAYER, -4, 12);
+    PLAYER.heading = 0;
+    WORLD_STATE.cameraYaw = 0;
+    WORLD_STATE.previousCameraYaw = 0;
+    WORLD_STATE.movementCameraYaw = 0;
+    WORLD_STATE.movementInputFrame = null;
+    for (let tick = 0; tick < 24; tick++)
+      step(DT, { x: 0, z: 1 }, noCommands, false, false, 0, "normal", { x: 0, y: 0 }, 0, "W");
+    const startBackward = { x: PLAYER.x, z: PLAYER.z };
+    const headingAtSwitch = PLAYER.heading;
+    const cameraYawSamples: number[] = [];
+    for (let tick = 0; tick < 60; tick++) {
+      step(DT, { x: 0, z: -1 }, noCommands, false, false, 0, "normal", { x: 0, y: 0 }, 0, "S");
+      cameraYawSamples.push(WORLD_STATE.cameraYaw);
+    }
+    const angularError = (a: number, b: number) =>
+      Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+    const maxCameraStep = Math.max(
+      ...cameraYawSamples.map((yaw, index) =>
+        angularError(yaw, index === 0 ? 0 : cameraYawSamples[index - 1]!),
+      ),
+    );
+    expect(angularError(headingAtSwitch, 0)).toBeLessThan(0.1);
+    expect(PLAYER.z).toBeLessThan(startBackward.z - 7);
+    expect(angularError(PLAYER.heading, Math.PI)).toBeLessThan(0.12);
+    expect(maxCameraStep).toBeLessThan(0.25);
+  });
+
+  it("keeps player facing independent of camera drag and resumes Follow smoothly", () => {
+    PLAYER.heading = 1.2;
+    WORLD_STATE.cameraYaw = 0;
+    WORLD_STATE.previousCameraYaw = 0;
+    WORLD_STATE.cameraManualRemaining = 0;
+    step(DT, null, noCommands, true, false, 0, "normal", { x: -20, y: -100 });
+    expect(PLAYER.heading).toBe(1.2);
+    expect(WORLD_STATE.cameraYaw).toBeLessThan(0);
+    expect(WORLD_STATE.cameraPitch).toBeLessThan(0);
+    const manualYaw = WORLD_STATE.cameraYaw;
+
+    for (let tick = 0; tick < 20; tick++) step(DT, null, noCommands, true);
+    expect(WORLD_STATE.cameraYaw).toBeCloseTo(manualYaw, 3);
+    expect(WORLD_STATE.cameraManualRemaining).toBeGreaterThan(0);
+
+    const yawBeforeResume = WORLD_STATE.cameraYaw;
+    let largestFollowStep = 0;
+    for (let tick = 0; tick < 60; tick++) {
+      const before = WORLD_STATE.cameraYaw;
+      step(DT, null, noCommands, true);
+      const delta = Math.atan2(
+        Math.sin(WORLD_STATE.cameraYaw - before),
+        Math.cos(WORLD_STATE.cameraYaw - before),
+      );
+      largestFollowStep = Math.max(largestFollowStep, Math.abs(delta));
+    }
+    expect(Math.abs(WORLD_STATE.cameraYaw - yawBeforeResume)).toBeGreaterThan(0.5);
+    expect(Math.abs(WORLD_STATE.cameraYaw - PLAYER.heading)).toBeLessThan(0.12);
+    expect(largestFollowStep).toBeLessThan(0.25);
+  });
+
+  it("clamps camera pitch and pinch zoom to safe camera bounds", () => {
+    WORLD_STATE.cameraDistance = GAME_CONFIG.camera.distance;
+    WORLD_STATE.cameraYaw = 0;
+    step(DT, null, noCommands, true, false, 0, "normal", { x: 0, y: -1000 });
+    expect(WORLD_STATE.cameraPitch).toBe(-10);
+    step(DT, null, noCommands, true, false, 0, "normal", { x: 0, y: 1000 });
+    expect(WORLD_STATE.cameraPitch).toBe(10);
+
+    step(DT, null, noCommands, true, false, 0, "normal", { x: 0, y: 0 }, 1000);
+    expect(WORLD_STATE.cameraDistance).toBe(GAME_CONFIG.camera.tuningRanges.distance.max);
+    step(DT, null, noCommands, true, false, 0, "normal", { x: 0, y: 0 }, -1000);
+    expect(WORLD_STATE.cameraDistance).toBe(GAME_CONFIG.camera.tuningRanges.distance.min);
+    expect(Number.isFinite(WORLD_STATE.cameraDistance)).toBe(true);
   });
 
   it("rotates W, S, A and D at right-angle and arbitrary camera yaw", () => {

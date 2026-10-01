@@ -155,11 +155,14 @@ const TEMPORARY_BARRIER = INTERACTIVE_OBJECTS.find((item) => item.kind === "temp
 export const WORLD_STATE = {
   cameraYaw: PLAYER.heading,
   previousCameraYaw: PLAYER.heading,
+  /** Camera yaw captured for the current uninterrupted movement gesture. */
+  movementCameraYaw: PLAYER.heading,
+  movementInputFrame: null as string | null,
   cameraPitch: 0,
   /** Keeps a manually selected orbit angle briefly before heading follow resumes. */
   cameraManualRemaining: 0,
   /** Distance is mutable simulation state so pinch never needs React renders. */
-  cameraDistance: GAME_CONFIG.camera.distance,
+  cameraDistance: Number(GAME_CONFIG.camera.distance),
   barrierClosed: false,
   barrierRemaining: GAME_CONFIG.barrier.openSeconds,
   speedPadPulseRemaining: 0,
@@ -532,6 +535,8 @@ export function resetSimulation() {
   WORLD_STATE.bounceNormalZ = 1;
   WORLD_STATE.cameraYaw = PLAYER.heading;
   WORLD_STATE.previousCameraYaw = PLAYER.heading;
+  WORLD_STATE.movementCameraYaw = PLAYER.heading;
+  WORLD_STATE.movementInputFrame = null;
   WORLD_STATE.cameraPitch = 0;
   WORLD_STATE.cameraManualRemaining = 0;
   WORLD_STATE.cameraDistance = GAME_CONFIG.camera.distance;
@@ -591,6 +596,8 @@ export function resetSimulation() {
   }
   WORLD_STATE.cameraYaw = PLAYER.heading;
   WORLD_STATE.previousCameraYaw = PLAYER.heading;
+  WORLD_STATE.movementCameraYaw = PLAYER.heading;
+  WORLD_STATE.movementInputFrame = null;
   WORLD_STATE.cameraPitch = 0;
   WORLD_STATE.cameraManualRemaining = 0;
 }
@@ -885,7 +892,23 @@ function chooseNavigationRoute(agent: Agent, avoidPreviousFirstStep: boolean) {
       let sector = Math.round(relativeAngle / directionStep);
       sector = ((sector % directionCount) + directionCount) % directionCount;
 
-      let score = (playerDistance - currentPlayerDistance) * weights.escapeDistance;
+      const distanceError = Math.abs(playerDistance - navigation.preferredFleeDistance);
+      let distanceGainTarget = 0;
+      let fleePressure = 0;
+      if (currentPlayerDistance < navigation.minFleeDistance) {
+        distanceGainTarget = navigation.minFleeDistance - currentPlayerDistance;
+        fleePressure = weights.urgentFleeDistance;
+      } else if (currentPlayerDistance < navigation.preferredFleeDistance) {
+        distanceGainTarget = navigation.preferredFleeDistance - currentPlayerDistance;
+        fleePressure = weights.moderateFleeDistance;
+      }
+      const distanceProgress = Math.min(
+        Math.max(0, playerDistance - currentPlayerDistance),
+        distanceGainTarget,
+      );
+      let score = -distanceError * weights.distanceBand + distanceProgress * fleePressure;
+      score -=
+        Math.max(0, playerDistance - navigation.maxFleeDistance) * weights.maxFleeDistancePenalty;
       score -= currentCost * weights.routeQuality;
       score -= Math.max(0, currentCost - goalDistance) * weights.routeDetour;
       score += (node.links.length / 8) * weights.openSpace;
@@ -1213,6 +1236,7 @@ export function step(
   cameraMode: "normal" | "recenter" | "tactical" = "normal",
   cameraDrag = { x: 0, y: 0 },
   cameraZoom = 0,
+  movementFrameToken?: string | null,
 ) {
   for (const agent of AGENTS) {
     agent.previousX = agent.x;
@@ -1227,7 +1251,7 @@ export function step(
       GAME_CONFIG.camera.tuningRanges.distance.min,
       Math.min(
         GAME_CONFIG.camera.tuningRanges.distance.max,
-        WORLD_STATE.cameraDistance - cameraZoom * 0.045,
+        WORLD_STATE.cameraDistance + cameraZoom * 0.045,
       ),
     );
     WORLD_STATE.cameraManualRemaining = GAME_CONFIG.camera.manualPersistenceSeconds;
@@ -1243,7 +1267,7 @@ export function step(
     WORLD_STATE.cameraYaw += cameraDrag.x * 0.012;
     WORLD_STATE.cameraPitch = Math.max(
       -10,
-      Math.min(10, WORLD_STATE.cameraPitch - cameraDrag.y * 0.08),
+      Math.min(10, WORLD_STATE.cameraPitch + cameraDrag.y * 0.08),
     );
     if (cameraDrag.x !== 0 || cameraDrag.y !== 0) {
       // Manual orbit owns the camera while dragging and for a short release
@@ -1278,9 +1302,23 @@ export function step(
   }
 
   advanceBarrier(dt);
-  // Snapshot the camera basis before movement. Follow is updated from the resulting
-  // heading above, never allowed to redefine this tick's movement frame.
-  const movementCameraYaw = WORLD_STATE.cameraYaw;
+  // Capture yaw when a movement gesture starts or when the player deliberately
+  // moves the camera. Follow yaw may continue to catch the player's facing, but
+  // it cannot rotate the coordinate system underneath unchanged movement input.
+  const hasMovementInput = Boolean(input && Math.hypot(input.x, input.z) > 0.001);
+  const inputFrame = hasMovementInput
+    ? (movementFrameToken ?? `direct:${input!.x.toFixed(4)}:${input!.z.toFixed(4)}`)
+    : null;
+  const deliberateCameraMotion =
+    cameraMode === "recenter" || cameraDrag.x !== 0 || cameraDrag.y !== 0;
+  if (!hasMovementInput) {
+    WORLD_STATE.movementInputFrame = null;
+    WORLD_STATE.movementCameraYaw = WORLD_STATE.cameraYaw;
+  } else if (inputFrame !== WORLD_STATE.movementInputFrame || deliberateCameraMotion) {
+    WORLD_STATE.movementInputFrame = inputFrame;
+    WORLD_STATE.movementCameraYaw = WORLD_STATE.cameraYaw;
+  }
+  const movementCameraYaw = WORLD_STATE.movementCameraYaw;
   const worldInput = resolveCameraRelativeInput(input, movementCameraYaw);
   if (freezePlayer) clearPlayerJump();
   if (!freezePlayer) {

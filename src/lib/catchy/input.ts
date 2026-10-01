@@ -13,21 +13,50 @@ const INPUT_CODES = new Set([
   "ShiftLeft",
   "ShiftRight",
 ]);
+const MOVEMENT_CODES = ["KeyW", "KeyA", "KeyS", "KeyD"] as const;
 const keys = new Set<string>();
+let movementInputRevision = 0;
 const actionQueue = new Uint8Array(32);
 let queueHead = 0;
 let queueTail = 0;
 
-export const joystick = { x: 0, z: 0, active: false };
+export const joystick = { x: 0, z: 0, active: false, gestureId: 0 };
 export const cameraDrag = { x: 0, y: 0, active: false };
 const pendingCameraDrag = { x: 0, y: 0 };
 let pendingCameraZoom = 0;
 const movement = { x: 0, z: 0 };
 const consumedActions = { dash: false, speedBoost: false, jump: false };
+const pointerOwners = new Map<number, TouchPointerOwner>();
 let jumpActionEnabled = true;
 let inputResetHandler: (() => void) | null = null;
 
 export type PlayerActionCommands = typeof consumedActions;
+export type TouchPointerOwner = "movement" | "camera" | "jump" | "dash" | "speedBoost";
+
+/** A pointer is claimed by one control domain until it is released or input resets. */
+export function claimTouchPointer(pointerId: number, owner: TouchPointerOwner) {
+  const currentOwner = pointerOwners.get(pointerId);
+  if (currentOwner) return currentOwner === owner;
+  pointerOwners.set(pointerId, owner);
+  return true;
+}
+
+export function releaseTouchPointer(pointerId: number, owner?: TouchPointerOwner) {
+  if (owner && pointerOwners.get(pointerId) !== owner) return false;
+  return pointerOwners.delete(pointerId);
+}
+
+export function getTouchPointerOwner(pointerId: number) {
+  return pointerOwners.get(pointerId) ?? null;
+}
+
+export function getTouchPointerOwners() {
+  return [...pointerOwners.entries()];
+}
+
+export function clearTouchPointers() {
+  pointerOwners.clear();
+}
 
 function isTextControl(target: EventTarget | null) {
   return (
@@ -90,6 +119,8 @@ export function registerInputResetHandler(handler: () => void) {
 export function pressInputKey(code: string, target: EventTarget | null = null) {
   if (!INPUT_CODES.has(code) || isTextControl(target) || keys.has(code)) return false;
   keys.add(code);
+  if (code === "KeyW" || code === "KeyA" || code === "KeyS" || code === "KeyD")
+    movementInputRevision++;
   if (code === "ShiftLeft" || code === "ShiftRight") requestPlayerDash();
   else if (code === "KeyE") requestPlayerSpeedBoost();
   else if (code === "Space") requestPlayerJump();
@@ -97,7 +128,22 @@ export function pressInputKey(code: string, target: EventTarget | null = null) {
 }
 
 export function releaseInputKey(code: string) {
-  keys.delete(code);
+  if (
+    keys.delete(code) &&
+    (code === "KeyW" || code === "KeyA" || code === "KeyS" || code === "KeyD")
+  )
+    movementInputRevision++;
+}
+
+/**
+ * Identifies a held movement gesture so camera follow cannot rotate the world
+ * basis underneath unchanged WASD input. Joystick angle changes keep one frame
+ * until that pointer gesture ends.
+ */
+export function movementInputFrameToken() {
+  if (joystick.active) return `joystick:${joystick.gestureId}`;
+  if (!MOVEMENT_CODES.some((code) => keys.has(code))) return null;
+  return `keyboard:${movementInputRevision}`;
 }
 
 /** Drain buffered button/key presses once per simulation tick. */
@@ -124,6 +170,13 @@ export function addCameraDrag(deltaX: number, deltaY: number) {
 
 export function endCameraDrag() {
   cameraDrag.active = false;
+}
+
+/** Discard unconsumed pointer deltas when a gesture is canceled or reset. */
+export function discardPendingCameraInput() {
+  cameraDrag.active = false;
+  cameraDrag.x = 0;
+  cameraDrag.y = 0;
   pendingCameraDrag.x = 0;
   pendingCameraDrag.y = 0;
   pendingCameraZoom = 0;
@@ -150,13 +203,14 @@ export function consumeCameraDrag() {
 
 export function clearInput() {
   keys.clear();
+  movementInputRevision++;
+  clearTouchPointers();
   joystick.x = 0;
   joystick.z = 0;
   joystick.active = false;
+  joystick.gestureId++;
   endCameraDrag();
-  cameraDrag.x = 0;
-  cameraDrag.y = 0;
-  pendingCameraZoom = 0;
+  discardPendingCameraInput();
   queueHead = 0;
   queueTail = 0;
   consumedActions.dash = false;

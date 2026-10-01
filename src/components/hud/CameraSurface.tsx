@@ -1,5 +1,12 @@
 import { useEffect, useRef } from "react";
-import { addCameraDrag, addCameraZoom, endCameraDrag } from "@/lib/catchy/input";
+import {
+  addCameraDrag,
+  addCameraZoom,
+  claimTouchPointer,
+  discardPendingCameraInput,
+  endCameraDrag,
+  releaseTouchPointer,
+} from "@/lib/catchy/input";
 import { pinchZoomDelta } from "@/lib/catchy/pinch";
 
 type OwnedPointer = { x: number; y: number };
@@ -11,21 +18,27 @@ export function CameraSurface() {
 
   const release = (pointerId: number) => {
     pointers.current.delete(pointerId);
+    releaseTouchPointer(pointerId, "camera");
     if (pointers.current.size < 2) pinchDistance.current = null;
     if (pointers.current.size === 0) endCameraDrag();
   };
 
   useEffect(() => {
     const clear = () => {
+      for (const pointerId of pointers.current.keys()) releaseTouchPointer(pointerId, "camera");
       pointers.current.clear();
       pinchDistance.current = null;
       endCameraDrag();
+      discardPendingCameraInput();
+    };
+    const onVisibilityChange = () => {
+      if (document.hidden) clear();
     };
     window.addEventListener("blur", clear);
-    document.addEventListener("visibilitychange", clear);
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       window.removeEventListener("blur", clear);
-      document.removeEventListener("visibilitychange", clear);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, []);
 
@@ -35,10 +48,19 @@ export function CameraSurface() {
       className="camera-surface pointer-events-auto absolute inset-0 touch-none"
       onPointerDown={(event) => {
         if (event.pointerType === "mouse" && event.button !== 0) return;
+        if (!claimTouchPointer(event.pointerId, "camera")) return;
         event.preventDefault();
         pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-        event.currentTarget.setPointerCapture(event.pointerId);
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          release(event.pointerId);
+          return;
+        }
         if (pointers.current.size === 2) {
+          // Drop a one-finger delta before entering pinch mode so joining a
+          // second finger cannot create a yaw/pitch jump.
+          discardPendingCameraInput();
           const [a, b] = [...pointers.current.values()];
           pinchDistance.current = pinchZoomDelta(null, a!, b!).distance;
         }
@@ -61,7 +83,10 @@ export function CameraSurface() {
         }
       }}
       onPointerUp={(event) => release(event.pointerId)}
-      onPointerCancel={(event) => release(event.pointerId)}
+      onPointerCancel={(event) => {
+        discardPendingCameraInput();
+        release(event.pointerId);
+      }}
       onLostPointerCapture={(event) => release(event.pointerId)}
       onContextMenu={(event) => event.preventDefault()}
     />

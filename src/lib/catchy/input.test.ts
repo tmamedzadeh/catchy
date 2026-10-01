@@ -6,9 +6,14 @@ import {
   clearInput,
   consumePlayerActionCommands,
   inputVector,
+  movementInputFrameToken,
   installInputEventListeners,
   joystick,
   pressInputKey,
+  claimTouchPointer,
+  getTouchPointerOwner,
+  getTouchPointerOwners,
+  releaseTouchPointer,
   requestPlayerJump,
   releaseInputKey,
   setPlayerJumpInputEnabled,
@@ -48,6 +53,17 @@ describe("keyboard movement, camera modes, and action buffer", () => {
     expect(inputVector()!.x).toBe(1);
     releaseInputKey("KeyD");
     expect(inputVector()!.x).toBe(-1);
+  });
+
+  it("keeps one keyboard movement frame until a movement key transition", () => {
+    pressInputKey("KeyA");
+    const firstFrame = movementInputFrameToken();
+    expect(firstFrame).not.toBeNull();
+    expect(movementInputFrameToken()).toBe(firstFrame);
+    pressInputKey("KeyW");
+    expect(movementInputFrameToken()).not.toBe(firstFrame);
+    releaseInputKey("KeyW");
+    expect(movementInputFrameToken()).not.toBe(firstFrame);
   });
 
   it.each(["KeyA", "KeyD", "ArrowLeft", "ArrowRight"])("does not map %s to camera yaw", (code) => {
@@ -152,12 +168,45 @@ describe("touch joystick input", () => {
     expect(cameraDrag.active).toBe(false);
   });
 
-  it("does not expose a second joystick control", () => {
-    expect(cameraTurnInput()).toBe(0);
-    expect(cameraModeInput()).toBe("normal");
+  it("preserves final pointer deltas until the next fixed step consumes them", () => {
+    addCameraDrag(-32, 9);
+    endCameraDrag();
+    expect(cameraDrag.active).toBe(false);
+    expect(consumeCameraDrag()).toMatchObject({ x: -32, y: 9, active: false });
+  });
+
+  it("keeps one joystick gesture as a stable movement frame", () => {
+    joystick.active = true;
+    joystick.gestureId = 4;
+    const frame = movementInputFrameToken();
+    joystick.x = -0.4;
+    joystick.z = 0.8;
+    expect(movementInputFrameToken()).toBe(frame);
+    joystick.active = false;
+    expect(movementInputFrameToken()).toBeNull();
     expect(cameraTurnInput()).toBe(0);
     expect(cameraModeInput()).toBe("normal");
     expect(consumePlayerActionCommands()).toEqual({ dash: false, speedBoost: false, jump: false });
+  });
+
+  it("assigns each pointer to exactly one touch-control domain", () => {
+    expect(claimTouchPointer(10, "movement")).toBe(true);
+    expect(claimTouchPointer(10, "camera")).toBe(false);
+    expect(claimTouchPointer(11, "camera")).toBe(true);
+    expect(claimTouchPointer(12, "jump")).toBe(true);
+    expect(getTouchPointerOwner(10)).toBe("movement");
+    expect(getTouchPointerOwner(11)).toBe("camera");
+    expect(getTouchPointerOwner(12)).toBe("jump");
+    expect(getTouchPointerOwners()).toEqual([
+      [10, "movement"],
+      [11, "camera"],
+      [12, "jump"],
+    ]);
+    expect(releaseTouchPointer(10, "camera")).toBe(false);
+    expect(releaseTouchPointer(10, "movement")).toBe(true);
+    expect(getTouchPointerOwner(10)).toBeNull();
+    clearInput();
+    expect(getTouchPointerOwners()).toEqual([]);
   });
 
   it("keeps small vertical stick movement neutral and clears all camera state on release", () => {
@@ -181,6 +230,7 @@ describe("browser keyboard event lifecycle", () => {
     const browserDocument = new EventTarget() as unknown as Document;
     Object.defineProperty(browserDocument, "hidden", { get: () => hidden });
     const removeListeners = installInputEventListeners(browserWindow, browserDocument);
+    claimTouchPointer(90, "camera");
     const key = (type: string, code: string) => {
       const event = new Event(type, { cancelable: true });
       Object.defineProperty(event, "code", { value: code });
@@ -209,10 +259,13 @@ describe("browser keyboard event lifecycle", () => {
     expect(inputVector()).toBeNull();
     expect(cameraTurnInput()).toBe(0);
     expect(consumePlayerActionCommands().jump).toBe(false);
+    expect(getTouchPointerOwners()).toEqual([]);
     browserWindow.dispatchEvent(key("keydown", "KeyD"));
+    claimTouchPointer(91, "movement");
     hidden = true;
     browserDocument.dispatchEvent(new Event("visibilitychange"));
     expect(inputVector()).toBeNull();
+    expect(getTouchPointerOwners()).toEqual([]);
 
     removeListeners();
     hidden = false;

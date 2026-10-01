@@ -170,6 +170,11 @@
   --hud-shadow: 0 10px 24px -8px oklch(0.34 0.07 152 / 0.35), 0 2px 0 0 oklch(1 0 0 / 0.5) inset;
   --hud-shadow-soft: 0 8px 20px -10px oklch(0.34 0.07 152 / 0.45);
   --joystick-size: 8.5rem;
+  --hud-top-card-height: 3.25rem;
+  --control-bottom-inset: max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
+  --control-right-inset: max(1.25rem, calc(env(safe-area-inset-right, 0px) + 1rem));
+  --action-control-size: 3.25rem;
+  --action-control-gap: 0.55rem;
 }
 
 @theme inline {
@@ -234,19 +239,67 @@
   pointer-events: auto;
 }
 
+.hud-brand,
+.hud-game-status {
+  z-index: 1;
+}
+
 .hud-brand {
-  top: calc(1rem + env(safe-area-inset-top, 0px));
+  top: calc(0.75rem + env(safe-area-inset-top, 0px));
   left: calc(1rem + env(safe-area-inset-left, 0px));
 }
 
+.hud-brand .hud-card {
+  height: var(--hud-top-card-height);
+}
+
 .hud-game-status {
-  top: calc(1rem + env(safe-area-inset-top, 0px));
+  top: calc(0.75rem + env(safe-area-inset-top, 0px));
   right: calc(0.75rem + env(safe-area-inset-right, 0px));
   width: min(
     20rem,
-    calc(100vw - 2rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))
+    calc(100vw - 6.5rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))
   );
-  min-height: 4.5rem;
+  height: var(--hud-top-card-height);
+  min-height: 0;
+  white-space: nowrap;
+}
+
+.hud-metric {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+
+.hud-metric-label {
+  color: var(--catchy-ink-soft);
+  font-family: var(--font-display);
+  font-size: 0.56rem;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.hud-metric-value {
+  color: var(--catchy-ink);
+  font-family: var(--font-display);
+  font-size: 0.88rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-caught-value {
+  color: var(--catchy-accent-2);
+  font-size: 1.05rem;
+}
+
+.hud-time-value,
+.hud-target-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
 }
 
 .hud-callouts {
@@ -256,23 +309,27 @@
 .touch-controls {
   bottom: max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
   left: max(1.25rem, calc(env(safe-area-inset-left, 0px) + 1rem));
+  z-index: 2;
 }
 
 .ability-controls {
-  right: max(1.25rem, calc(env(safe-area-inset-right, 0px) + 1rem));
-  bottom: max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
+  right: var(--control-right-inset);
+  bottom: var(--control-bottom-inset);
+  gap: var(--action-control-gap);
   z-index: 2;
 }
 
 .speed-boost-control {
-  right: calc(3.25rem + max(1.25rem, calc(env(safe-area-inset-right, 0px) + 1rem)) + 0.4rem);
-  bottom: calc(3.25rem + max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 1rem)) + 0.7rem);
+  right: var(--control-right-inset);
+  bottom: calc(
+    var(--control-bottom-inset) + var(--action-control-size) + var(--action-control-gap)
+  );
   z-index: 2;
 }
 
 .ability-controls .dash-control-button {
-  width: 3.25rem;
-  height: 3.25rem;
+  width: var(--action-control-size);
+  height: var(--action-control-size);
 }
 
 .dash-control,
@@ -359,6 +416,7 @@
 }
 
 .round-end-overlay {
+  z-index: 30;
   padding: max(1rem, calc(env(safe-area-inset-top, 0px) + 0.75rem))
     max(1rem, calc(env(safe-area-inset-right, 0px) + 0.75rem))
     max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem))
@@ -611,11 +669,11 @@
   }
 
   .ability-controls {
-    right: max(1.25rem, calc(env(safe-area-inset-right, 0px) + 1rem));
+    right: var(--control-right-inset);
   }
 
   .speed-boost-control {
-    right: calc(3.25rem + max(1.25rem, calc(env(safe-area-inset-right, 0px) + 1rem)) + 0.4rem);
+    right: var(--control-right-inset);
   }
 }
 
@@ -669,6 +727,16 @@
 @media (max-width: 640px) {
   :root {
     --hud-radius: 1rem;
+    --hud-top-card-height: 2.95rem;
+  }
+
+  .hud-brand {
+    top: calc(0.75rem + env(safe-area-inset-top, 0px));
+  }
+
+  .hud-brand .hud-card {
+    padding-right: 0.65rem;
+    padding-left: 0.65rem;
   }
 
   .hud-game-status {
@@ -677,7 +745,31 @@
       16rem,
       calc(100vw - 6.5rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))
     );
-    min-height: 4rem;
+    padding-right: 0.5rem;
+    padding-left: 0.5rem;
+    gap: 0.35rem;
+  }
+
+  .hud-metric {
+    gap: 0.16rem;
+  }
+
+  .hud-metric-label {
+    font-size: 0.49rem;
+    letter-spacing: 0.06em;
+  }
+
+  .hud-metric-value {
+    font-size: 0.76rem;
+  }
+
+  .hud-caught-value {
+    font-size: 0.95rem;
+  }
+
+  .hud-time-value,
+  .hud-target-value {
+    gap: 0.12rem;
   }
 }
 
@@ -712,8 +804,11 @@
   }
 
   .speed-boost-control {
-    right: calc(3.25rem + max(2rem, calc(env(safe-area-inset-right, 0px) + 1.5rem)) + 0.4rem);
-    bottom: calc(3.25rem + max(2rem, calc(env(safe-area-inset-bottom, 0px) + 1.5rem)) + 0.7rem);
+    right: max(2rem, calc(env(safe-area-inset-right, 0px) + 1.5rem));
+    bottom: calc(
+      max(2rem, env(safe-area-inset-bottom, 0px) + 1.5rem) + var(--action-control-size) +
+        var(--action-control-gap)
+    );
   }
 
   .dash-control-button {

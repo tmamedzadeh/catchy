@@ -146,12 +146,18 @@ describe("getJoystickGeometry (canonical knob travel model)", () => {
     expect(large.maxTravelRadius).toBeLessThan(small.maxTravelRadius);
   });
 
-  it("gives both joysticks the exact same geometry model", () => {
+  it("keeps the single movement joystick neutral center on its visual center", () => {
     const movementStick = getJoystickGeometry(base);
-    const cameraStick = getJoystickGeometry({ ...base });
-    expect(movementStick).toEqual(cameraStick);
-    // Equal border-box sizes (the V1 requirement) yield identical travel.
-    expect(movementStick.maxTravelRadius).toBe(cameraStick.maxTravelRadius);
+    const measured = measureJoystickGeometry(
+      { left: 44, top: 28, width: base.baseWidth, height: base.baseHeight },
+      base.baseWidth - base.border * 2,
+      base.baseHeight - base.border * 2,
+      base.knobWidth,
+      base.knobHeight,
+    );
+    expect(measured.centerX).toBe(44 + movementStick.centerX);
+    expect(measured.centerY).toBe(28 + movementStick.centerY);
+    expect(measured.maxTravelRadius).toBe(movementStick.maxTravelRadius);
   });
 
   it("stays consistent with the DOM-measured wrapper", () => {

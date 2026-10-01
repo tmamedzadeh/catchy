@@ -7,7 +7,13 @@ import {
   type BoostState,
 } from "./agents";
 import { GAME_CONFIG } from "./config";
-import { cameraModeInput, clearInput, requestPlayerDash, requestPlayerSpeedBoost } from "./input";
+import {
+  cameraModeInput,
+  clearInput,
+  getTouchPointerOwners,
+  requestPlayerDash,
+  requestPlayerSpeedBoost,
+} from "./input";
 import { advanceSimulationFrame, resetSimulationRuntime } from "./runtime";
 import { useGameStore } from "@/store/gameStore";
 
@@ -46,8 +52,20 @@ type E2EWorld = {
   barrierClosed: boolean;
   barrierRemaining: number;
   cameraYaw: number;
+  cameraPitch: number;
+  cameraDistance: number;
+  cameraManualRemaining: number;
+  movementCameraYaw: number;
   speedPadPulseRemaining: number;
   bounceImpactId: number;
+};
+type E2ERenderedCamera = {
+  x: number;
+  y: number;
+  z: number;
+  forwardX: number;
+  forwardY: number;
+  forwardZ: number;
 };
 
 export type CatchyE2EApi = {
@@ -57,6 +75,8 @@ export type CatchyE2EApi = {
   getPlayer: () => E2EPlayer;
   getRunners: () => E2ERunner[];
   getWorld: () => E2EWorld;
+  getRenderedCamera: () => E2ERenderedCamera | null;
+  getTouchPointerOwners: () => Array<[number, string]>;
   getCameraMode: () => "normal" | "recenter" | "tactical";
   activateDash: () => void;
   activateBoost: () => void;
@@ -152,9 +172,22 @@ export function installCatchyE2EBridge() {
         barrierClosed: WORLD_STATE.barrierClosed,
         barrierRemaining: WORLD_STATE.barrierRemaining,
         cameraYaw: WORLD_STATE.cameraYaw,
+        cameraPitch: WORLD_STATE.cameraPitch,
+        cameraDistance: WORLD_STATE.cameraDistance,
+        cameraManualRemaining: WORLD_STATE.cameraManualRemaining,
+        movementCameraYaw: WORLD_STATE.movementCameraYaw,
         speedPadPulseRemaining: WORLD_STATE.speedPadPulseRemaining,
         bounceImpactId: WORLD_STATE.bounceImpactId,
       };
+    },
+    getRenderedCamera() {
+      return (
+        (window as Window & { __CATCHY_RENDER_CAMERA__?: E2ERenderedCamera })
+          .__CATCHY_RENDER_CAMERA__ ?? null
+      );
+    },
+    getTouchPointerOwners() {
+      return getTouchPointerOwners();
     },
     getCameraMode: cameraModeInput,
     activateDash() {
@@ -181,6 +214,9 @@ export function installCatchyE2EBridge() {
     turnCamera(yaw) {
       WORLD_STATE.cameraYaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
       WORLD_STATE.previousCameraYaw = WORLD_STATE.cameraYaw;
+      WORLD_STATE.cameraManualRemaining = GAME_CONFIG.camera.manualPersistenceSeconds;
+      WORLD_STATE.movementInputFrame = null;
+      WORLD_STATE.movementCameraYaw = WORLD_STATE.cameraYaw;
     },
     endRound() {
       useGameStore.getState().tick(GAME_CONFIG.roundSeconds);

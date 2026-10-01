@@ -117,8 +117,11 @@ export const useGameStore = create<Store>((set, get) => ({
   camAngle: CAM_DEFAULTS.angle,
   camLookAhead: CAM_DEFAULTS.lookAhead,
   camCompositionOffset: CAM_DEFAULTS.compositionOffset,
-  setCamHeight: (value) =>
-    set({ camHeight: snapCameraValue(value, GAME_CONFIG.camera.tuningRanges.distance) }),
+  setCamHeight: (value) => {
+    const distance = snapCameraValue(value, GAME_CONFIG.camera.tuningRanges.distance);
+    WORLD_STATE.cameraDistance = distance;
+    set({ camHeight: distance });
+  },
   setCamAngle: (value) =>
     set({ camAngle: snapCameraValue(value, GAME_CONFIG.camera.tuningRanges.angle) }),
   setCamLookAhead: (value) =>
@@ -133,6 +136,11 @@ export const useGameStore = create<Store>((set, get) => ({
   resetCamera: () => {
     WORLD_STATE.cameraYaw = PLAYER.heading;
     WORLD_STATE.previousCameraYaw = PLAYER.heading;
+    WORLD_STATE.movementCameraYaw = PLAYER.heading;
+    WORLD_STATE.movementInputFrame = null;
+    WORLD_STATE.cameraPitch = 0;
+    WORLD_STATE.cameraDistance = CAM_DEFAULTS.distance;
+    WORLD_STATE.cameraManualRemaining = 0;
     set({
       camHeight: CAM_DEFAULTS.distance,
       camAngle: CAM_DEFAULTS.angle,
@@ -225,6 +233,10 @@ export const useGameStore = create<Store>((set, get) => ({
     clearInput();
     roundTimeRemaining = GAME_CONFIG.roundSeconds;
     set((state) => ({
+      camHeight: CAM_DEFAULTS.distance,
+      camAngle: CAM_DEFAULTS.angle,
+      camLookAhead: CAM_DEFAULTS.lookAhead,
+      camCompositionOffset: CAM_DEFAULTS.compositionOffset,
       caught: 0,
       time: GAME_CONFIG.roundSeconds,
       state: "chase",

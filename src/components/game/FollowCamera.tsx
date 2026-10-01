@@ -15,6 +15,7 @@ export function FollowCamera() {
   const desiredLookAt = useRef(new THREE.Vector3());
   const cameraOffset = useRef(new THREE.Vector3());
   const composedLookAt = useRef(new THREE.Vector3());
+  const renderedDirection = useRef(new THREE.Vector3());
   const currentDistance = useRef(GAME_CONFIG.camera.distance * 0.9);
   const currentAngle = useRef(GAME_CONFIG.camera.angle);
   const currentLookAhead = useRef(GAME_CONFIG.camera.lookAhead);
@@ -126,6 +127,18 @@ export function FollowCamera() {
     camera.position.add(cameraOffset.current);
     composedLookAt.current.copy(lookAt.current).add(cameraOffset.current);
     camera.lookAt(composedLookAt.current);
+
+    if (import.meta.env.MODE === "e2e" && typeof window !== "undefined") {
+      camera.getWorldDirection(renderedDirection.current);
+      (window as Window & { __CATCHY_RENDER_CAMERA__?: object }).__CATCHY_RENDER_CAMERA__ = {
+        x: camera.position.x,
+        y: camera.position.y,
+        z: camera.position.z,
+        forwardX: renderedDirection.current.x,
+        forwardY: renderedDirection.current.y,
+        forwardZ: renderedDirection.current.z,
+      };
+    }
   });
 
   return null;

@@ -124,6 +124,7 @@ describe("restart and action reset", () => {
     store.setCamLookAhead(4.2);
     store.setCamCompositionOffset(0.21);
     expect(useGameStore.getState().camHeight).toBe(32);
+    expect(WORLD_STATE.cameraDistance).toBe(32);
     expect(useGameStore.getState().camAngle).toBe(63);
     expect(useGameStore.getState().camLookAhead).toBe(4.2);
     expect(useGameStore.getState().camCompositionOffset).toBe(0.21);
@@ -135,6 +136,9 @@ describe("restart and action reset", () => {
       camCompositionOffset: CAM_DEFAULTS.compositionOffset,
     });
     expect(WORLD_STATE.cameraYaw).toBe(PLAYER.heading);
+    expect(WORLD_STATE.cameraDistance).toBe(CAM_DEFAULTS.distance);
+    expect(WORLD_STATE.cameraPitch).toBe(0);
+    expect(WORLD_STATE.cameraManualRemaining).toBe(0);
   });
 });
 

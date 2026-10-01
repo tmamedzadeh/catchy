@@ -1,8 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Joystick } from "./Joystick";
 import { CameraSurface } from "./CameraSurface";
 import { useGameStore } from "@/store/gameStore";
-import { requestPlayerDash, requestPlayerJump, requestPlayerSpeedBoost } from "@/lib/catchy/input";
+import {
+  claimTouchPointer,
+  releaseTouchPointer,
+  requestPlayerDash,
+  requestPlayerJump,
+  requestPlayerSpeedBoost,
+  type TouchPointerOwner,
+} from "@/lib/catchy/input";
 import { GAME_CONFIG } from "@/lib/catchy/config";
 
 const ONBOARDING_KEY = "catchy-first-session-controls-v1";
@@ -38,6 +45,64 @@ const ClockIcon = (
 function fmt(seconds: number) {
   const value = Math.max(0, Math.ceil(seconds));
   return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+}
+
+function useActionPointer(
+  owner: Exclude<TouchPointerOwner, "movement" | "camera">,
+  enabled: boolean,
+  activate: () => void,
+) {
+  const activePointer = useRef<number | null>(null);
+  const release = (pointerId: number) => {
+    if (activePointer.current !== pointerId) return;
+    releaseTouchPointer(pointerId, owner);
+    activePointer.current = null;
+  };
+  useEffect(() => {
+    const clear = () => {
+      const pointerId = activePointer.current;
+      if (pointerId === null) return;
+      releaseTouchPointer(pointerId, owner);
+      activePointer.current = null;
+    };
+    const onVisibilityChange = () => {
+      if (document.hidden) clear();
+    };
+    window.addEventListener("blur", clear);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("blur", clear);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      clear();
+    };
+  }, [owner]);
+  return {
+    onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (!enabled) return;
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      if (!claimTouchPointer(event.pointerId, owner)) return;
+      event.stopPropagation();
+      activePointer.current = event.pointerId;
+      activate();
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        release(event.pointerId);
+      }
+    },
+    onPointerUp: (event: ReactPointerEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      release(event.pointerId);
+    },
+    onPointerCancel: (event: ReactPointerEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      release(event.pointerId);
+    },
+    onLostPointerCapture: (event: ReactPointerEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      release(event.pointerId);
+    },
+  };
 }
 
 function Slider({
@@ -143,46 +208,42 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
       <div
         role="group"
         aria-label="Game status"
-        className="hud-card hud-game-status absolute grid grid-cols-[minmax(0,0.82fr)_minmax(0,1.2fr)_minmax(0,1.25fr)] items-center gap-1.5 px-2.5 py-2 sm:gap-3 sm:px-3.5 sm:py-2.5"
+        className="hud-card hud-game-status absolute flex items-center justify-between gap-2 px-2.5 sm:gap-3 sm:px-3.5"
       >
-        <section className="min-w-0" aria-label="Caught score">
-          <div className="font-display text-[0.56rem] tracking-[0.12em] text-catchy-ink-soft uppercase sm:text-[0.62rem] sm:tracking-[0.16em]">
-            Caught
-          </div>
-          <div
+        <section className="hud-metric" aria-label="Caught score">
+          <span className="hud-metric-label">Caught</span>
+          <span
             key={caught}
-            className="font-display text-xl leading-none text-catchy-accent-2 tabular-nums sm:text-2xl"
+            className="hud-metric-value hud-caught-value"
             style={{ animation: "catchy-pop 320ms ease-out" }}
           >
             {String(caught).padStart(2, "0")}
-          </div>
+          </span>
         </section>
 
         <section
-          className="min-w-0"
+          className="hud-metric"
           aria-label="Round time"
           style={time < 10 ? { animation: "catchy-pulse 1s infinite" } : undefined}
         >
-          <div className="font-display text-[0.56rem] tracking-[0.12em] text-catchy-ink-soft uppercase sm:text-[0.62rem] sm:tracking-[0.16em]">
-            Time
-          </div>
-          <div className="flex items-center gap-1 font-display text-sm text-catchy-ink tabular-nums sm:gap-1.5 sm:text-base">
-            <span className="shrink-0 text-catchy-accent-2">{ClockIcon}</span>
+          <span className="hud-metric-label">Time</span>
+          <span className="hud-metric-value hud-time-value">
+            <span className="text-catchy-accent-2" aria-hidden="true">
+              {ClockIcon}
+            </span>
             <span>{fmt(time)}</span>
-          </div>
+          </span>
         </section>
 
         {/* Camera-relative nearest-runner finder; neutral when all runners are unavailable. */}
         <section
-          className="min-w-0"
+          className="hud-metric"
           aria-label={targetId ? "Target direction and distance" : "No target"}
         >
-          <div className="font-display text-[0.56rem] tracking-[0.12em] text-catchy-ink-soft uppercase sm:text-[0.62rem] sm:tracking-[0.16em]">
-            {targetId ? "Target" : "No target"}
-          </div>
-          <div className="flex items-center gap-1 sm:gap-1.5">
-            <div
-              className="relative grid size-6 shrink-0 place-items-center rounded-full sm:size-7"
+          <span className="hud-metric-label">Target</span>
+          <span className="hud-metric-value hud-target-value">
+            <span
+              className="relative grid size-4 shrink-0 place-items-center rounded-full"
               style={{
                 background: "conic-gradient(from 0deg, oklch(0.95 0.04 80), oklch(0.99 0.01 95))",
                 boxShadow: nearby
@@ -193,10 +254,11 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
               {targetId ? (
                 <svg
                   viewBox="0 0 24 24"
-                  className="size-4 transition-transform duration-100 sm:size-[1.125rem]"
+                  className="size-3 transition-transform duration-100"
                   style={{ transform: "rotate(" + bearing + "rad)" }}
                   fill="currentColor"
                   aria-label="Direction to nearest runner"
+                  role="img"
                 >
                   <path
                     d="M12 3.2 18.4 19 12 15.4 5.6 19 12 3.2Z"
@@ -205,15 +267,25 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
                   />
                 </svg>
               ) : (
-                <span className="font-display text-base leading-none text-catchy-ink-soft">
+                <span
+                  className="font-display text-xs leading-none text-catchy-ink-soft"
+                  aria-hidden="true"
+                >
                   {"\u2022"}
                 </span>
               )}
-            </div>
-            <div className="whitespace-nowrap font-display text-sm text-catchy-ink tabular-nums sm:text-base">
+            </span>
+            <span
+              className="whitespace-nowrap"
+              aria-label={
+                distance === null
+                  ? "No target distance"
+                  : `Target distance ${Math.round(distance)} meters`
+              }
+            >
               {distance === null ? "\u2014" : String(Math.round(distance)) + " m"}
-            </div>
-          </div>
+            </span>
+          </span>
         </section>
       </div>
       <div className="hud-callouts absolute left-1/2 flex -translate-x-1/2 flex-col items-center gap-2">
@@ -315,6 +387,7 @@ function DashControl({
 }) {
   const isChasing = state === "chase" || state === "nearby";
   const enabled = gameReady && isChasing && status === "ready";
+  const pointerHandlers = useActionPointer("dash", enabled, requestPlayerDash);
   const label = status === "ready" ? "READY" : status === "active" ? "DASH" : "WAIT";
   const coolDownAnimationSeconds = Math.max(
     0.1,
@@ -324,18 +397,15 @@ function DashControl({
   return (
     <div className="dash-control">
       <button
+        {...pointerHandlers}
         type="button"
         data-sound="dash"
         aria-label={enabled ? "Dash" : `Dash ${isChasing ? status : "unavailable"}`}
         title={enabled ? "Dash" : label}
         disabled={!enabled}
-        onPointerDown={(event) => {
-          if (event.button !== 0 || !enabled) return;
-          event.preventDefault();
-          event.stopPropagation();
-          requestPlayerDash();
+        onClick={(event) => {
+          if (event.detail === 0 && enabled) requestPlayerDash();
         }}
-        onPointerCancel={(event) => event.preventDefault()}
         onContextMenu={(event) => event.preventDefault()}
         className="dash-control-button pointer-events-auto relative grid place-items-center rounded-full text-white transition-transform active:scale-95 disabled:cursor-default"
       >
@@ -355,8 +425,18 @@ function DashControl({
           />
         </svg>
         <span className="relative flex flex-col items-center leading-none">
-          <svg viewBox="0 0 24 24" className="mb-0.5 size-5" fill="currentColor" aria-hidden="true">
-            <path d="M13.1 1.8 4.7 13h5.5l-.5 9.2L19.3 10h-5.7l-.5-8.2Z" />
+          <svg
+            viewBox="0 0 24 24"
+            className="mb-0.5 size-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M4 12h15m-6-6 6 6-6 6" />
+            <path d="M4 7h4M4 17h4" strokeWidth="1.7" />
           </svg>
           <span className="font-display text-[0.55rem] font-bold tracking-wide">
             {isChasing ? label : "LOCK"}
@@ -376,22 +456,20 @@ function JumpControl({
 }) {
   const isChasing = state === "chase" || state === "nearby";
   const enabled = gameReady && isChasing;
+  const pointerHandlers = useActionPointer("jump", enabled, requestPlayerJump);
 
   return (
     <div className="jump-control">
       <button
+        {...pointerHandlers}
         type="button"
         data-sound="jump"
         aria-label="Jump"
         title="Jump"
         disabled={!enabled}
-        onPointerDown={(event) => {
-          if (event.button !== 0 || !enabled) return;
-          event.preventDefault();
-          event.stopPropagation();
-          requestPlayerJump();
+        onClick={(event) => {
+          if (event.detail === 0 && enabled) requestPlayerJump();
         }}
-        onPointerCancel={(event) => event.preventDefault()}
         onContextMenu={(event) => event.preventDefault()}
         className="dash-control-button pointer-events-auto relative grid place-items-center rounded-full text-white transition-transform active:scale-95 disabled:cursor-default"
       >
@@ -427,22 +505,20 @@ function SpeedBoostControl({
   const isChasing = state === "chase" || state === "nearby";
   const enabled = gameReady && isChasing && status === "ready" && !effectActive;
   const label = status === "active" ? "ACTIVE" : status === "cooldown" ? "RECHARGING" : "READY";
+  const pointerHandlers = useActionPointer("speedBoost", enabled, requestPlayerSpeedBoost);
 
   return (
     <div className="boost-control">
       <button
+        {...pointerHandlers}
         type="button"
         data-sound="boost"
-        aria-label={`Speed boost ${isChasing ? status : "unavailable"}`}
+        aria-label={`Speed Up ${isChasing ? status : "unavailable"}`}
         title={label}
         disabled={!enabled}
-        onPointerDown={(event) => {
-          if (event.button !== 0 || !enabled) return;
-          event.preventDefault();
-          event.stopPropagation();
-          requestPlayerSpeedBoost();
+        onClick={(event) => {
+          if (event.detail === 0 && enabled) requestPlayerSpeedBoost();
         }}
-        onPointerCancel={(event) => event.preventDefault()}
         onContextMenu={(event) => event.preventDefault()}
         className="boost-control-button pointer-events-auto relative grid place-items-center rounded-full font-display font-bold text-white transition-transform active:scale-95 disabled:cursor-default"
       >
