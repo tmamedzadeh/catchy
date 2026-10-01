@@ -4,11 +4,14 @@ import {
   PLAYER,
   RUNNERS,
   WORLD_STATE,
+  activatePlayerBoost,
   advanceAgentActionTimers,
+  applyBoostEffect,
   advanceBarrier,
   cancelPlayerActions,
   effectiveSpeedMultiplier,
   findSafeSpawn,
+  getPlayerBoostState,
   getNavigationSummary,
   isSafeSpawn,
   isWalkablePoint,
@@ -21,7 +24,6 @@ import {
   respawn,
   selectTarget,
   startPlayerDash,
-  startSpeedBoost,
   step,
   updateSlowZone,
   updateSpeedPad,
@@ -68,10 +70,14 @@ beforeEach(() => resetSimulation());
 describe("collision resolution", () => {
   it("resolves a player against a box obstacle without penetration", () => {
     const box = obstacle("box");
-    put(PLAYER, 0.4, 0);
+    put(PLAYER, 0.8, 0);
     PLAYER.vx = -2;
     expect(resolveObstacle(PLAYER, box)).toBe(true);
-    expect(overlapsObstacle(PLAYER.x, PLAYER.z, PLAYER.radius, box)).toBe(false);
+    expect(PLAYER.x).toBeGreaterThanOrEqual(
+      box.collision.type === "box"
+        ? box.collision.width / 2 + GAME_CONFIG.obstacleMargin + PLAYER.radius - 1e-6
+        : 0,
+    );
     expect(PLAYER.vx).toBeGreaterThanOrEqual(0);
   });
 
@@ -134,7 +140,7 @@ describe("collision resolution", () => {
     const circle = obstacle("circle");
     const runner = RUNNERS[0]!;
     put(runner, 0.5, 0);
-    runner.boostState = "active";
+    runner.boostEffectRemaining = GAME_CONFIG.player.speedBoost.durationSeconds;
     runner.vx = -3;
     resolveObstacle(runner, circle);
     expect(overlapsObstacle(runner.x, runner.z, runner.radius, circle)).toBe(false);
@@ -305,14 +311,13 @@ describe("target hysteresis and capture target lock", () => {
 describe("runner respawn", () => {
   it("hides a captured runner, clears its boost state, and restores safe movement after delay", () => {
     const runner = RUNNERS[0]!;
-    runner.boostState = "active";
-    runner.boostDurationRemaining = 2;
+    runner.boostEffectRemaining = 2;
     runner.slowMultiplier = 0.55;
     runner.onSlowZone = true;
     respawn(runner);
     expect(runner.hidden).toBe(GAME_CONFIG.npc.respawnDelay);
     expect(runner.state).toBe("respawning");
-    expect(runner.boostState).toBe("ready");
+    expect(runner.boostEffectRemaining).toBe(0);
     expect(runner.slowMultiplier).toBe(1);
     for (let i = 0; i < 43; i++) step(DT, null, noCommands, true);
     expect(runner.hidden).toBe(0);
@@ -342,57 +347,90 @@ describe("Dash and Speed Boost", () => {
     expect(PLAYER.dashDirectionX).toBeCloseTo(Math.sin(Math.PI / 3), 8);
   });
 
-  it("runs a single 5-second active boost on a 30-second recharge cycle", () => {
-    expect(startSpeedBoost(PLAYER)).toBe(true);
-    expect(startSpeedBoost(PLAYER)).toBe(false);
-    expect(PLAYER.boostState).toBe("active");
-    expect(PLAYER.boostDurationRemaining).toBe(5);
-    expect(PLAYER.boostCooldownRemaining).toBe(30);
+  it("runs a 5-second player boost with a 30-second recharge from activation", () => {
+    expect(activatePlayerBoost()).toBe(true);
+    expect(activatePlayerBoost()).toBe(false);
+    expect(getPlayerBoostState()).toBe("active");
+    expect(PLAYER.boostEffectRemaining).toBe(5);
+    expect(PLAYER.playerBoostCooldownRemaining).toBe(30);
     advanceAgentActionTimers(PLAYER, 5);
-    expect(PLAYER.boostState).toBe("cooldown");
-    expect(PLAYER.boostDurationRemaining).toBe(0);
-    expect(PLAYER.boostCooldownRemaining).toBe(25);
-    advanceAgentActionTimers(PLAYER, 25);
-    expect(PLAYER.boostState).toBe("ready");
+    expect(getPlayerBoostState()).toBe("cooldown");
+    expect(PLAYER.boostEffectRemaining).toBe(0);
+    expect(PLAYER.playerBoostCooldownRemaining).toBe(25);
+    advanceAgentActionTimers(PLAYER, 24.9);
+    expect(getPlayerBoostState()).toBe("cooldown");
+    advanceAgentActionTimers(PLAYER, 0.1);
+    expect(getPlayerBoostState()).toBe("ready");
   });
 
   it("combines Dash with Boost and Slow Zone multipliers without stacking activation", () => {
-    expect(startSpeedBoost(PLAYER)).toBe(true);
+    expect(activatePlayerBoost()).toBe(true);
     PLAYER.slowMultiplier = GAME_CONFIG.slowZone.movementMultiplier;
     expect(effectiveSpeedMultiplier(PLAYER)).toBeCloseTo(0.825, 8);
     expect(startPlayerDash({ x: 0, z: 1 })).toBe(true);
     step(DT, null, noCommands, false);
     expect(PLAYER.speed).toBeGreaterThan(GAME_CONFIG.player.speed * 0.55);
-    expect(startSpeedBoost(PLAYER)).toBe(false);
+    expect(activatePlayerBoost()).toBe(false);
   });
 
   it("cancels active player actions and clears cooldowns on a full reset", () => {
-    startSpeedBoost(PLAYER);
+    activatePlayerBoost();
     startPlayerDash({ x: 1, z: 0 });
     advanceAgentActionTimers(PLAYER, 0.04);
     // The store uses this same method for capture and round end.
     cancelPlayerActions(true);
     expect(PLAYER.dashState).toBe("ready");
-    expect(PLAYER.boostState).toBe("ready");
-    expect(PLAYER.boostCooldownRemaining).toBe(0);
+    expect(getPlayerBoostState()).toBe("ready");
+    expect(PLAYER.playerBoostCooldownRemaining).toBe(0);
+    expect(PLAYER.boostEffectRemaining).toBe(0);
   });
 });
 
 describe("Speed Pad and Slow Zone", () => {
-  it("activates the shared Boost state once on Speed Pad entry and respects cooldown", () => {
+  it("grants a fresh pad effect during player cooldown without changing its timeline", () => {
     const pad = INTERACTIVE_OBJECTS.find((item) => item.kind === "speedPad")!;
-    put(PLAYER, pad.position.x, pad.position.z);
+    put(PLAYER, pad.position.x + (pad.triggerRadius ?? 0) + 2, pad.position.z);
     updateSpeedPad(PLAYER);
-    expect(PLAYER.boostState).toBe("active");
+    expect(activatePlayerBoost()).toBe(true);
+    advanceAgentActionTimers(PLAYER, 5);
+    const cooldownAtEntry = PLAYER.playerBoostCooldownRemaining;
+    expect(getPlayerBoostState()).toBe("cooldown");
+
+    put(PLAYER, pad.position.x, pad.position.z);
+    expect(updateSpeedPad(PLAYER)).toBe(true);
+    expect(PLAYER.boostEffectRemaining).toBe(5);
+    expect(PLAYER.playerBoostCooldownRemaining).toBe(cooldownAtEntry);
+    expect(getPlayerBoostState()).toBe("cooldown");
     expect(PLAYER.onSpeedPad).toBe(true);
     expect(WORLD_STATE.interactionCueKind).toBe("speedPad");
-    const cueId = WORLD_STATE.boostCueId;
+    const padCueId = WORLD_STATE.interactionCueId;
+    expect(updateSpeedPad(PLAYER)).toBe(false);
+    expect(PLAYER.boostEffectRemaining).toBe(5);
+    expect(WORLD_STATE.interactionCueId).toBe(padCueId);
+    expect(PLAYER.playerBoostCooldownRemaining).toBe(cooldownAtEntry);
+
+    advanceAgentActionTimers(PLAYER, 5);
+    expect(PLAYER.boostEffectRemaining).toBe(0);
+    expect(updateSpeedPad(PLAYER)).toBe(false);
+    put(PLAYER, pad.position.x + (pad.triggerRadius ?? 0) + 2, pad.position.z);
     updateSpeedPad(PLAYER);
-    expect(WORLD_STATE.boostCueId).toBe(cueId);
-    PLAYER.onSpeedPad = false;
-    PLAYER.boostState = "cooldown";
+    put(PLAYER, pad.position.x, pad.position.z);
+    expect(updateSpeedPad(PLAYER)).toBe(true);
+    expect(PLAYER.boostEffectRemaining).toBe(5);
+    expect(PLAYER.playerBoostCooldownRemaining).toBeCloseTo(cooldownAtEntry - 5, 8);
+  });
+
+  it("does not stack or extend a pad effect that is already active", () => {
+    const pad = INTERACTIVE_OBJECTS.find((item) => item.kind === "speedPad")!;
+    put(PLAYER, pad.position.x + (pad.triggerRadius ?? 0) + 2, pad.position.z);
     updateSpeedPad(PLAYER);
-    expect(PLAYER.boostState).toBe("cooldown");
+    expect(applyBoostEffect(PLAYER)).toBe(true);
+    put(PLAYER, pad.position.x, pad.position.z);
+    const previousCueId = WORLD_STATE.interactionCueId;
+    expect(updateSpeedPad(PLAYER)).toBe(false);
+    expect(PLAYER.boostEffectRemaining).toBe(GAME_CONFIG.player.speedBoost.durationSeconds);
+    expect(WORLD_STATE.interactionCueId).toBe(previousCueId);
+    expect(getPlayerBoostState()).toBe("ready");
   });
 
   it("applies the slow multiplier on entry, recovers smoothly, and clears after exit", () => {
@@ -405,7 +443,7 @@ describe("Speed Pad and Slow Zone", () => {
     updateSlowZone(PLAYER, DT);
     expect(PLAYER.slowMultiplier).toBeGreaterThan(0.55);
     expect(PLAYER.slowMultiplier).toBeLessThan(1);
-    for (let i = 0; i < 120; i++) updateSlowZone(PLAYER, DT);
+    for (let i = 0; i < 130; i++) updateSlowZone(PLAYER, DT);
     expect(PLAYER.slowMultiplier).toBe(1);
     expect(PLAYER.onSlowZone).toBe(false);
   });
@@ -414,9 +452,14 @@ describe("Speed Pad and Slow Zone", () => {
     const runner = RUNNERS[0]!;
     const pad = INTERACTIVE_OBJECTS.find((item) => item.kind === "speedPad")!;
     const zone = INTERACTIVE_OBJECTS.find((item) => item.kind === "slowZone")!;
+    expect(activatePlayerBoost()).toBe(true);
+    advanceAgentActionTimers(PLAYER, 5);
+    expect(getPlayerBoostState()).toBe("cooldown");
+    const playerCooldownRemaining = PLAYER.playerBoostCooldownRemaining;
     put(runner, pad.position.x, pad.position.z);
     updateSpeedPad(runner);
-    expect(runner.boostState).toBe("active");
+    expect(runner.boostEffectRemaining).toBe(GAME_CONFIG.player.speedBoost.durationSeconds);
+    expect(PLAYER.playerBoostCooldownRemaining).toBe(playerCooldownRemaining);
     put(runner, zone.position.x, zone.position.z);
     updateSlowZone(runner, DT);
     expect(runner.slowMultiplier).toBe(0.55);
@@ -440,7 +483,7 @@ describe("Elastic Bounce", () => {
     runner.vx = inX;
     runner.vz = inZ;
     resolveObstacle(runner, bounce);
-    return { runner, nx, nz };
+    return { runner: { ...runner }, nx, nz };
   }
 
   it.each([
@@ -453,7 +496,13 @@ describe("Elastic Bounce", () => {
     expect(runner.vx).toBeCloseTo(incoming[0] - 2 * dot * nx, 7);
     expect(runner.vz).toBeCloseTo(incoming[1] - 2 * dot * nz, 7);
     expect(Math.hypot(runner.vx, runner.vz)).toBeCloseTo(Math.hypot(incoming[0], incoming[1]), 7);
-    expect(overlapsObstacle(runner.x, runner.z, runner.radius, bounce)).toBe(false);
+    const minimumDistance =
+      (bounce.collision.type === "circle" ? bounce.collision.radius * bounce.scale : 0) +
+      runner.radius +
+      GAME_CONFIG.obstacleMargin;
+    expect(
+      Math.hypot(runner.x - bounce.position.x, runner.z - bounce.position.z),
+    ).toBeGreaterThanOrEqual(minimumDistance - 1e-6);
   });
 
   it("produces angle-dependent reflection and does not repeatedly amplify contact speed", () => {
@@ -476,7 +525,7 @@ describe("Elastic Bounce", () => {
     for (const withBoost of [false, true]) {
       resetSimulation();
       put(PLAYER, bounce.position.x + minDistance + 1.2, bounce.position.z);
-      if (withBoost) startSpeedBoost(PLAYER);
+      if (withBoost) activatePlayerBoost();
       expect(startPlayerDash({ x: -1, z: 0 })).toBe(true);
       for (let i = 0; i < 12; i++) step(DT, null, noCommands, false);
       expect(WORLD_STATE.bounceImpactId).toBe(1);
@@ -487,8 +536,8 @@ describe("Elastic Bounce", () => {
 
 describe("camera-relative movement and reset", () => {
   it.each([
-    { name: "W at zero yaw", yaw: 0, input: { x: 0, z: -1 }, world: { x: 0, z: -1 } },
-    { name: "S at zero yaw", yaw: 0, input: { x: 0, z: 1 }, world: { x: 0, z: 1 } },
+    { name: "W at zero yaw", yaw: 0, input: { x: 0, z: -1 }, world: { x: 0, z: 1 } },
+    { name: "S at zero yaw", yaw: 0, input: { x: 0, z: 1 }, world: { x: 0, z: -1 } },
     { name: "A at zero yaw", yaw: 0, input: { x: -1, z: 0 }, world: { x: -1, z: 0 } },
     { name: "D at zero yaw", yaw: 0, input: { x: 1, z: 0 }, world: { x: 1, z: 0 } },
     {
@@ -503,7 +552,7 @@ describe("camera-relative movement and reset", () => {
       input: { x: 0.4, z: -0.9 },
       world: {
         x: 0.4 * Math.cos(0.37) + 0.9 * Math.sin(0.37),
-        z: -0.4 * Math.sin(0.37) - 0.9 * Math.cos(0.37),
+        z: -0.4 * Math.sin(0.37) + 0.9 * Math.cos(0.37),
       },
     },
   ])("maps $name into world movement", ({ yaw, input, world: expected }) => {
@@ -528,12 +577,12 @@ describe("camera-relative movement and reset", () => {
   });
 
   it("clears all player and world action state on restart", () => {
-    startSpeedBoost(PLAYER);
+    activatePlayerBoost();
     startPlayerDash({ x: 1, z: 0 });
     WORLD_STATE.barrierClosed = true;
     resetSimulation();
     expect(PLAYER.dashState).toBe("ready");
-    expect(PLAYER.boostState).toBe("ready");
+    expect(getPlayerBoostState()).toBe("ready");
     expect(WORLD_STATE.barrierClosed).toBe(false);
     expect(AGENTS.every((agent) => agent.hidden === 0)).toBe(true);
   });

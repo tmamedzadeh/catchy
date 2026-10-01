@@ -398,6 +398,165 @@
   backdrop-filter: blur(10px);
 }
 
+.catchy-start-screen {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  padding: max(1rem, env(safe-area-inset-top, 0px)) max(1rem, env(safe-area-inset-right, 0px))
+    max(1rem, env(safe-area-inset-bottom, 0px)) max(1rem, env(safe-area-inset-left, 0px));
+  background:
+    radial-gradient(ellipse at 50% 24%, oklch(1 0 0 / 0.62), transparent 48%),
+    linear-gradient(150deg, #c9eaff 0%, #bfe3ff 58%, #e1f4ff 100%);
+  color: var(--catchy-ink);
+}
+
+.catchy-start-card {
+  display: flex;
+  width: min(25rem, 100%);
+  max-height: 100%;
+  flex-direction: column;
+  align-items: center;
+  overflow-y: auto;
+  padding: clamp(1.5rem, 6vw, 2.5rem);
+  border: 1.5px solid oklch(1 0 0 / 0.72);
+  border-radius: 1.75rem;
+  background: oklch(0.99 0.012 95 / 0.82);
+  box-shadow: var(--hud-shadow);
+  text-align: center;
+  backdrop-filter: blur(12px);
+}
+
+.catchy-start-mark {
+  display: grid;
+  width: 4.25rem;
+  aspect-ratio: 1;
+  place-items: center;
+  border-radius: 1.25rem;
+  background: linear-gradient(145deg, #ffc45d, #f06b3d);
+  box-shadow: 0 8px 18px oklch(0.56 0.16 38 / 0.28);
+  color: white;
+  font-family: var(--font-display);
+  font-size: 2.8rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.catchy-start-title {
+  margin: 1rem 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(2.4rem, 10vw, 3.2rem);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+}
+
+.catchy-start-subtitle {
+  margin: 0.45rem 0 0;
+  color: var(--catchy-ink-soft);
+  font-size: 0.9rem;
+}
+
+.catchy-play-button {
+  width: 100%;
+  min-height: 3.5rem;
+  margin-top: 1.6rem;
+  border: 0;
+  border-radius: 1rem;
+  background: linear-gradient(180deg, #ffbf57, #f4773d);
+  box-shadow:
+    0 5px 0 #cf5a32,
+    0 12px 20px oklch(0.56 0.16 38 / 0.2);
+  color: white;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.catchy-play-button:active {
+  transform: translateY(3px);
+  box-shadow:
+    0 2px 0 #cf5a32,
+    0 6px 12px oklch(0.56 0.16 38 / 0.18);
+}
+
+.catchy-play-button:focus-visible,
+.catchy-install-prompt button:focus-visible {
+  outline: 3px solid #31769b;
+  outline-offset: 3px;
+}
+
+.catchy-install-prompt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem 0.55rem;
+  margin-top: 1.35rem;
+  color: var(--catchy-ink-soft);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.catchy-install-prompt button {
+  border: 0;
+  background: transparent;
+  color: #32708b;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+  cursor: pointer;
+}
+
+.catchy-install-help {
+  flex-basis: 100%;
+  margin: 0.25rem 0 0;
+  color: var(--catchy-ink);
+}
+
+@media (orientation: landscape) and (max-height: 560px) {
+  .catchy-start-card {
+    display: grid;
+    width: min(43rem, 100%);
+    grid-template-columns: auto 1fr;
+    gap: 0.2rem 1.1rem;
+    padding: 1.1rem 1.6rem;
+    text-align: left;
+  }
+
+  .catchy-start-mark {
+    grid-row: 1 / span 3;
+    width: 3.5rem;
+    font-size: 2.3rem;
+  }
+
+  .catchy-start-title {
+    margin: 0;
+    font-size: 2.2rem;
+  }
+
+  .catchy-start-subtitle {
+    margin: 0;
+  }
+
+  .catchy-play-button {
+    width: auto;
+    min-height: 2.8rem;
+    margin-top: 0.6rem;
+  }
+
+  .catchy-install-prompt {
+    justify-content: flex-start;
+    margin-top: 0.8rem;
+  }
+}
+
 .game-loading-mark {
   display: grid;
   width: 3.5rem;

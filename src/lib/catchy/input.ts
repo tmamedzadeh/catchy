@@ -126,7 +126,7 @@ export function inputVector(): { x: number; z: number } | null {
     movement.z = joystick.z;
     return movement;
   }
-  const x = opposedKeyInput("KeyA", "KeyD");
+  const x = opposedKeyInput("KeyD", "KeyA");
   const z = opposedKeyInput("KeyS", "KeyW");
   if (x === 0 && z === 0) return null;
   const length = Math.hypot(x, z);

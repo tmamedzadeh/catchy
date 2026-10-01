@@ -47,9 +47,11 @@ export type Agent = {
   dashStartX: number;
   dashStartZ: number;
   dashCameraRemaining: number;
-  boostState: BoostState;
-  boostDurationRemaining: number;
-  boostCooldownRemaining: number;
+  /** Shared movement effect, regardless of whether the player or a pad granted it. */
+  boostEffectRemaining: number;
+  /** Player button state has its own timer, independent from pad grants. */
+  playerBoostActiveRemaining: number;
+  playerBoostCooldownRemaining: number;
   slowMultiplier: number;
   onSpeedPad: boolean;
   onSlowZone: boolean;
@@ -116,9 +118,9 @@ function makeAgent(index: number): Agent {
     dashStartX: initial.x,
     dashStartZ: initial.z,
     dashCameraRemaining: 0,
-    boostState: "ready",
-    boostDurationRemaining: 0,
-    boostCooldownRemaining: 0,
+    boostEffectRemaining: 0,
+    playerBoostActiveRemaining: 0,
+    playerBoostCooldownRemaining: 0,
     slowMultiplier: 1,
     onSpeedPad: false,
     onSlowZone: false,
@@ -172,32 +174,44 @@ function emitInteractionCue(kind: InteractionKind, normalX = 0, normalZ = 1) {
 
 export function effectiveSpeedMultiplier(agent: Agent) {
   return (
-    (agent.boostState === "active" ? GAME_CONFIG.player.speedBoost.multiplier : 1) *
+    (agent.boostEffectRemaining > 0 ? GAME_CONFIG.player.speedBoost.multiplier : 1) *
     agent.slowMultiplier
   );
 }
 
-export function startSpeedBoost(agent: Agent) {
-  if (agent.boostState !== "ready") return false;
-  agent.boostState = "active";
-  agent.boostDurationRemaining = GAME_CONFIG.player.speedBoost.durationSeconds;
-  agent.boostCooldownRemaining = GAME_CONFIG.player.speedBoost.cooldownSeconds;
-  if (agent.role === "player") WORLD_STATE.boostCueId++;
+export function getPlayerBoostState(): BoostState {
+  if (PLAYER.playerBoostActiveRemaining > 0) return "active";
+  if (PLAYER.playerBoostCooldownRemaining > 0) return "cooldown";
+  return "ready";
+}
+
+export function canActivatePlayerBoost() {
+  return getPlayerBoostState() === "ready" && PLAYER.boostEffectRemaining <= 0;
+}
+
+/** Apply the common 5-second movement effect without changing ability cooldowns. */
+export function applyBoostEffect(agent: Agent) {
+  if (agent.boostEffectRemaining > 0) return false;
+  agent.boostEffectRemaining = GAME_CONFIG.player.speedBoost.durationSeconds;
   return true;
 }
 
-function finishSpeedBoost(agent: Agent) {
-  agent.boostDurationRemaining = 0;
-  agent.boostState = agent.boostCooldownRemaining > 0 ? "cooldown" : "ready";
+/** The personal button starts its recharge at activation, alongside the shared effect. */
+export function activatePlayerBoost() {
+  if (!canActivatePlayerBoost() || !applyBoostEffect(PLAYER)) return false;
+  PLAYER.playerBoostActiveRemaining = GAME_CONFIG.player.speedBoost.durationSeconds;
+  PLAYER.playerBoostCooldownRemaining = GAME_CONFIG.player.speedBoost.cooldownSeconds;
+  WORLD_STATE.boostCueId++;
+  return true;
 }
 
 export function cancelPlayerActions(resetCooldown = false) {
   if (PLAYER.dashState === "active") cancelPlayerDash();
   if (resetCooldown) {
     resetPlayerDash();
-    PLAYER.boostState = "ready";
-    PLAYER.boostDurationRemaining = 0;
-    PLAYER.boostCooldownRemaining = 0;
+    PLAYER.boostEffectRemaining = 0;
+    PLAYER.playerBoostActiveRemaining = 0;
+    PLAYER.playerBoostCooldownRemaining = 0;
   }
 }
 
@@ -510,9 +524,9 @@ export function resetSimulation() {
     agent.dashStartX = spawn.x;
     agent.dashStartZ = spawn.z;
     agent.dashCameraRemaining = 0;
-    agent.boostState = "ready";
-    agent.boostDurationRemaining = 0;
-    agent.boostCooldownRemaining = 0;
+    agent.boostEffectRemaining = 0;
+    agent.playerBoostActiveRemaining = 0;
+    agent.playerBoostCooldownRemaining = 0;
     agent.slowMultiplier = 1;
     agent.onSpeedPad = false;
     agent.onSlowZone = false;
@@ -598,9 +612,9 @@ export function respawn(agent: Agent) {
   agent.routeFirstStep = -1;
   agent.route.length = 0;
   agent.routeIndex = 0;
-  agent.boostState = "ready";
-  agent.boostDurationRemaining = 0;
-  agent.boostCooldownRemaining = 0;
+  agent.boostEffectRemaining = 0;
+  agent.playerBoostActiveRemaining = 0;
+  agent.playerBoostCooldownRemaining = 0;
   agent.slowMultiplier = 1;
   agent.onSpeedPad = false;
   agent.onSlowZone = false;
@@ -614,6 +628,11 @@ function removeNormalVelocity(agent: Agent, nx: number, nz: number) {
     agent.vx -= nx * into;
     agent.vz -= nz * into;
   }
+}
+
+function decreaseTimer(remaining: number, dt: number) {
+  const next = Math.max(0, remaining - dt);
+  return next < 1e-9 ? 0 : next;
 }
 
 /** Resolve circle and rotated-box collisions, removing only inward velocity. */
@@ -997,19 +1016,18 @@ function movePlayerDash(dt: number) {
 }
 
 function advancePlayerDashTimers(dt: number) {
-  PLAYER.dashCooldownRemaining = Math.max(0, PLAYER.dashCooldownRemaining - dt);
-  PLAYER.dashCameraRemaining = Math.max(0, PLAYER.dashCameraRemaining - dt);
+  PLAYER.dashCooldownRemaining = decreaseTimer(PLAYER.dashCooldownRemaining, dt);
+  PLAYER.dashCameraRemaining = decreaseTimer(PLAYER.dashCameraRemaining, dt);
   if (PLAYER.dashState === "cooldown" && PLAYER.dashCooldownRemaining === 0)
     PLAYER.dashState = "ready";
 }
 
 export function advanceAgentActionTimers(agent: Agent, dt: number) {
-  agent.boostCooldownRemaining = Math.max(0, agent.boostCooldownRemaining - dt);
-  if (agent.boostState === "active") {
-    agent.boostDurationRemaining = Math.max(0, agent.boostDurationRemaining - dt);
-    if (agent.boostDurationRemaining === 0) finishSpeedBoost(agent);
-  } else if (agent.boostState === "cooldown" && agent.boostCooldownRemaining === 0)
-    agent.boostState = "ready";
+  agent.boostEffectRemaining = decreaseTimer(agent.boostEffectRemaining, dt);
+  if (agent.role === "player") {
+    agent.playerBoostActiveRemaining = decreaseTimer(agent.playerBoostActiveRemaining, dt);
+    agent.playerBoostCooldownRemaining = decreaseTimer(agent.playerBoostCooldownRemaining, dt);
+  }
 }
 
 export function advanceBarrier(dt: number) {
@@ -1042,17 +1060,20 @@ export function updateSlowZone(agent: Agent, dt: number) {
   agent.onSlowZone = inside;
 }
 
+export function onSpeedPadEnter(agent: Agent, inside: boolean) {
+  const entered = inside && !agent.onSpeedPad;
+  agent.onSpeedPad = inside;
+  if (!entered || !applyBoostEffect(agent)) return false;
+  if (agent.role === "player") emitInteractionCue("speedPad");
+  WORLD_STATE.speedPadPulseRemaining = GAME_CONFIG.interactiveObjects.speedPad.pulseSeconds;
+  return true;
+}
+
 export function updateSpeedPad(agent: Agent) {
   const inside =
     Math.hypot(agent.x - SPEED_PAD.position.x, agent.z - SPEED_PAD.position.z) <=
     (SPEED_PAD.triggerRadius ?? 0) * SPEED_PAD.scale;
-  if (inside && !agent.onSpeedPad) {
-    if (startSpeedBoost(agent)) {
-      if (agent.role === "player") emitInteractionCue("speedPad");
-      WORLD_STATE.speedPadPulseRemaining = GAME_CONFIG.interactiveObjects.speedPad.pulseSeconds;
-    }
-  }
-  agent.onSpeedPad = inside;
+  return onSpeedPadEnter(agent, inside);
 }
 
 const playerWorldInput = { x: 0, z: 0 };
@@ -1168,7 +1189,7 @@ export function step(
   advanceBarrier(dt);
   const worldInput = resolveCameraRelativeInput(input);
   if (!freezePlayer) {
-    if (commands.speedBoost) startSpeedBoost(PLAYER);
+    if (commands.speedBoost) activatePlayerBoost();
     if (commands.dash) {
       startPlayerDash(
         worldInput ?? {

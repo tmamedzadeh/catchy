@@ -1,0 +1,26 @@
+{
+  "id": "/",
+  "name": "Catchy! Tiny Tag Arena",
+  "short_name": "Catchy",
+  "description": "A fast chase and tag game in a bright 3D arena.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "theme_color": "#bfe3ff",
+  "background_color": "#bfe3ff",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.ico",
+      "sizes": "32x32",
+      "type": "image/x-icon",
+      "purpose": "any"
+    }
+  ]
+}

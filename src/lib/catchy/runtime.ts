@@ -1,4 +1,13 @@
-import { AGENTS, PLAYER, RUNNERS, WORLD_STATE, respawn, selectTarget, step } from "./agents";
+import {
+  AGENTS,
+  PLAYER,
+  RUNNERS,
+  WORLD_STATE,
+  getPlayerBoostState,
+  respawn,
+  selectTarget,
+  step,
+} from "./agents";
 import { GAME_CONFIG } from "./config";
 import { consumeFixedSteps } from "./fixedStep";
 import {
@@ -47,7 +56,10 @@ function simulateTick(dt: number) {
 
   const store = useGameStore.getState();
   if (store.dashStatus !== PLAYER.dashState) store.setDashStatus(PLAYER.dashState);
-  if (store.speedBoostStatus !== PLAYER.boostState) store.setSpeedBoostStatus(PLAYER.boostState);
+  const playerBoostState = getPlayerBoostState();
+  if (store.speedBoostStatus !== playerBoostState) store.setSpeedBoostStatus(playerBoostState);
+  const boostEffectActive = PLAYER.boostEffectRemaining > 0;
+  if (store.boostEffectActive !== boostEffectActive) store.setBoostEffectActive(boostEffectActive);
   if (
     store.boostCueId !== WORLD_STATE.boostCueId ||
     store.interactionCueId !== WORLD_STATE.interactionCueId ||

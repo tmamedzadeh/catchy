@@ -95,6 +95,7 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
   const restart = useGameStore((s) => s.restart);
   const dashStatus = useGameStore((s) => s.dashStatus);
   const speedBoostStatus = useGameStore((s) => s.speedBoostStatus);
+  const boostEffectActive = useGameStore((s) => s.boostEffectActive);
   const boostCueId = useGameStore((s) => s.boostCueId);
   const debugMode =
     import.meta.env.DEV &&
@@ -284,6 +285,7 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
           gameReady={gameReady}
           state={state}
           status={speedBoostStatus}
+          effectActive={boostEffectActive}
           cueId={boostCueId}
         />
       </div>
@@ -362,15 +364,17 @@ function SpeedBoostControl({
   gameReady,
   state,
   status,
+  effectActive,
   cueId,
 }: {
   gameReady: boolean;
   state: ReturnType<typeof useGameStore.getState>["state"];
   status: ReturnType<typeof useGameStore.getState>["speedBoostStatus"];
+  effectActive: boolean;
   cueId: number;
 }) {
   const isChasing = state === "chase" || state === "nearby";
-  const enabled = gameReady && isChasing && status === "ready";
+  const enabled = gameReady && isChasing && status === "ready" && !effectActive;
   const label = status === "active" ? "ACTIVE" : status === "cooldown" ? "RECHARGING" : "READY";
 
   return (

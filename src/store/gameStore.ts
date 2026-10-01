@@ -3,6 +3,7 @@ import {
   PLAYER,
   WORLD_STATE,
   cancelPlayerActions,
+  getPlayerBoostState,
   resetSimulation,
   type InteractionKind,
   type BoostState,
@@ -67,11 +68,13 @@ type Store = {
   restartCount: number;
   dashStatus: DashState;
   speedBoostStatus: BoostState;
+  boostEffectActive: boolean;
   boostCueId: number;
   interactionCueId: number;
   interactionCueKind: InteractionKind | null;
   setDashStatus: (status: DashState) => void;
   setSpeedBoostStatus: (status: BoostState) => void;
+  setBoostEffectActive: (active: boolean) => void;
   setSimulationFeedbackCues: (
     boostCueId: number,
     interactionCueId: number,
@@ -142,7 +145,7 @@ export const useGameStore = create<Store>((set, get) => ({
   state: "chase",
   setState: (state) => {
     if (state !== "chase" && state !== "nearby") cancelPlayerActions();
-    set({ state, dashStatus: PLAYER.dashState, speedBoostStatus: PLAYER.boostState });
+    set({ state, dashStatus: PLAYER.dashState, speedBoostStatus: getPlayerBoostState() });
   },
   capture: null,
   beginCapture: (capture) => {
@@ -151,19 +154,19 @@ export const useGameStore = create<Store>((set, get) => ({
       state: "capture",
       capture,
       dashStatus: PLAYER.dashState,
-      speedBoostStatus: PLAYER.boostState,
+      speedBoostStatus: getPlayerBoostState(),
     });
   },
   enterAfter: () => {
     cancelPlayerActions();
-    set({ state: "after", dashStatus: PLAYER.dashState, speedBoostStatus: PLAYER.boostState });
+    set({ state: "after", dashStatus: PLAYER.dashState, speedBoostStatus: getPlayerBoostState() });
   },
   finishCapture: () =>
     set((state) => ({
       state: state.time <= 0 ? "timeup" : "chase",
       capture: null,
       dashStatus: PLAYER.dashState,
-      speedBoostStatus: PLAYER.boostState,
+      speedBoostStatus: getPlayerBoostState(),
     })),
   caught: 0,
   time: GAME_CONFIG.roundSeconds,
@@ -171,6 +174,7 @@ export const useGameStore = create<Store>((set, get) => ({
   restartCount: 0,
   dashStatus: "ready",
   speedBoostStatus: "ready",
+  boostEffectActive: false,
   boostCueId: 0,
   interactionCueId: 0,
   interactionCueKind: null,
@@ -178,6 +182,8 @@ export const useGameStore = create<Store>((set, get) => ({
     set((state) => (state.dashStatus === status ? state : { dashStatus: status })),
   setSpeedBoostStatus: (status) =>
     set((state) => (state.speedBoostStatus === status ? state : { speedBoostStatus: status })),
+  setBoostEffectActive: (active) =>
+    set((state) => (state.boostEffectActive === active ? state : { boostEffectActive: active })),
   setSimulationFeedbackCues: (boostCueId, interactionCueId, interactionCueKind) =>
     set((state) =>
       state.boostCueId === boostCueId &&
@@ -199,8 +205,14 @@ export const useGameStore = create<Store>((set, get) => ({
       const presentingCapture = state === "capture" || state === "after";
       set(
         presentingCapture
-          ? { time: 0, dashStatus: "ready", speedBoostStatus: "ready" }
-          : { time: 0, state: "timeup", dashStatus: "ready", speedBoostStatus: "ready" },
+          ? { time: 0, dashStatus: "ready", speedBoostStatus: "ready", boostEffectActive: false }
+          : {
+              time: 0,
+              state: "timeup",
+              dashStatus: "ready",
+              speedBoostStatus: "ready",
+              boostEffectActive: false,
+            },
       );
     } else if (Math.ceil(roundTimeRemaining) !== Math.ceil(time)) {
       // The HUD only needs whole seconds; keep React out of the 60fps loop.
@@ -223,6 +235,7 @@ export const useGameStore = create<Store>((set, get) => ({
       restartCount: state.restartCount + 1,
       dashStatus: "ready",
       speedBoostStatus: "ready",
+      boostEffectActive: false,
       boostCueId: 0,
       interactionCueId: 0,
       interactionCueKind: null,

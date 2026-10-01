@@ -2,7 +2,7 @@ import { useFrame } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { Billboard, Text } from "@react-three/drei";
-import { PLAYER, WORLD_STATE } from "@/lib/catchy/agents";
+import { WORLD_STATE } from "@/lib/catchy/agents";
 import { GAME_CONFIG, INTERACTIVE_OBJECTS } from "@/lib/catchy/config";
 import { useGameStore } from "@/store/gameStore";
 
@@ -12,20 +12,14 @@ const ELASTIC_BOUNCE = INTERACTIVE_OBJECTS.find((item) => item.kind === "elastic
 const TEMPORARY_BARRIER = INTERACTIVE_OBJECTS.find((item) => item.kind === "temporaryBarrier")!;
 const SPEED_PAD_SEGMENTS = 24;
 const CHARGE_READY = new THREE.Color("#caff8b");
-const CHARGE_EMPTY = new THREE.Color("#52635b");
-const PAD_READY = new THREE.Color("#69dc72");
-const PAD_ACTIVE = new THREE.Color("#9aff82");
-const PAD_RECHARGING = new THREE.Color("#758c78");
 
 function SpeedPadVisual() {
   const pulse = useRef<THREE.Group>(null);
   const baseMaterial = useRef<THREE.MeshStandardMaterial>(null);
   const innerRingMaterial = useRef<THREE.MeshStandardMaterial>(null);
   const outerRingMaterial = useRef<THREE.MeshStandardMaterial>(null);
-  const chevronMaterials = useRef<(THREE.MeshStandardMaterial | null)[]>([]);
   const chargeSegments = useRef<THREE.InstancedMesh>(null);
   const streaks = useRef<THREE.Group>(null);
-  const lastVisual = useRef({ state: "", charged: -1 });
 
   useEffect(() => {
     const mesh = chargeSegments.current;
@@ -36,55 +30,18 @@ function SpeedPadVisual() {
       dummy.position.set(Math.cos(angle) * 1.74, 0.1, Math.sin(angle) * 1.74);
       dummy.updateMatrix();
       mesh.setMatrixAt(i, dummy.matrix);
+      mesh.setColorAt(i, CHARGE_READY);
     }
     mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   }, []);
 
   useFrame(({ clock }) => {
     const pulseSeconds = GAME_CONFIG.interactiveObjects.speedPad.pulseSeconds;
     const strength = Math.max(0, Math.min(WORLD_STATE.speedPadPulseRemaining / pulseSeconds, 1));
     const idlePulse = (Math.sin(clock.elapsedTime * 2.7) + 1) * 0.025;
-    const state = PLAYER.boostState;
-    const cooldown = GAME_CONFIG.player.speedBoost.cooldownSeconds;
-    const progress =
-      state === "ready"
-        ? 1
-        : 1 - Math.max(0, Math.min(PLAYER.boostCooldownRemaining / cooldown, 1));
-    const charged = Math.floor(progress * SPEED_PAD_SEGMENTS);
-    if (lastVisual.current.state !== state) {
-      lastVisual.current.state = state;
-      const padColor =
-        state === "active" ? PAD_ACTIVE : state === "ready" ? PAD_READY : PAD_RECHARGING;
-      if (baseMaterial.current) {
-        baseMaterial.current.color.copy(padColor);
-        baseMaterial.current.emissive.copy(padColor);
-        baseMaterial.current.emissiveIntensity =
-          state === "active" ? 0.82 : state === "ready" ? 0.5 : 0.08;
-      }
-      if (innerRingMaterial.current)
-        innerRingMaterial.current.emissiveIntensity = state === "cooldown" ? 0.06 : 0.5;
-      if (outerRingMaterial.current)
-        outerRingMaterial.current.emissiveIntensity = state === "cooldown" ? 0.05 : 0.42;
-      for (const material of chevronMaterials.current) {
-        if (!material) continue;
-        material.emissiveIntensity = state === "cooldown" ? 0.04 : state === "active" ? 0.85 : 0.5;
-        material.color.set(state === "cooldown" ? "#829187" : "#f7ffe9");
-      }
-    }
-    if (lastVisual.current.charged !== charged) {
-      lastVisual.current.charged = charged;
-      const mesh = chargeSegments.current;
-      if (mesh) {
-        for (let i = 0; i < SPEED_PAD_SEGMENTS; i++)
-          mesh.setColorAt(i, i < charged ? CHARGE_READY : CHARGE_EMPTY);
-        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-      }
-    }
     if (pulse.current) pulse.current.scale.setScalar(1 + idlePulse + strength * 0.12);
-    if (baseMaterial.current) {
-      const baseIntensity = state === "active" ? 0.82 : state === "ready" ? 0.5 : 0.08;
-      baseMaterial.current.emissiveIntensity = baseIntensity + strength * 0.68;
-    }
+    if (baseMaterial.current) baseMaterial.current.emissiveIntensity = 0.5 + strength * 0.68;
     if (streaks.current) {
       const children = streaks.current.children;
       for (let i = 0; i < children.length; i++) {
@@ -138,29 +95,15 @@ function SpeedPadVisual() {
         <sphereGeometry args={[0.075, 8, 6]} />
         <meshStandardMaterial color="white" emissive="#5eaa64" emissiveIntensity={0.2} />
       </instancedMesh>
-      {[-0.5, 0, 0.5].map((z, index) => (
+      {[-0.5, 0, 0.5].map((z) => (
         <group key={z} position={[0, 0.12, z]}>
           <mesh position={[-0.12, 0, 0]} rotation-y={Math.PI / 4}>
             <boxGeometry args={[0.11, 0.055, 0.45]} />
-            <meshStandardMaterial
-              ref={(material) => {
-                chevronMaterials.current[index * 2] = material;
-              }}
-              color="#f7ffe9"
-              emissive="#b6ff9d"
-              emissiveIntensity={0.5}
-            />
+            <meshStandardMaterial color="#f7ffe9" emissive="#b6ff9d" emissiveIntensity={0.5} />
           </mesh>
           <mesh position={[0.12, 0, 0]} rotation-y={-Math.PI / 4}>
             <boxGeometry args={[0.11, 0.055, 0.45]} />
-            <meshStandardMaterial
-              ref={(material) => {
-                chevronMaterials.current[index * 2 + 1] = material;
-              }}
-              color="#f7ffe9"
-              emissive="#b6ff9d"
-              emissiveIntensity={0.5}
-            />
+            <meshStandardMaterial color="#f7ffe9" emissive="#b6ff9d" emissiveIntensity={0.5} />
           </mesh>
         </group>
       ))}

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { AGENTS, PLAYER, RUNNERS, WORLD_STATE } from "./agents";
+import { AGENTS, PLAYER, RUNNERS, WORLD_STATE, getPlayerBoostState } from "./agents";
 import { GAME_CONFIG } from "./config";
 import { advanceSimulationFrame, resetSimulationRuntime, SIMULATION_FIXED_DT } from "./runtime";
 import { requestPlayerDash, requestPlayerSpeedBoost } from "./input";
@@ -90,6 +90,7 @@ describe("restart and action reset", () => {
       capturedAt: 1,
     });
     runner.hidden = 9;
+    const restartCount = useGameStore.getState().restartCount;
     useGameStore.getState().restart();
     resetSimulationRuntime();
     const game = useGameStore.getState();
@@ -100,9 +101,9 @@ describe("restart and action reset", () => {
     expect(game.dashStatus).toBe("ready");
     expect(game.speedBoostStatus).toBe("ready");
     expect(PLAYER.dashState).toBe("ready");
-    expect(PLAYER.boostState).toBe("ready");
+    expect(getPlayerBoostState()).toBe("ready");
     expect(RUNNERS.every((agent) => agent.hidden === 0)).toBe(true);
-    expect(useGameStore.getState().restartCount).toBe(2);
+    expect(useGameStore.getState().restartCount).toBe(restartCount + 1);
   });
 
   it("restores camera tuning defaults and keeps composition offset separate", () => {
@@ -144,7 +145,7 @@ describe("simulation runtime fixed-tick integration", () => {
     expect(PLAYER.z).not.toBe(startZ);
     requestPlayerSpeedBoost();
     stepTicks(1);
-    expect(PLAYER.boostState).toBe("active");
+    expect(getPlayerBoostState()).toBe("active");
     stepTicks(15);
     expect(PLAYER.dashState).toBe("cooldown");
   });

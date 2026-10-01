@@ -3,7 +3,15 @@ import { useCallback, useEffect, useState } from "react";
 import { useProgress } from "@react-three/drei";
 import { GameCanvas } from "@/components/game/GameCanvas";
 import { HUD } from "@/components/hud/HUD";
-import { GameFeedback } from "@/lib/catchy/feedback";
+import { GameFeedback, unlockGameAudio } from "@/lib/catchy/feedback";
+import {
+  beginPlaySession,
+  isIOSPlatform,
+  isStandaloneOrFullscreen,
+  listenForFullscreenEvents,
+  listenForInstallPrompt,
+  type DeferredInstallPrompt,
+} from "@/lib/catchy/pwa";
 
 const title = "Catchy — Fast chase/tag browser game";
 const description =
@@ -25,8 +33,53 @@ export const Route = createFileRoute("/")({
 });
 
 function Game() {
+  const [started, setStarted] = useState(false);
   const [gameReady, setGameReady] = useState(() => isAssetQueueComplete());
+  const [installPrompt, setInstallPrompt] = useState<DeferredInstallPrompt | null>(null);
+  const [installedMode, setInstalledMode] = useState(() => isStandaloneOrFullscreen());
+  const [showInstallHelp, setShowInstallHelp] = useState(false);
   const markReady = useCallback(() => setGameReady(true), []);
+  const play = useCallback(() => {
+    void unlockGameAudio();
+    // The helper requests fullscreen from PLAY, then locks orientation and launches.
+    beginPlaySession(() => setStarted(true), { alreadyFullscreen: installedMode });
+  }, [installedMode]);
+
+  useEffect(
+    () =>
+      listenForInstallPrompt(
+        (event) => setInstallPrompt(event),
+        () => {
+          setInstallPrompt(null);
+          setInstalledMode(true);
+        },
+      ),
+    [],
+  );
+
+  useEffect(
+    () =>
+      listenForFullscreenEvents(
+        () => setInstalledMode(isStandaloneOrFullscreen()),
+        () => setInstalledMode(isStandaloneOrFullscreen()),
+      ),
+    [],
+  );
+
+  const offerInstall = useCallback(() => {
+    const deferredPrompt = installPrompt;
+    if (!deferredPrompt) {
+      setShowInstallHelp((visible) => !visible);
+      return;
+    }
+    setInstallPrompt(null);
+    try {
+      const promptResult = deferredPrompt.prompt();
+      void promptResult.then(() => deferredPrompt.userChoice).catch(() => setShowInstallHelp(true));
+    } catch {
+      setShowInstallHelp(true);
+    }
+  }, [installPrompt]);
 
   useEffect(() => {
     if (import.meta.env["VITE_CATCHY_E2E"] !== "true") return;
@@ -45,11 +98,65 @@ function Game() {
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-[#bfe3ff]">
-      <GameCanvas />
-      <HUD gameReady={gameReady} />
-      <GameFeedback />
-      <LoadingScreen ready={gameReady} onReady={markReady} />
+      {started ? (
+        <>
+          <GameCanvas />
+          <HUD gameReady={gameReady} />
+          <GameFeedback />
+          <LoadingScreen ready={gameReady} onReady={markReady} />
+        </>
+      ) : (
+        <StartScreen
+          installedMode={installedMode}
+          hasInstallPrompt={installPrompt !== null}
+          showInstallHelp={showInstallHelp}
+          onInstall={offerInstall}
+          onPlay={play}
+        />
+      )}
     </div>
+  );
+}
+
+export function StartScreen({
+  installedMode,
+  hasInstallPrompt,
+  showInstallHelp,
+  onInstall,
+  onPlay,
+}: {
+  installedMode: boolean;
+  hasInstallPrompt: boolean;
+  showInstallHelp: boolean;
+  onInstall: () => void;
+  onPlay: () => void;
+}) {
+  const ios = isIOSPlatform();
+  return (
+    <main className="catchy-start-screen">
+      <div className="catchy-start-card">
+        <h1 className="catchy-start-title">CATCHY</h1>
+        <p className="catchy-start-subtitle">Tag arena</p>
+        <button type="button" className="catchy-play-button" onClick={onPlay}>
+          PLAY
+        </button>
+        {!installedMode && (
+          <div className="catchy-install-prompt">
+            <span>Install Catchy for the best fullscreen experience</span>
+            <button type="button" onClick={onInstall}>
+              {hasInstallPrompt ? "Install" : "How to install"}
+            </button>
+            {showInstallHelp && (
+              <p className="catchy-install-help" role="status">
+                {ios
+                  ? "In Safari, tap Share → Add to Home Screen, enable Open as Web App, then tap Add."
+                  : "Open your browser menu and choose Install app or Add to Home Screen."}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </main>
   );
 }
 

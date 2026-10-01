@@ -1,4 +1,4 @@
-import { AGENTS, PLAYER, WORLD_STATE } from "./agents";
+import { AGENTS, PLAYER, WORLD_STATE, getPlayerBoostState } from "./agents";
 import { GAME_CONFIG } from "./config";
 import { clearInput, requestPlayerDash, requestPlayerSpeedBoost } from "./input";
 import { advanceSimulationFrame, resetSimulationRuntime } from "./runtime";
@@ -81,7 +81,9 @@ export function installCatchyE2EBridge() {
         heading: PLAYER.heading,
         speed: PLAYER.speed,
         dashState: PLAYER.dashState,
-        boostState: PLAYER.boostState,
+        boostState: getPlayerBoostState(),
+        boostEffectRemaining: PLAYER.boostEffectRemaining,
+        playerBoostCooldownRemaining: PLAYER.playerBoostCooldownRemaining,
         slowMultiplier: PLAYER.slowMultiplier,
       };
     },
