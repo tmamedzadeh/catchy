@@ -241,6 +241,54 @@ describe("runner navigation and temporary barrier", () => {
     expect(routeBefore).not.toHaveLength(0);
   });
 
+  it("steers an edge runner inward and spreads three escape goals", () => {
+    activeRunners();
+    put(PLAYER, 0, 0);
+    put(RUNNERS[0]!, 26, 0);
+    put(RUNNERS[1]!, 0, 17);
+    put(RUNNERS[2]!, -17, 0);
+    for (const runner of RUNNERS) runner.routeTimer = 0;
+
+    step(DT, null, noCommands, true);
+
+    const navigation = GAME_CONFIG.npc.navigation;
+    const edgeGoal = RUNNERS[0]!;
+    expect(Math.hypot(edgeGoal.routeGoalX, edgeGoal.routeGoalZ)).toBeLessThan(
+      navigation.preferredRunnerRadius + 1,
+    );
+    const goals = RUNNERS.map((runner) => ({ x: runner.routeGoalX, z: runner.routeGoalZ }));
+    for (let i = 0; i < goals.length; i++) {
+      for (let j = i + 1; j < goals.length; j++) {
+        expect(Math.hypot(goals[i]!.x - goals[j]!.x, goals[i]!.z - goals[j]!.z)).toBeGreaterThan(
+          navigation.preferredGoalSeparation * 0.5,
+        );
+      }
+    }
+    expect(new Set(RUNNERS.map((runner) => runner.routePhaseOffset)).size).toBe(RUNNERS.length);
+  });
+
+  it("steers clustered runners apart with a local separation field", () => {
+    activeRunners();
+    put(PLAYER, 0, -20);
+    put(RUNNERS[0]!, 1, 8);
+    put(RUNNERS[1]!, 3, 8);
+    put(RUNNERS[2]!, 2, 10);
+    const minimumBefore = Math.min(
+      Math.hypot(RUNNERS[0]!.x - RUNNERS[1]!.x, RUNNERS[0]!.z - RUNNERS[1]!.z),
+      Math.hypot(RUNNERS[0]!.x - RUNNERS[2]!.x, RUNNERS[0]!.z - RUNNERS[2]!.z),
+      Math.hypot(RUNNERS[1]!.x - RUNNERS[2]!.x, RUNNERS[1]!.z - RUNNERS[2]!.z),
+    );
+
+    step(DT, null, noCommands, true);
+
+    const minimumAfter = Math.min(
+      Math.hypot(RUNNERS[0]!.x - RUNNERS[1]!.x, RUNNERS[0]!.z - RUNNERS[1]!.z),
+      Math.hypot(RUNNERS[0]!.x - RUNNERS[2]!.x, RUNNERS[0]!.z - RUNNERS[2]!.z),
+      Math.hypot(RUNNERS[1]!.x - RUNNERS[2]!.x, RUNNERS[1]!.z - RUNNERS[2]!.z),
+    );
+    expect(minimumAfter).toBeGreaterThan(minimumBefore);
+  });
+
   it("removes stale runner routes when a barrier closes and restores graph access when open", () => {
     const open = getNavigationSummary();
     RUNNERS[0]!.route.push(1, 2, 3);
@@ -517,6 +565,51 @@ describe("Elastic Bounce", () => {
     expect(Math.hypot(diagonal.vx, diagonal.vz)).toBeCloseTo(initialSpeed, 7);
   });
 
+  it("reflects the player by the collision normal and applies one configured speed boost", () => {
+    const normalLength = Math.hypot(1, 1);
+    const nx = 1 / normalLength;
+    const nz = 1 / normalLength;
+    const minDistance =
+      bounce.collision.type === "circle"
+        ? bounce.collision.radius * bounce.scale + PLAYER.radius + GAME_CONFIG.obstacleMargin
+        : 0;
+    const incoming = { x: -3, z: -4 };
+    const incomingDotNormal = incoming.x * nx + incoming.z * nz;
+    const reflected = {
+      x: incoming.x - 2 * incomingDotNormal * nx,
+      z: incoming.z - 2 * incomingDotNormal * nz,
+    };
+
+    put(
+      PLAYER,
+      bounce.position.x + nx * (minDistance - 0.05),
+      bounce.position.z + nz * (minDistance - 0.05),
+    );
+    PLAYER.vx = incoming.x;
+    PLAYER.vz = incoming.z;
+    expect(resolveObstacle(PLAYER, bounce)).toBe(true);
+
+    const multiplier = GAME_CONFIG.elasticBounce.playerSpeedMultiplier;
+    expect(PLAYER.vx).toBeCloseTo(reflected.x * multiplier, 7);
+    expect(PLAYER.vz).toBeCloseTo(reflected.z * multiplier, 7);
+    expect(Math.hypot(PLAYER.vx, PLAYER.vz)).toBeCloseTo(
+      Math.hypot(incoming.x, incoming.z) * multiplier,
+      7,
+    );
+    expect(WORLD_STATE.bounceImpactId).toBe(1);
+
+    for (let i = 0; i < 6; i++) {
+      PLAYER.x = bounce.position.x + nx * (minDistance - 0.05);
+      PLAYER.z = bounce.position.z + nz * (minDistance - 0.05);
+      resolveObstacle(PLAYER, bounce);
+      expect(Math.hypot(PLAYER.vx, PLAYER.vz)).toBeCloseTo(
+        Math.hypot(incoming.x, incoming.z) * multiplier,
+        7,
+      );
+    }
+    expect(WORLD_STATE.bounceImpactId).toBe(1);
+  });
+
   it("bounces a player Dash, including when Boost is active, without tunneling", () => {
     const minDistance =
       bounce.collision.type === "circle"
@@ -538,8 +631,8 @@ describe("camera-relative movement and reset", () => {
   it.each([
     { name: "W at zero yaw", yaw: 0, input: { x: 0, z: -1 }, world: { x: 0, z: 1 } },
     { name: "S at zero yaw", yaw: 0, input: { x: 0, z: 1 }, world: { x: 0, z: -1 } },
-    { name: "A at zero yaw", yaw: 0, input: { x: -1, z: 0 }, world: { x: -1, z: 0 } },
-    { name: "D at zero yaw", yaw: 0, input: { x: 1, z: 0 }, world: { x: 1, z: 0 } },
+    { name: "A at zero yaw", yaw: 0, input: { x: 1, z: 0 }, world: { x: 1, z: 0 } },
+    { name: "D at zero yaw", yaw: 0, input: { x: -1, z: 0 }, world: { x: -1, z: 0 } },
     {
       name: "W at 90 degree yaw",
       yaw: Math.PI / 2,
@@ -565,15 +658,29 @@ describe("camera-relative movement and reset", () => {
   it("rotates W, S, A and D at right-angle and arbitrary camera yaw", () => {
     const wAt90 = { ...resolveCameraRelativeInput({ x: 0, z: -1 }, Math.PI / 2)! };
     const sAt90 = { ...resolveCameraRelativeInput({ x: 0, z: 1 }, Math.PI / 2)! };
-    const aAt90 = { ...resolveCameraRelativeInput({ x: -1, z: 0 }, Math.PI / 2)! };
-    const dAt90 = { ...resolveCameraRelativeInput({ x: 1, z: 0 }, Math.PI / 2)! };
+    const aAt90 = { ...resolveCameraRelativeInput({ x: 1, z: 0 }, Math.PI / 2)! };
+    const dAt90 = { ...resolveCameraRelativeInput({ x: -1, z: 0 }, Math.PI / 2)! };
     expect(wAt90.x).toBeCloseTo(1, 8);
     expect(sAt90.x).toBeCloseTo(-1, 8);
-    expect(aAt90.z).toBeCloseTo(1, 8);
-    expect(dAt90.z).toBeCloseTo(-1, 8);
+    expect(aAt90.z).toBeCloseTo(-1, 8);
+    expect(dAt90.z).toBeCloseTo(1, 8);
     const arbitrary = resolveCameraRelativeInput({ x: 0, z: -1 }, 0.37)!;
     expect(Math.hypot(arbitrary.x, arbitrary.z)).toBeCloseTo(1, 8);
     expect(resolveCameraRelativeInput(null)).toBeNull();
+  });
+
+  it("recenters camera yaw toward player heading and holds the yaw in Tactical Overview", () => {
+    PLAYER.heading = 1.15;
+    WORLD_STATE.cameraYaw = -1.1;
+    step(DT, null, noCommands, true, true, 1, "recenter");
+    expect(WORLD_STATE.cameraYaw).toBeGreaterThan(-1.1);
+    expect(WORLD_STATE.cameraYaw).toBeLessThan(PLAYER.heading);
+    expect(PLAYER.heading).toBe(1.15);
+
+    const yaw = WORLD_STATE.cameraYaw;
+    step(DT, null, noCommands, true, true, -1, "tactical");
+    expect(WORLD_STATE.cameraYaw).toBe(yaw);
+    expect(PLAYER.heading).toBe(1.15);
   });
 
   it("clears all player and world action state on restart", () => {

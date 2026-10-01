@@ -1,16 +1,60 @@
-import { AGENTS, PLAYER, WORLD_STATE, getPlayerBoostState } from "./agents";
+import {
+  AGENTS,
+  PLAYER,
+  WORLD_STATE,
+  getPlayerBoostState,
+  type Agent,
+  type BoostState,
+} from "./agents";
 import { GAME_CONFIG } from "./config";
-import { clearInput, requestPlayerDash, requestPlayerSpeedBoost } from "./input";
+import { cameraModeInput, clearInput, requestPlayerDash, requestPlayerSpeedBoost } from "./input";
 import { advanceSimulationFrame, resetSimulationRuntime } from "./runtime";
 import { useGameStore } from "@/store/gameStore";
+
+type E2EState = Pick<
+  ReturnType<typeof useGameStore.getState>,
+  | "state"
+  | "caught"
+  | "time"
+  | "capture"
+  | "dashStatus"
+  | "speedBoostStatus"
+  | "boostCueId"
+  | "interactionCueId"
+  | "interactionCueKind"
+  | "targetId"
+  | "restartCount"
+>;
+type E2EPlayer = Pick<
+  Agent,
+  | "x"
+  | "z"
+  | "vx"
+  | "vz"
+  | "heading"
+  | "speed"
+  | "dashState"
+  | "boostEffectRemaining"
+  | "playerBoostCooldownRemaining"
+  | "slowMultiplier"
+> & { boostState: BoostState };
+type E2ERunner = Pick<Agent, "id" | "x" | "z" | "hidden" | "state" | "respawns">;
+type E2EWorld = {
+  barrierClosed: boolean;
+  barrierRemaining: number;
+  cameraYaw: number;
+  speedPadPulseRemaining: number;
+  bounceImpactId: number;
+};
 
 export type CatchyE2EApi = {
   reset: () => void;
   step: (milliseconds: number) => void;
-  getState: () => Record<string, unknown>;
-  getPlayer: () => Record<string, number | string>;
-  getRunners: () => Record<string, number | string>[];
-  getWorld: () => Record<string, number | boolean>;
+  getState: () => E2EState;
+  getPlayer: () => E2EPlayer;
+  getRunners: () => E2ERunner[];
+  getWorld: () => E2EWorld;
+  getCameraMode: () => "normal" | "recenter" | "tactical";
   activateDash: () => void;
   activateBoost: () => void;
   placePlayer: (x: number, z: number, vx?: number, vz?: number) => void;
@@ -106,6 +150,7 @@ export function installCatchyE2EBridge() {
         bounceImpactId: WORLD_STATE.bounceImpactId,
       };
     },
+    getCameraMode: cameraModeInput,
     activateDash() {
       requestPlayerDash();
     },

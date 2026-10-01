@@ -108,6 +108,36 @@ export function clearInput() {
   queueTail = 0;
 }
 
+/** Install and clean up keyboard/visibility handlers for the lifetime of the game. */
+export function installInputEventListeners(targetWindow?: Window, targetDocument?: Document) {
+  const browserWindow = targetWindow ?? (typeof window === "undefined" ? undefined : window);
+  const browserDocument =
+    targetDocument ?? (typeof document === "undefined" ? undefined : document);
+  if (!browserWindow || !browserDocument) return () => undefined;
+
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (!INPUT_CODES.has(event.code) || isTextControl(event.target)) return;
+    if (event.code.startsWith("Arrow")) event.preventDefault();
+    pressInputKey(event.code, event.target);
+  };
+  const onKeyUp = (event: KeyboardEvent) => releaseInputKey(event.code);
+  const onBlur = () => clearInput();
+  const onVisibilityChange = () => {
+    if (browserDocument.hidden) clearInput();
+  };
+
+  browserWindow.addEventListener("keydown", onKeyDown);
+  browserWindow.addEventListener("keyup", onKeyUp);
+  browserWindow.addEventListener("blur", onBlur);
+  browserDocument.addEventListener("visibilitychange", onVisibilityChange);
+  return () => {
+    browserWindow.removeEventListener("keydown", onKeyDown);
+    browserWindow.removeEventListener("keyup", onKeyUp);
+    browserWindow.removeEventListener("blur", onBlur);
+    browserDocument.removeEventListener("visibilitychange", onVisibilityChange);
+  };
+}
+
 /** When opposite keys are held together, the most recently pressed one wins. */
 function opposedKeyInput(positiveKey: string, negativeKey: string) {
   let axis = 0;
@@ -126,7 +156,7 @@ export function inputVector(): { x: number; z: number } | null {
     movement.z = joystick.z;
     return movement;
   }
-  const x = opposedKeyInput("KeyD", "KeyA");
+  const x = opposedKeyInput("KeyA", "KeyD");
   const z = opposedKeyInput("KeyS", "KeyW");
   if (x === 0 && z === 0) return null;
   const length = Math.hypot(x, z);
@@ -150,17 +180,4 @@ export function cameraModeInput(): "normal" | "recenter" | "tactical" {
   if (keys.has("ArrowDown") || rightStickMode === "tactical") return "tactical";
   if (keys.has("ArrowUp") || rightStickMode === "recenter") return "recenter";
   return "normal";
-}
-
-if (typeof window !== "undefined") {
-  window.addEventListener("keydown", (event) => {
-    if (!INPUT_CODES.has(event.code) || isTextControl(event.target)) return;
-    if (event.code.startsWith("Arrow")) event.preventDefault();
-    pressInputKey(event.code, event.target);
-  });
-  window.addEventListener("keyup", (event) => releaseInputKey(event.code));
-  window.addEventListener("blur", clearInput);
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) clearInput();
-  });
 }

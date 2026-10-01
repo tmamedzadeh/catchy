@@ -149,4 +149,20 @@ describe("simulation runtime fixed-tick integration", () => {
     stepTicks(15);
     expect(PLAYER.dashState).toBe("cooldown");
   });
+
+  it("drops stale capture presentation clocks after the round restarts", () => {
+    place(PLAYER, 0, 0);
+    place(RUNNERS[0]!, 1, 0);
+    place(RUNNERS[1]!, 15, 12);
+    place(RUNNERS[2]!, -15, 12);
+    stepTicks(1);
+    expect(useGameStore.getState().state).toBe("capture");
+
+    useGameStore.getState().restart();
+    stepTicks(1);
+    expect(useGameStore.getState().state).toBe("chase");
+    expect(useGameStore.getState().capture).toBeNull();
+    expect(useGameStore.getState().caught).toBe(0);
+    expect(RUNNERS.every((runner) => runner.hidden === 0)).toBe(true);
+  });
 });

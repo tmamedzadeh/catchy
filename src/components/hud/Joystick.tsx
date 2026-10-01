@@ -90,6 +90,8 @@ export function Joystick({ side = "movement" }: { side?: "movement" | "camera" }
       }}
       onPointerCancel={(e) => release(e.pointerId)}
       onLostPointerCapture={(e) => release(e.pointerId)}
+      role="group"
+      aria-label={isCameraStick ? "Camera joystick" : "Movement joystick"}
       className={`pointer-events-auto relative touch-stick size-[var(--joystick-size)] touch-none rounded-full select-none ${isCameraStick ? "touch-stick-camera" : "touch-stick-movement"}`}
       style={{
         background:

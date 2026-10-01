@@ -5,10 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build",
+    "build": "vite build --mode production && node scripts/verify-production-build.mjs",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
+    "build:e2e": "vite build --mode e2e",
+    "preview:e2e": "wrangler dev --config .output/server/wrangler.json --ip 127.0.0.1 --port 4173 --no-bundle --show-interactive-dev-session=false",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:all": "npm run typecheck && npm run lint && npm test && npm run test:coverage && npm run test:e2e && npm run build",
     "format": "prettier --write ."
   },
   "overrides": {
@@ -88,11 +95,12 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
-    "nitro": "3.0.260603-beta",
+    "nitro": "^3.0.260903-beta",
     "prettier": "^3.7.3",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1",
     "vite": "8.1.5",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.3",
+    "wrangler": "^4.145.0"
   }
 }

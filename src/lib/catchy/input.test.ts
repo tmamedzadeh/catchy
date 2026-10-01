@@ -6,6 +6,7 @@ import {
   clearInput,
   consumePlayerActionCommands,
   inputVector,
+  installInputEventListeners,
   joystick,
   pressInputKey,
   releaseInputKey,
@@ -15,10 +16,19 @@ import {
 beforeEach(() => clearInput());
 
 describe("keyboard movement, camera modes, and action buffer", () => {
+  it("maps A to left and D to right", () => {
+    pressInputKey("KeyA");
+    expect(inputVector()!.x).toBe(1);
+    releaseInputKey("KeyA");
+
+    pressInputKey("KeyD");
+    expect(inputVector()!.x).toBe(-1);
+  });
+
   it("reads camera-local WASD axes and normalizes diagonals", () => {
     pressInputKey("KeyW");
     pressInputKey("KeyA");
-    expect(inputVector()!.x).toBeCloseTo(-Math.SQRT1_2, 8);
+    expect(inputVector()!.x).toBeCloseTo(Math.SQRT1_2, 8);
     expect(inputVector()!.z).toBeCloseTo(-Math.SQRT1_2, 8);
     releaseInputKey("KeyA");
     expect(inputVector()).toEqual({ x: 0, z: -1 });
@@ -27,9 +37,9 @@ describe("keyboard movement, camera modes, and action buffer", () => {
   it("uses the most recently pressed of opposite movement keys", () => {
     pressInputKey("KeyA");
     pressInputKey("KeyD");
-    expect(inputVector()!.x).toBe(1);
-    releaseInputKey("KeyD");
     expect(inputVector()!.x).toBe(-1);
+    releaseInputKey("KeyD");
+    expect(inputVector()!.x).toBe(1);
   });
 
   it("uses arrows only for camera control and buffers Dash and Speed Boost", () => {
@@ -118,5 +128,41 @@ describe("touch joystick input", () => {
     expect(cameraJoystick).toEqual({ x: 0, y: 0, active: false });
     expect(cameraModeInput()).toBe("normal");
     expect(cameraTurnInput()).toBe(0);
+  });
+});
+
+describe("browser keyboard event lifecycle", () => {
+  it("maps key events, clears held input on blur/hidden state, and removes its listeners", () => {
+    const browserWindow = new EventTarget() as unknown as Window;
+    let hidden = false;
+    const browserDocument = new EventTarget() as unknown as Document;
+    Object.defineProperty(browserDocument, "hidden", { get: () => hidden });
+    const removeListeners = installInputEventListeners(browserWindow, browserDocument);
+    const key = (type: string, code: string) => {
+      const event = new Event(type, { cancelable: true });
+      Object.defineProperty(event, "code", { value: code });
+      return event;
+    };
+
+    const movementKey = key("keydown", "KeyW");
+    browserWindow.dispatchEvent(movementKey);
+    expect(inputVector()).toEqual({ x: 0, z: -1 });
+    const cameraKey = key("keydown", "ArrowLeft");
+    browserWindow.dispatchEvent(cameraKey);
+    expect(cameraKey.defaultPrevented).toBe(true);
+    expect(cameraTurnInput()).toBe(1);
+
+    browserWindow.dispatchEvent(new Event("blur"));
+    expect(inputVector()).toBeNull();
+    expect(cameraTurnInput()).toBe(0);
+    browserWindow.dispatchEvent(key("keydown", "KeyD"));
+    hidden = true;
+    browserDocument.dispatchEvent(new Event("visibilitychange"));
+    expect(inputVector()).toBeNull();
+
+    removeListeners();
+    hidden = false;
+    browserWindow.dispatchEvent(key("keydown", "KeyA"));
+    expect(inputVector()).toBeNull();
   });
 });

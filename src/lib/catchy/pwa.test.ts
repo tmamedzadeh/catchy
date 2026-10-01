@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -12,6 +13,37 @@ import {
 } from "./pwa";
 
 describe("Catchy mobile startup", () => {
+  it("declares production PNG icons with matching paths and dimensions", async () => {
+    const manifest = JSON.parse(
+      await readFile(new URL("../../../public/manifest.webmanifest", import.meta.url), "utf8"),
+    ) as {
+      display: string;
+      orientation: string;
+      icons: { src: string; sizes: string; type: string; purpose: string }[];
+    };
+    const expectedIcons = [
+      { src: "/icons/catchy-192.png", sizes: "192x192", dimension: 192 },
+      { src: "/icons/catchy-512.png", sizes: "512x512", dimension: 512 },
+    ];
+
+    expect(manifest.display).toBe("fullscreen");
+    expect(manifest.orientation).toBe("landscape");
+    for (const expected of expectedIcons) {
+      const icon = manifest.icons.find((entry) => entry.src === expected.src);
+      expect(icon).toMatchObject({
+        src: expected.src,
+        sizes: expected.sizes,
+        type: "image/png",
+      });
+      expect(icon?.purpose.split(" ")).toContain("maskable");
+
+      const png = await readFile(new URL(`../../../public${expected.src}`, import.meta.url));
+      expect(png.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+      expect(png.readUInt32BE(16)).toBe(expected.dimension);
+      expect(png.readUInt32BE(20)).toBe(expected.dimension);
+    }
+  });
+
   it("renders CATCHY, PLAY, and optional install guidance in browser mode", () => {
     const html = renderToStaticMarkup(
       createElement(StartScreen, {

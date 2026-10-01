@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { useProgress } from "@react-three/drei";
-import { GameCanvas } from "@/components/game/GameCanvas";
 import { HUD } from "@/components/hud/HUD";
 import { GameFeedback, unlockGameAudio } from "@/lib/catchy/feedback";
+import { installInputEventListeners } from "@/lib/catchy/input";
 import {
   beginPlaySession,
   isIOSPlatform,
@@ -12,6 +12,10 @@ import {
   listenForInstallPrompt,
   type DeferredInstallPrompt,
 } from "@/lib/catchy/pwa";
+
+const GameCanvas = lazy(() =>
+  import("@/components/game/GameCanvas").then(({ GameCanvas: Canvas }) => ({ default: Canvas })),
+);
 
 const title = "Catchy — Fast chase/tag browser game";
 const description =
@@ -39,6 +43,9 @@ function Game() {
   const [installedMode, setInstalledMode] = useState(() => isStandaloneOrFullscreen());
   const [showInstallHelp, setShowInstallHelp] = useState(false);
   const markReady = useCallback(() => setGameReady(true), []);
+
+  useEffect(() => installInputEventListeners(), []);
+
   const play = useCallback(() => {
     void unlockGameAudio();
     // The helper requests fullscreen from PLAY, then locks orientation and launches.
@@ -82,7 +89,7 @@ function Game() {
   }, [installPrompt]);
 
   useEffect(() => {
-    if (import.meta.env["VITE_CATCHY_E2E"] !== "true") return;
+    if (import.meta.env.MODE !== "e2e" || import.meta.env["VITE_CATCHY_E2E"] !== "true") return;
     let dispose: (() => void) | undefined;
     let canceled = false;
     void import("@/lib/catchy/e2eBridge").then(({ installCatchyE2EBridge }) => {
@@ -100,7 +107,9 @@ function Game() {
     <div className="fixed inset-0 overflow-hidden bg-[#bfe3ff]">
       {started ? (
         <>
-          <GameCanvas />
+          <Suspense fallback={null}>
+            <GameCanvas />
+          </Suspense>
           <HUD gameReady={gameReady} />
           <GameFeedback />
           <LoadingScreen ready={gameReady} onReady={markReady} />

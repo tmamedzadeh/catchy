@@ -138,7 +138,11 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
         </div>
       </div>
 
-      <div className="hud-card hud-game-status absolute grid grid-cols-[minmax(0,0.82fr)_minmax(0,1.2fr)_minmax(0,1.25fr)] items-center gap-1.5 px-2.5 py-2 sm:gap-3 sm:px-3.5 sm:py-2.5">
+      <div
+        role="group"
+        aria-label="Game status"
+        className="hud-card hud-game-status absolute grid grid-cols-[minmax(0,0.82fr)_minmax(0,1.2fr)_minmax(0,1.25fr)] items-center gap-1.5 px-2.5 py-2 sm:gap-3 sm:px-3.5 sm:py-2.5"
+      >
         <section className="min-w-0" aria-label="Caught score">
           <div className="font-display text-[0.56rem] tracking-[0.12em] text-catchy-ink-soft uppercase sm:text-[0.62rem] sm:tracking-[0.16em]">
             Caught
@@ -561,7 +565,7 @@ function FirstSessionOnboarding({ gameReady }: { gameReady: boolean }) {
         <div className="mt-0.5 text-xs text-catchy-ink-soft">
           {isCoarsePointer
             ? "Left stick moves · Right stick turns, recenters, or shows the arena · Dash / boost buttons"
-            : "WASD moves · ← / → turns camera · ↑ recenter · ↓ arena overview · Shift dash · E boost"}
+            : "W / S forward / back · A left · D right · ← / → camera · ↑ recenter · ↓ overview · Shift dash · E boost"}
         </div>
       </div>
     </div>

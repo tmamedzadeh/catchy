@@ -43,6 +43,8 @@ export function SkyDome() {
     [],
   );
 
+  useEffect(() => () => mat.dispose(), [mat]);
+
   return (
     <mesh scale={260} renderOrder={-1}>
       <sphereGeometry args={[1, 32, 20]} />

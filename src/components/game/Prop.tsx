@@ -77,7 +77,6 @@ function modelAtlasUrl(model: string) {
 const SHADOW_CASTERS = new Set([
   "fountain-round",
   "wall-block",
-  "hedge-large",
   "crate",
   "crate-bottles",
   "barrel",
