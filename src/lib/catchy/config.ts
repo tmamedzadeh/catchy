@@ -10,6 +10,10 @@ export const GAME_CONFIG = {
     speed: 9.2,
     facingRotationSpeed: 18,
     spawn: { x: -4, z: 12 },
+    jump: {
+      height: 1.15,
+      durationSeconds: 0.72,
+    },
     dash: {
       durationSeconds: 0.18,
       distance: 4.2,
@@ -96,8 +100,6 @@ export const GAME_CONFIG = {
     tacticalCompositionOffset: 0,
     modeTransitionSpeed: 10,
     modeTransitionSeconds: 0.36,
-    rightStickModeThreshold: 0.68,
-    rightStickModeReleaseThreshold: 0.24,
     tuningRanges: {
       distance: { min: 14, max: 32, step: 0.5 },
       angle: { min: 10, max: 75, step: 1 },
@@ -105,6 +107,7 @@ export const GAME_CONFIG = {
       compositionOffset: { min: -0.2, max: 0.25, step: 0.01 },
     },
     yawSpeed: 2.25,
+    manualPersistenceSeconds: 0.65,
     turnAnticipationPerRadianPerSecond: 0.045,
     turnAnticipationMaxRadians: 0.16,
   },

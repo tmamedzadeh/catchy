@@ -170,7 +170,6 @@
   --hud-shadow: 0 10px 24px -8px oklch(0.34 0.07 152 / 0.35), 0 2px 0 0 oklch(1 0 0 / 0.5) inset;
   --hud-shadow-soft: 0 8px 20px -10px oklch(0.34 0.07 152 / 0.45);
   --joystick-size: 8.5rem;
-  --action-joystick-size: 5.5rem;
 }
 
 @theme inline {
@@ -230,8 +229,9 @@
   display: none;
 }
 
-.camera-controls {
-  display: none;
+.camera-surface {
+  z-index: 0;
+  pointer-events: auto;
 }
 
 .hud-brand {
@@ -258,14 +258,21 @@
   left: max(1.25rem, calc(env(safe-area-inset-left, 0px) + 1rem));
 }
 
-.camera-controls {
-  right: max(1.25rem, calc(env(safe-area-inset-right, 0px) + 1rem));
-  bottom: max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
-}
-
 .ability-controls {
   right: max(1.25rem, calc(env(safe-area-inset-right, 0px) + 1rem));
   bottom: max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
+  z-index: 2;
+}
+
+.speed-boost-control {
+  right: calc(3.25rem + max(1.25rem, calc(env(safe-area-inset-right, 0px) + 1rem)) + 0.4rem);
+  bottom: calc(3.25rem + max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 1rem)) + 0.7rem);
+  z-index: 2;
+}
+
+.ability-controls .dash-control-button {
+  width: 3.25rem;
+  height: 3.25rem;
 }
 
 .dash-control,
@@ -299,11 +306,6 @@
 
 .boost-control-button:disabled {
   opacity: 0.66;
-}
-
-.touch-stick-camera {
-  width: var(--action-joystick-size);
-  height: var(--action-joystick-size);
 }
 
 .dash-control-button:disabled {
@@ -608,15 +610,12 @@
     display: block;
   }
 
-  .camera-controls {
-    display: block;
+  .ability-controls {
+    right: max(1.25rem, calc(env(safe-area-inset-right, 0px) + 1rem));
   }
 
-  .ability-controls {
-    bottom: calc(
-      var(--action-joystick-size) + max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 1rem)) +
-        0.5rem
-    );
+  .speed-boost-control {
+    right: calc(3.25rem + max(1.25rem, calc(env(safe-area-inset-right, 0px) + 1rem)) + 0.4rem);
   }
 }
 
@@ -669,8 +668,6 @@
 
 @media (max-width: 640px) {
   :root {
-    --joystick-size: 5.5rem;
-    --action-joystick-size: 5.5rem;
     --hud-radius: 1rem;
   }
 
@@ -681,6 +678,12 @@
       calc(100vw - 6.5rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))
     );
     min-height: 4rem;
+  }
+}
+
+@media (pointer: coarse), (max-width: 640px) {
+  :root {
+    --joystick-size: 5.5rem;
   }
 }
 
@@ -704,16 +707,13 @@
     left: max(2rem, calc(env(safe-area-inset-left, 0px) + 1.5rem));
   }
 
-  .camera-controls,
   .ability-controls {
     right: max(2rem, calc(env(safe-area-inset-right, 0px) + 1.5rem));
   }
 
-  .ability-controls {
-    bottom: calc(
-      var(--action-joystick-size) + max(2rem, calc(env(safe-area-inset-bottom, 0px) + 1.5rem)) +
-        0.5rem
-    );
+  .speed-boost-control {
+    right: calc(3.25rem + max(2rem, calc(env(safe-area-inset-right, 0px) + 1.5rem)) + 0.4rem);
+    bottom: calc(3.25rem + max(2rem, calc(env(safe-area-inset-bottom, 0px) + 1.5rem)) + 0.7rem);
   }
 
   .dash-control-button {

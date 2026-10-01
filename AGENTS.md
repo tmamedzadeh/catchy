@@ -17,7 +17,7 @@
 - World layout and tuning live in `src/lib/catchy/config.ts`; reusable camera and HUD tokens live in `src/styles.css`.
 - CC0 Kenney models are under `public/models/<kit>/`; keep each kit's `Textures/` folder because its GLBs reference the atlas relatively.
 - Arena surface textures are deterministic procedural canvas textures in `src/lib/catchy/textures.ts`.
-- Preserve the existing React, React Three Fiber, Three.js, and Zustand architecture. Do not add unapproved V1 mechanics such as Jump, Slide, multiplayer, progression, shops, or new abilities.
+- Preserve the existing React, React Three Fiber, Three.js, and Zustand architecture. Do not add unapproved V1 mechanics such as Slide, multiplayer, progression, shops, or new abilities. Jump is part of the approved V1 controls.
 
 ## Required quality checks
 

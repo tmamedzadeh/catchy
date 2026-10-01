@@ -3,6 +3,7 @@ import {
   PLAYER,
   RUNNERS,
   WORLD_STATE,
+  clearPlayerJump,
   getPlayerBoostState,
   respawn,
   selectTarget,
@@ -13,8 +14,10 @@ import { consumeFixedSteps } from "./fixedStep";
 import {
   cameraModeInput,
   cameraTurnInput,
+  consumeCameraDrag,
   consumePlayerActionCommands,
   inputVector,
+  registerInputResetHandler,
 } from "./input";
 import { useGameStore } from "@/store/gameStore";
 
@@ -27,6 +30,8 @@ const runtime = {
   telemetryAcc: 0,
   lastRestartCount: useGameStore.getState().restartCount,
 };
+
+registerInputResetHandler(clearPlayerJump);
 
 function simulateTick(dt: number) {
   let state = useGameStore.getState();
@@ -41,6 +46,8 @@ function simulateTick(dt: number) {
   state = useGameStore.getState();
   const input = inputVector();
   const commands = consumePlayerActionCommands();
+  const jumpAllowed = state.state === "chase" || state.state === "nearby";
+  if (!jumpAllowed) commands.jump = false;
   const presentation = state.state === "capture" || state.state === "after";
   const roundEnded = state.state === "timeup";
 
@@ -52,6 +59,7 @@ function simulateTick(dt: number) {
     presentation || roundEnded,
     cameraTurnInput(),
     cameraModeInput(),
+    consumeCameraDrag(),
   );
 
   const store = useGameStore.getState();

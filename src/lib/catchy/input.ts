@@ -1,12 +1,11 @@
 // Shared input state sampled by the fixed-step simulation.
-import { GAME_CONFIG } from "./config";
-
 const INPUT_CODES = new Set([
   "KeyW",
   "KeyA",
   "KeyS",
   "KeyD",
   "KeyE",
+  "Space",
   "ArrowUp",
   "ArrowDown",
   "ArrowLeft",
@@ -18,12 +17,14 @@ const keys = new Set<string>();
 const actionQueue = new Uint8Array(32);
 let queueHead = 0;
 let queueTail = 0;
-let rightStickMode: "normal" | "recenter" | "tactical" = "normal";
 
 export const joystick = { x: 0, z: 0, active: false };
-export const cameraJoystick = { x: 0, y: 0, active: false };
+export const cameraDrag = { x: 0, y: 0, active: false };
+const pendingCameraDrag = { x: 0, y: 0 };
 const movement = { x: 0, z: 0 };
-const consumedActions = { dash: false, speedBoost: false };
+const consumedActions = { dash: false, speedBoost: false, jump: false };
+let jumpActionEnabled = true;
+let inputResetHandler: (() => void) | null = null;
 
 export type PlayerActionCommands = typeof consumedActions;
 
@@ -42,6 +43,18 @@ function enqueueAction(action: number) {
   queueTail = next;
 }
 
+function discardQueuedAction(actionToDiscard: number) {
+  const retained: number[] = [];
+  while (queueHead !== queueTail) {
+    const action = actionQueue[queueHead]!;
+    queueHead = (queueHead + 1) % actionQueue.length;
+    if (action !== actionToDiscard) retained.push(action);
+  }
+  queueHead = 0;
+  queueTail = 0;
+  for (const action of retained) enqueueAction(action);
+}
+
 export function requestPlayerDash() {
   enqueueAction(1);
 }
@@ -50,12 +63,35 @@ export function requestPlayerSpeedBoost() {
   enqueueAction(2);
 }
 
+export function requestPlayerJump() {
+  if (!jumpActionEnabled) return;
+  enqueueAction(3);
+}
+
+/** Jump input is enabled only after Play and once the game is ready. */
+export function setPlayerJumpInputEnabled(enabled: boolean) {
+  jumpActionEnabled = enabled;
+  if (!enabled) {
+    discardQueuedAction(3);
+    consumedActions.jump = false;
+  }
+}
+
+/** Let the simulation clear transient player animation state on input loss. */
+export function registerInputResetHandler(handler: () => void) {
+  inputResetHandler = handler;
+  return () => {
+    if (inputResetHandler === handler) inputResetHandler = null;
+  };
+}
+
 /** Apply a physical key transition; exported so held-key behavior is directly testable. */
 export function pressInputKey(code: string, target: EventTarget | null = null) {
   if (!INPUT_CODES.has(code) || isTextControl(target) || keys.has(code)) return false;
   keys.add(code);
   if (code === "ShiftLeft" || code === "ShiftRight") requestPlayerDash();
   else if (code === "KeyE") requestPlayerSpeedBoost();
+  else if (code === "Space") requestPlayerJump();
   return true;
 }
 
@@ -67,32 +103,36 @@ export function releaseInputKey(code: string) {
 export function consumePlayerActionCommands(): PlayerActionCommands {
   consumedActions.dash = false;
   consumedActions.speedBoost = false;
+  consumedActions.jump = false;
   while (queueHead !== queueTail) {
     const command = actionQueue[queueHead]!;
     queueHead = (queueHead + 1) % actionQueue.length;
     if (command === 1) consumedActions.dash = true;
     else if (command === 2) consumedActions.speedBoost = true;
+    else if (command === 3) consumedActions.jump = true;
   }
   return consumedActions;
 }
 
-/** Right-stick vertical position continuously selects a camera mode with hysteresis. */
-export function setCameraJoystick(x: number, y: number, active: boolean) {
-  cameraJoystick.x = x;
-  cameraJoystick.y = y;
-  cameraJoystick.active = active;
+/** Accumulate touch/mouse movement until the next fixed simulation tick. */
+export function addCameraDrag(deltaX: number, deltaY: number) {
+  cameraDrag.active = true;
+  pendingCameraDrag.x += deltaX;
+  pendingCameraDrag.y += deltaY;
+}
 
-  if (!active) {
-    rightStickMode = "normal";
-  } else if (rightStickMode === "recenter") {
-    if (y > -GAME_CONFIG.camera.rightStickModeReleaseThreshold) rightStickMode = "normal";
-  } else if (rightStickMode === "tactical") {
-    if (y < GAME_CONFIG.camera.rightStickModeReleaseThreshold) rightStickMode = "normal";
-  } else if (y <= -GAME_CONFIG.camera.rightStickModeThreshold) {
-    rightStickMode = "recenter";
-  } else if (y >= GAME_CONFIG.camera.rightStickModeThreshold) {
-    rightStickMode = "tactical";
-  }
+export function endCameraDrag() {
+  cameraDrag.active = false;
+  pendingCameraDrag.x = 0;
+  pendingCameraDrag.y = 0;
+}
+
+export function consumeCameraDrag() {
+  cameraDrag.x = pendingCameraDrag.x;
+  cameraDrag.y = pendingCameraDrag.y;
+  pendingCameraDrag.x = 0;
+  pendingCameraDrag.y = 0;
+  return cameraDrag;
 }
 
 export function clearInput() {
@@ -100,12 +140,15 @@ export function clearInput() {
   joystick.x = 0;
   joystick.z = 0;
   joystick.active = false;
-  cameraJoystick.x = 0;
-  cameraJoystick.y = 0;
-  cameraJoystick.active = false;
-  rightStickMode = "normal";
+  endCameraDrag();
+  cameraDrag.x = 0;
+  cameraDrag.y = 0;
   queueHead = 0;
   queueTail = 0;
+  consumedActions.dash = false;
+  consumedActions.speedBoost = false;
+  consumedActions.jump = false;
+  inputResetHandler?.();
 }
 
 /** Install and clean up keyboard/visibility handlers for the lifetime of the game. */
@@ -117,7 +160,7 @@ export function installInputEventListeners(targetWindow?: Window, targetDocument
 
   const onKeyDown = (event: KeyboardEvent) => {
     if (!INPUT_CODES.has(event.code) || isTextControl(event.target)) return;
-    if (event.code.startsWith("Arrow")) event.preventDefault();
+    if (event.code.startsWith("Arrow") || event.code === "Space") event.preventDefault();
     pressInputKey(event.code, event.target);
   };
   const onKeyUp = (event: KeyboardEvent) => releaseInputKey(event.code);
@@ -156,8 +199,8 @@ export function inputVector(): { x: number; z: number } | null {
     movement.z = joystick.z;
     return movement;
   }
-  const x = opposedKeyInput("KeyA", "KeyD");
-  const z = opposedKeyInput("KeyS", "KeyW");
+  const x = opposedKeyInput("KeyD", "KeyA");
+  const z = opposedKeyInput("KeyW", "KeyS");
   if (x === 0 && z === 0) return null;
   const length = Math.hypot(x, z);
   movement.x = x / length;
@@ -165,19 +208,14 @@ export function inputVector(): { x: number; z: number } | null {
   return movement;
 }
 
-/** Positive yaw input rotates right; yaw remains horizontal. */
+/** Desktop camera rotation is intentionally independent from WASD. */
 export function cameraTurnInput() {
-  if (cameraModeInput() !== "normal") return 0;
-  let axis = 0;
-  if (keys.has("ArrowLeft")) axis += 1;
-  if (keys.has("ArrowRight")) axis -= 1;
-  if (cameraJoystick.active) axis += cameraJoystick.x;
-  return Math.max(-1, Math.min(1, axis));
+  return 0;
 }
 
-/** Camera modes are continuous held state; Down/Tactical has priority over Up/Recenter. */
+/** Desktop special camera actions remain held keyboard state. */
 export function cameraModeInput(): "normal" | "recenter" | "tactical" {
-  if (keys.has("ArrowDown") || rightStickMode === "tactical") return "tactical";
-  if (keys.has("ArrowUp") || rightStickMode === "recenter") return "recenter";
+  if (keys.has("ArrowDown")) return "tactical";
+  if (keys.has("ArrowUp")) return "recenter";
   return "normal";
 }

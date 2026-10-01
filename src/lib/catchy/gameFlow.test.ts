@@ -2,7 +2,13 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { AGENTS, PLAYER, RUNNERS, WORLD_STATE, getPlayerBoostState } from "./agents";
 import { GAME_CONFIG } from "./config";
 import { advanceSimulationFrame, resetSimulationRuntime, SIMULATION_FIXED_DT } from "./runtime";
-import { requestPlayerDash, requestPlayerSpeedBoost } from "./input";
+import {
+  clearInput,
+  installInputEventListeners,
+  requestPlayerDash,
+  requestPlayerJump,
+  requestPlayerSpeedBoost,
+} from "./input";
 import { CAM_DEFAULTS, useGameStore } from "@/store/gameStore";
 
 function place(agent: (typeof AGENTS)[number], x: number, z: number) {
@@ -83,6 +89,9 @@ describe("restart and action reset", () => {
   it("clears active Dash, Boost, capture, input, and hidden runner state", () => {
     requestPlayerDash();
     requestPlayerSpeedBoost();
+    requestPlayerJump();
+    stepTicks(1);
+    expect(PLAYER.jumpHeight).toBeGreaterThan(0);
     const runner = RUNNERS[0]!;
     useGameStore.getState().beginCapture({
       runnerId: runner.id,
@@ -101,6 +110,8 @@ describe("restart and action reset", () => {
     expect(game.dashStatus).toBe("ready");
     expect(game.speedBoostStatus).toBe("ready");
     expect(PLAYER.dashState).toBe("ready");
+    expect(PLAYER.jumpElapsed).toBe(0);
+    expect(PLAYER.jumpHeight).toBe(0);
     expect(getPlayerBoostState()).toBe("ready");
     expect(RUNNERS.every((agent) => agent.hidden === 0)).toBe(true);
     expect(useGameStore.getState().restartCount).toBe(restartCount + 1);
@@ -148,6 +159,55 @@ describe("simulation runtime fixed-tick integration", () => {
     expect(getPlayerBoostState()).toBe("active");
     stepTicks(15);
     expect(PLAYER.dashState).toBe("cooldown");
+  });
+
+  it("starts Jump through one fixed simulation tick and clears it on input reset", () => {
+    requestPlayerJump();
+    stepTicks(1);
+    expect(PLAYER.jumpActivationId).toBe(1);
+    expect(PLAYER.jumpHeight).toBeGreaterThan(0);
+    clearInput();
+    expect(PLAYER.jumpElapsed).toBe(0);
+    expect(PLAYER.jumpHeight).toBe(0);
+  });
+
+  it("clears active and queued Jump state when visibility is lost", () => {
+    requestPlayerJump();
+    stepTicks(1);
+    expect(PLAYER.jumpHeight).toBeGreaterThan(0);
+    requestPlayerJump();
+
+    const browserWindow = new EventTarget() as unknown as Window;
+    let hidden = false;
+    const browserDocument = new EventTarget() as unknown as Document;
+    Object.defineProperty(browserDocument, "hidden", { get: () => hidden });
+    const removeListeners = installInputEventListeners(browserWindow, browserDocument);
+    hidden = true;
+    browserDocument.dispatchEvent(new Event("visibilitychange"));
+    expect(PLAYER.jumpElapsed).toBe(0);
+    expect(PLAYER.jumpHeight).toBe(0);
+    removeListeners();
+    stepTicks(2);
+    expect(PLAYER.jumpActivationId).toBe(1);
+  });
+
+  it("discards a buffered Jump during capture presentation and after timeup", () => {
+    place(PLAYER, 0, 0);
+    place(RUNNERS[0]!, 1, 0);
+    place(RUNNERS[1]!, 15, 12);
+    place(RUNNERS[2]!, -15, 12);
+    stepTicks(1);
+    expect(useGameStore.getState().state).toBe("capture");
+    requestPlayerJump();
+    stepTicks(1);
+    expect(useGameStore.getState().state).toBe("capture");
+    expect(PLAYER.jumpActivationId).toBe(0);
+
+    useGameStore.getState().setState("timeup");
+    requestPlayerJump();
+    stepTicks(1);
+    expect(PLAYER.jumpActivationId).toBe(0);
+    expect(PLAYER.jumpHeight).toBe(0);
   });
 
   it("drops stale capture presentation clocks after the round restarts", () => {

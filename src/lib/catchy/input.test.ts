@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
-  cameraJoystick,
   cameraModeInput,
+  cameraDrag,
   cameraTurnInput,
   clearInput,
   consumePlayerActionCommands,
@@ -9,50 +9,57 @@ import {
   installInputEventListeners,
   joystick,
   pressInputKey,
+  requestPlayerJump,
   releaseInputKey,
-  setCameraJoystick,
+  setPlayerJumpInputEnabled,
+  addCameraDrag,
+  consumeCameraDrag,
+  endCameraDrag,
 } from "./input";
 
-beforeEach(() => clearInput());
+beforeEach(() => {
+  setPlayerJumpInputEnabled(true);
+  clearInput();
+});
 
 describe("keyboard movement, camera modes, and action buffer", () => {
-  it("maps A to left and D to right", () => {
+  it("maps A to left and D to right (regression: not inverted)", () => {
     pressInputKey("KeyA");
-    expect(inputVector()!.x).toBe(1);
+    expect(inputVector()!.x).toBe(-1);
     releaseInputKey("KeyA");
 
     pressInputKey("KeyD");
-    expect(inputVector()!.x).toBe(-1);
+    expect(inputVector()!.x).toBe(1);
+    releaseInputKey("KeyD");
   });
 
   it("reads camera-local WASD axes and normalizes diagonals", () => {
     pressInputKey("KeyW");
     pressInputKey("KeyA");
-    expect(inputVector()!.x).toBeCloseTo(Math.SQRT1_2, 8);
-    expect(inputVector()!.z).toBeCloseTo(-Math.SQRT1_2, 8);
+    expect(inputVector()!.x).toBeCloseTo(-Math.SQRT1_2, 8);
+    expect(inputVector()!.z).toBeCloseTo(Math.SQRT1_2, 8);
     releaseInputKey("KeyA");
-    expect(inputVector()).toEqual({ x: 0, z: -1 });
+    expect(inputVector()).toEqual({ x: 0, z: 1 });
   });
 
   it("uses the most recently pressed of opposite movement keys", () => {
     pressInputKey("KeyA");
     pressInputKey("KeyD");
-    expect(inputVector()!.x).toBe(-1);
-    releaseInputKey("KeyD");
     expect(inputVector()!.x).toBe(1);
+    releaseInputKey("KeyD");
+    expect(inputVector()!.x).toBe(-1);
+  });
+
+  it.each(["KeyA", "KeyD", "ArrowLeft", "ArrowRight"])("does not map %s to camera yaw", (code) => {
+    pressInputKey(code);
+    expect(cameraTurnInput()).toBe(0);
+    releaseInputKey(code);
   });
 
   it("uses arrows only for camera control and buffers Dash and Speed Boost", () => {
-    pressInputKey("ArrowLeft");
-    expect(cameraTurnInput()).toBe(1);
-    releaseInputKey("ArrowLeft");
-    pressInputKey("ArrowRight");
-    expect(cameraTurnInput()).toBe(-1);
-    releaseInputKey("ArrowRight");
-
     expect(pressInputKey("ArrowUp")).toBe(true);
     expect(cameraModeInput()).toBe("recenter");
-    expect(consumePlayerActionCommands()).toEqual({ dash: false, speedBoost: false });
+    expect(consumePlayerActionCommands()).toEqual({ dash: false, speedBoost: false, jump: false });
     releaseInputKey("ArrowUp");
     expect(pressInputKey("ArrowDown")).toBe(true);
     expect(cameraModeInput()).toBe("tactical");
@@ -62,29 +69,64 @@ describe("keyboard movement, camera modes, and action buffer", () => {
     expect(pressInputKey("ShiftLeft")).toBe(true);
     expect(pressInputKey("ShiftLeft")).toBe(false);
     expect(pressInputKey("KeyE")).toBe(true);
-    expect(consumePlayerActionCommands()).toEqual({ dash: true, speedBoost: true });
-    expect(consumePlayerActionCommands()).toEqual({ dash: false, speedBoost: false });
+    expect(consumePlayerActionCommands()).toEqual({ dash: true, speedBoost: true, jump: false });
+    expect(consumePlayerActionCommands()).toEqual({ dash: false, speedBoost: false, jump: false });
   });
 
-  it("gives Tactical priority and leaves Space without a gameplay binding", () => {
+  it("gives Tactical priority and buffers Space as a one-shot Jump action", () => {
     pressInputKey("ArrowUp");
     pressInputKey("ArrowDown");
     expect(cameraModeInput()).toBe("tactical");
     expect(cameraTurnInput()).toBe(0);
     releaseInputKey("ArrowDown");
     expect(cameraModeInput()).toBe("recenter");
+    expect(pressInputKey("Space")).toBe(true);
     expect(pressInputKey("Space")).toBe(false);
-    expect(consumePlayerActionCommands()).toEqual({ dash: false, speedBoost: false });
+    expect(inputVector()).toBeNull();
+    expect(consumePlayerActionCommands()).toEqual({ dash: false, speedBoost: false, jump: true });
+    expect(consumePlayerActionCommands()).toEqual({ dash: false, speedBoost: false, jump: false });
+    releaseInputKey("Space");
+    expect(pressInputKey("Space")).toBe(true);
+    expect(consumePlayerActionCommands().jump).toBe(true);
+  });
+
+  it("does not trigger Jump from text controls or while the game is not ready", () => {
+    const originalHTMLElement = globalThis.HTMLElement;
+    class TextControl extends EventTarget {
+      closest() {
+        return this;
+      }
+    }
+    Object.defineProperty(globalThis, "HTMLElement", {
+      configurable: true,
+      value: TextControl,
+    });
+    try {
+      expect(pressInputKey("Space", new TextControl())).toBe(false);
+      expect(consumePlayerActionCommands().jump).toBe(false);
+    } finally {
+      Object.defineProperty(globalThis, "HTMLElement", {
+        configurable: true,
+        value: originalHTMLElement,
+      });
+    }
+
+    setPlayerJumpInputEnabled(false);
+    requestPlayerJump();
+    expect(consumePlayerActionCommands().jump).toBe(false);
+    setPlayerJumpInputEnabled(true);
   });
 
   it("clears held keys and queued actions on recovery", () => {
     expect(pressInputKey("KeyQ")).toBe(false);
     pressInputKey("KeyW");
     pressInputKey("ShiftRight");
+    pressInputKey("Space");
+    expect(consumePlayerActionCommands().jump).toBe(true);
     clearInput();
     expect(inputVector()).toBeNull();
     expect(cameraModeInput()).toBe("normal");
-    expect(consumePlayerActionCommands()).toEqual({ dash: false, speedBoost: false });
+    expect(consumePlayerActionCommands()).toEqual({ dash: false, speedBoost: false, jump: false });
   });
 });
 
@@ -102,31 +144,32 @@ describe("touch joystick input", () => {
     expect(inputVector()).toBeNull();
   });
 
-  it("uses right-stick horizontal movement for yaw and vertical thresholds for held modes", () => {
-    setCameraJoystick(-0.5, 0, true);
-    expect(cameraTurnInput()).toBe(-0.5);
-    setCameraJoystick(0, -0.69, true);
-    expect(cameraModeInput()).toBe("recenter");
+  it("accumulates camera drag independently from movement input", () => {
+    addCameraDrag(-12, 5);
+    expect(consumeCameraDrag()).toMatchObject({ x: -12, y: 5, active: true });
+    expect(consumeCameraDrag()).toMatchObject({ x: 0, y: 0 });
+    endCameraDrag();
+    expect(cameraDrag.active).toBe(false);
+  });
+
+  it("does not expose a second joystick control", () => {
     expect(cameraTurnInput()).toBe(0);
-    setCameraJoystick(0.3, -0.5, true);
-    expect(cameraModeInput()).toBe("recenter");
-    setCameraJoystick(0.3, -0.2, true);
     expect(cameraModeInput()).toBe("normal");
-    expect(cameraTurnInput()).toBe(0.3);
-    setCameraJoystick(0, 0.7, true);
-    expect(cameraModeInput()).toBe("tactical");
-    setCameraJoystick(0, 0.2, true);
+    expect(cameraTurnInput()).toBe(0);
     expect(cameraModeInput()).toBe("normal");
-    expect(consumePlayerActionCommands()).toEqual({ dash: false, speedBoost: false });
+    expect(consumePlayerActionCommands()).toEqual({ dash: false, speedBoost: false, jump: false });
   });
 
   it("keeps small vertical stick movement neutral and clears all camera state on release", () => {
-    setCameraJoystick(0.2, 0.1, true);
-    expect(cameraModeInput()).toBe("normal");
-    expect(cameraTurnInput()).toBe(0.2);
-    setCameraJoystick(0, 0, false);
-    expect(cameraJoystick).toEqual({ x: 0, y: 0, active: false });
-    expect(cameraModeInput()).toBe("normal");
+    addCameraDrag(8, 2);
+    expect(cameraTurnInput()).toBe(0);
+    clearInput();
+    expect(cameraDrag).toMatchObject({ x: 0, y: 0, active: false });
+  });
+
+  it("keeps camera rotation independent from movement and arrow keys", () => {
+    pressInputKey("KeyD");
+    pressInputKey("ArrowRight");
     expect(cameraTurnInput()).toBe(0);
   });
 });
@@ -146,15 +189,26 @@ describe("browser keyboard event lifecycle", () => {
 
     const movementKey = key("keydown", "KeyW");
     browserWindow.dispatchEvent(movementKey);
-    expect(inputVector()).toEqual({ x: 0, z: -1 });
+    expect(inputVector()).toEqual({ x: 0, z: 1 });
     const cameraKey = key("keydown", "ArrowLeft");
     browserWindow.dispatchEvent(cameraKey);
     expect(cameraKey.defaultPrevented).toBe(true);
-    expect(cameraTurnInput()).toBe(1);
+    expect(cameraTurnInput()).toBe(0);
+
+    const jumpKey = key("keydown", "Space");
+    browserWindow.dispatchEvent(jumpKey);
+    expect(jumpKey.defaultPrevented).toBe(true);
+    expect(consumePlayerActionCommands().jump).toBe(true);
+    browserWindow.dispatchEvent(key("keydown", "Space"));
+    expect(consumePlayerActionCommands().jump).toBe(false);
+    browserWindow.dispatchEvent(key("keyup", "Space"));
+    browserWindow.dispatchEvent(key("keydown", "Space"));
+    expect(consumePlayerActionCommands().jump).toBe(true);
 
     browserWindow.dispatchEvent(new Event("blur"));
     expect(inputVector()).toBeNull();
     expect(cameraTurnInput()).toBe(0);
+    expect(consumePlayerActionCommands().jump).toBe(false);
     browserWindow.dispatchEvent(key("keydown", "KeyD"));
     hidden = true;
     browserDocument.dispatchEvent(new Event("visibilitychange"));

@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { useProgress } from "@react-three/drei";
 import { HUD } from "@/components/hud/HUD";
 import { GameFeedback, unlockGameAudio } from "@/lib/catchy/feedback";
-import { installInputEventListeners } from "@/lib/catchy/input";
+import { installInputEventListeners, setPlayerJumpInputEnabled } from "@/lib/catchy/input";
 import {
   beginPlaySession,
   isIOSPlatform,
@@ -44,7 +44,15 @@ function Game() {
   const [showInstallHelp, setShowInstallHelp] = useState(false);
   const markReady = useCallback(() => setGameReady(true), []);
 
-  useEffect(() => installInputEventListeners(), []);
+  useLayoutEffect(() => {
+    setPlayerJumpInputEnabled(started && gameReady);
+    return () => setPlayerJumpInputEnabled(false);
+  }, [started, gameReady]);
+
+  useEffect(() => {
+    if (!started) return;
+    return installInputEventListeners();
+  }, [started]);
 
   const play = useCallback(() => {
     void unlockGameAudio();

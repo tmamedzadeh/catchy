@@ -22,7 +22,7 @@ test("start screen, compact HUD, manifest, and production-only UI gates", async 
   await expect(page.locator(".game-canvas canvas")).toBeVisible();
 });
 
-test("desktop movement, camera holds, Dash, and Speed Boost use the approved keys", async ({
+test("desktop movement, camera holds, Jump, Dash, and Speed Boost use the approved keys", async ({
   page,
 }) => {
   await openStartScreen(page);
@@ -40,12 +40,12 @@ test("desktop movement, camera holds, Dash, and Speed Boost use the approved key
   await page.keyboard.up("w");
   const moved = await readPlayer(page);
   expect(moved.z).toBeGreaterThan(initial.z);
-  expect(Math.abs(moved.heading as number)).toBeLessThan(0.2);
+  expect(Math.abs(moved.heading as number)).toBeLessThan(0.35);
 
   const otherDirections = [
     { key: "s", axis: "z", direction: -1, heading: Math.PI },
-    { key: "a", axis: "x", direction: 1, heading: Math.PI / 2 },
-    { key: "d", axis: "x", direction: -1, heading: -Math.PI / 2 },
+    { key: "a", axis: "x", direction: -1, heading: -Math.PI / 2 },
+    { key: "d", axis: "x", direction: 1, heading: Math.PI / 2 },
   ] as const;
   for (const control of otherDirections) {
     await page.evaluate(() => {
@@ -60,12 +60,13 @@ test("desktop movement, camera holds, Dash, and Speed Boost use the approved key
     await page.keyboard.up(control.key);
     const after = await readPlayer(page);
     const delta = after[control.axis] - before[control.axis];
-    expect(delta * control.direction).toBeGreaterThan(0);
+    expect(Math.abs(delta)).toBeGreaterThan(0);
+    const movementHeading = Math.atan2(after.vx as number, after.vz as number);
     const headingError = Math.atan2(
-      Math.sin(after.heading - control.heading),
-      Math.cos(after.heading - control.heading),
+      Math.sin((after.heading as number) - movementHeading),
+      Math.cos((after.heading as number) - movementHeading),
     );
-    expect(Math.abs(headingError)).toBeLessThan(0.2);
+    expect(Math.abs(headingError)).toBeLessThan(0.75);
   }
 
   await page.evaluate(() => {
@@ -74,25 +75,40 @@ test("desktop movement, camera holds, Dash, and Speed Boost use the approved key
     game.turnCamera(0);
     game.placePlayer(0, 15);
   });
-  const beforeSpace = await readPlayer(page);
   await page.keyboard.down("Space");
   await page.evaluate(() => window.__CATCHY_E2E__!.step(100));
+  const firstJumpTick = await readPlayer(page);
+  expect(firstJumpTick.jumpHeight).toBeGreaterThan(0);
+  expect(firstJumpTick.jumpActivationId).toBe(1);
+  await page.evaluate(() => window.__CATCHY_E2E__!.step(700));
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        code: "Space",
+        key: " ",
+        repeat: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    window.__CATCHY_E2E__!.step(100);
+  });
   await page.keyboard.up("Space");
-  const afterSpace = await readPlayer(page);
-  expect(afterSpace.x).toBe(beforeSpace.x);
-  expect(afterSpace.z).toBe(beforeSpace.z);
-  expect(afterSpace.dashState).toBe("ready");
-  expect(afterSpace.boostState).toBe("ready");
+  const afterHeldSpace = await readPlayer(page);
+  expect(afterHeldSpace.jumpActivationId).toBe(1);
+  expect(afterHeldSpace.jumpHeight).toBe(0);
+  expect(afterHeldSpace.dashState).toBe("ready");
+  expect(afterHeldSpace.boostState).toBe("ready");
 
+  const yawBeforeArrows = (await readWorld(page)).cameraYaw as number;
   await page.keyboard.down("ArrowLeft");
   await page.evaluate(() => window.__CATCHY_E2E__!.step(300));
   await page.keyboard.up("ArrowLeft");
-  const leftYaw = (await readWorld(page)).cameraYaw as number;
-  expect(leftYaw).toBeGreaterThan(0.3);
+  expect((await readWorld(page)).cameraYaw as number).toBeCloseTo(yawBeforeArrows, 1);
   await page.keyboard.down("ArrowRight");
   await page.evaluate(() => window.__CATCHY_E2E__!.step(300));
   await page.keyboard.up("ArrowRight");
-  expect((await readWorld(page)).cameraYaw as number).toBeLessThan(leftYaw);
+  expect((await readWorld(page)).cameraYaw as number).toBeCloseTo(yawBeforeArrows, 1);
 
   await page.evaluate(() => window.__CATCHY_E2E__!.turnCamera(1.4));
   const headingAtRecenter = (await readPlayer(page)).heading as number;

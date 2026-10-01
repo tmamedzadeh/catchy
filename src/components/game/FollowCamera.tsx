@@ -56,7 +56,7 @@ export function FollowCamera() {
     currentCompositionOffset.current +=
       (targetComposition - currentCompositionOffset.current) * blend;
     const distance = currentDistance.current;
-    const angle = (currentAngle.current * Math.PI) / 180;
+    const angle = ((currentAngle.current + WORLD_STATE.cameraPitch) * Math.PI) / 180;
     const alpha = WORLD_STATE.renderAlpha;
     const playerX = PLAYER.previousX + (PLAYER.x - PLAYER.previousX) * alpha;
     const playerZ = PLAYER.previousZ + (PLAYER.z - PLAYER.previousZ) * alpha;

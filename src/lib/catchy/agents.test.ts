@@ -9,6 +9,7 @@ import {
   applyBoostEffect,
   advanceBarrier,
   cancelPlayerActions,
+  clearPlayerJump,
   effectiveSpeedMultiplier,
   findSafeSpawn,
   getPlayerBoostState,
@@ -32,7 +33,7 @@ import {
 import { GAME_CONFIG, INTERACTIVE_OBJECTS, OBSTACLES, type Obstacle } from "./config";
 
 const DT = 1 / GAME_CONFIG.simulation.tickHz;
-const noCommands = { dash: false, speedBoost: false };
+const noCommands = { dash: false, speedBoost: false, jump: false };
 
 function obstacle(type: "box" | "circle", x = 0, z = 0, rotation = 0): Obstacle {
   return {
@@ -154,6 +155,65 @@ describe("collision resolution", () => {
     resolveObstacle(PLAYER, circle);
     expect(overlapsObstacle(PLAYER.x, PLAYER.z, PLAYER.radius, circle)).toBe(false);
     expect(effectiveSpeedMultiplier(PLAYER)).toBe(GAME_CONFIG.slowZone.movementMultiplier);
+  });
+});
+
+describe("player jump simulation", () => {
+  it("starts immediately, follows the configured arc, and returns to grounded state", () => {
+    step(DT, null, { ...noCommands, jump: true }, false);
+    expect(PLAYER.jumpActivationId).toBe(1);
+    expect(PLAYER.jumpElapsed).toBeGreaterThan(0);
+    expect(PLAYER.jumpHeight).toBeGreaterThan(0);
+
+    for (let tick = 1; tick < Math.floor(GAME_CONFIG.player.jump.durationSeconds / DT); tick++) {
+      step(DT, null, noCommands, false);
+    }
+    expect(PLAYER.jumpElapsed).toBeGreaterThan(0);
+    expect(PLAYER.jumpHeight).toBeGreaterThan(0);
+    step(DT, null, noCommands, false);
+    expect(PLAYER.jumpElapsed).toBe(0);
+    expect(PLAYER.jumpHeight).toBe(0);
+    expect(PLAYER.previousJumpHeight).toBe(0);
+  });
+
+  it("keeps horizontal movement and facing on the existing movement path", () => {
+    put(PLAYER, 0, 0);
+    WORLD_STATE.cameraYaw = 0;
+    const beforeZ = PLAYER.z;
+    const beforeHeading = PLAYER.heading;
+    step(DT, { x: 0, z: 1 }, { ...noCommands, jump: true }, false);
+    expect(PLAYER.z).toBeGreaterThan(beforeZ);
+    expect(PLAYER.vz).toBeGreaterThan(0);
+    expect(Math.abs(PLAYER.heading)).toBeLessThan(Math.abs(beforeHeading));
+    expect(PLAYER.jumpHeight).toBeGreaterThan(0);
+  });
+
+  it("does not replace or alter Dash and Speed Boost actions", () => {
+    step(DT, null, { dash: true, speedBoost: true, jump: true }, false);
+    expect(PLAYER.dashState).toBe("active");
+    expect(PLAYER.playerBoostActiveRemaining).toBeGreaterThan(0);
+    expect(PLAYER.jumpHeight).toBeGreaterThan(0);
+  });
+
+  it("does not start while the player is frozen for capture or round end", () => {
+    step(DT, null, { ...noCommands, jump: true }, true);
+    expect(PLAYER.jumpElapsed).toBe(0);
+    expect(PLAYER.jumpHeight).toBe(0);
+    step(DT, null, { ...noCommands, jump: true }, true, true);
+    expect(PLAYER.jumpElapsed).toBe(0);
+  });
+
+  it("reset and input recovery clear an active jump", () => {
+    step(DT, null, { ...noCommands, jump: true }, false);
+    expect(PLAYER.jumpHeight).toBeGreaterThan(0);
+    clearPlayerJump();
+    expect(PLAYER.jumpElapsed).toBe(0);
+    expect(PLAYER.jumpHeight).toBe(0);
+    step(DT, null, { ...noCommands, jump: true }, false);
+    resetSimulation();
+    expect(PLAYER.jumpElapsed).toBe(0);
+    expect(PLAYER.jumpHeight).toBe(0);
+    expect(PLAYER.previousJumpHeight).toBe(0);
   });
 });
 
@@ -629,20 +689,20 @@ describe("Elastic Bounce", () => {
 
 describe("camera-relative movement and reset", () => {
   it.each([
-    { name: "W at zero yaw", yaw: 0, input: { x: 0, z: -1 }, world: { x: 0, z: 1 } },
-    { name: "S at zero yaw", yaw: 0, input: { x: 0, z: 1 }, world: { x: 0, z: -1 } },
-    { name: "A at zero yaw", yaw: 0, input: { x: 1, z: 0 }, world: { x: 1, z: 0 } },
-    { name: "D at zero yaw", yaw: 0, input: { x: -1, z: 0 }, world: { x: -1, z: 0 } },
+    { name: "W at zero yaw", yaw: 0, input: { x: 0, z: 1 }, world: { x: 0, z: 1 } },
+    { name: "S at zero yaw", yaw: 0, input: { x: 0, z: -1 }, world: { x: 0, z: -1 } },
+    { name: "A at zero yaw", yaw: 0, input: { x: -1, z: 0 }, world: { x: -1, z: 0 } },
+    { name: "D at zero yaw", yaw: 0, input: { x: 1, z: 0 }, world: { x: 1, z: 0 } },
     {
       name: "W at 90 degree yaw",
       yaw: Math.PI / 2,
-      input: { x: 0, z: -1 },
+      input: { x: 0, z: 1 },
       world: { x: 1, z: 0 },
     },
     {
       name: "arbitrary yaw",
       yaw: 0.37,
-      input: { x: 0.4, z: -0.9 },
+      input: { x: 0.4, z: 0.9 },
       world: {
         x: 0.4 * Math.cos(0.37) + 0.9 * Math.sin(0.37),
         z: -0.4 * Math.sin(0.37) + 0.9 * Math.cos(0.37),
@@ -656,15 +716,15 @@ describe("camera-relative movement and reset", () => {
   });
 
   it("rotates W, S, A and D at right-angle and arbitrary camera yaw", () => {
-    const wAt90 = { ...resolveCameraRelativeInput({ x: 0, z: -1 }, Math.PI / 2)! };
-    const sAt90 = { ...resolveCameraRelativeInput({ x: 0, z: 1 }, Math.PI / 2)! };
-    const aAt90 = { ...resolveCameraRelativeInput({ x: 1, z: 0 }, Math.PI / 2)! };
-    const dAt90 = { ...resolveCameraRelativeInput({ x: -1, z: 0 }, Math.PI / 2)! };
+    const wAt90 = { ...resolveCameraRelativeInput({ x: 0, z: 1 }, Math.PI / 2)! };
+    const sAt90 = { ...resolveCameraRelativeInput({ x: 0, z: -1 }, Math.PI / 2)! };
+    const aAt90 = { ...resolveCameraRelativeInput({ x: -1, z: 0 }, Math.PI / 2)! };
+    const dAt90 = { ...resolveCameraRelativeInput({ x: 1, z: 0 }, Math.PI / 2)! };
     expect(wAt90.x).toBeCloseTo(1, 8);
     expect(sAt90.x).toBeCloseTo(-1, 8);
-    expect(aAt90.z).toBeCloseTo(-1, 8);
-    expect(dAt90.z).toBeCloseTo(1, 8);
-    const arbitrary = resolveCameraRelativeInput({ x: 0, z: -1 }, 0.37)!;
+    expect(aAt90.z).toBeCloseTo(1, 8);
+    expect(dAt90.z).toBeCloseTo(-1, 8);
+    const arbitrary = resolveCameraRelativeInput({ x: 0, z: 1 }, 0.37)!;
     expect(Math.hypot(arbitrary.x, arbitrary.z)).toBeCloseTo(1, 8);
     expect(resolveCameraRelativeInput(null)).toBeNull();
   });

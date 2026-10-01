@@ -47,6 +47,11 @@ export type Agent = {
   dashStartX: number;
   dashStartZ: number;
   dashCameraRemaining: number;
+  /** Fixed-step arcade jump; it changes only the rendered height, never XZ collision. */
+  jumpElapsed: number;
+  jumpHeight: number;
+  previousJumpHeight: number;
+  jumpActivationId: number;
   /** Shared movement effect, regardless of whether the player or a pad granted it. */
   boostEffectRemaining: number;
   /** Player button state has its own timer, independent from pad grants. */
@@ -118,6 +123,10 @@ function makeAgent(index: number): Agent {
     dashStartX: initial.x,
     dashStartZ: initial.z,
     dashCameraRemaining: 0,
+    jumpElapsed: 0,
+    jumpHeight: 0,
+    previousJumpHeight: 0,
+    jumpActivationId: 0,
     boostEffectRemaining: 0,
     playerBoostActiveRemaining: 0,
     playerBoostCooldownRemaining: 0,
@@ -146,6 +155,9 @@ const TEMPORARY_BARRIER = INTERACTIVE_OBJECTS.find((item) => item.kind === "temp
 export const WORLD_STATE = {
   cameraYaw: PLAYER.heading,
   previousCameraYaw: PLAYER.heading,
+  cameraPitch: 0,
+  /** Keeps a manually selected orbit angle briefly before heading follow resumes. */
+  cameraManualRemaining: 0,
   barrierClosed: false,
   barrierRemaining: GAME_CONFIG.barrier.openSeconds,
   speedPadPulseRemaining: 0,
@@ -189,6 +201,37 @@ export function canActivatePlayerBoost() {
   return getPlayerBoostState() === "ready" && PLAYER.boostEffectRemaining <= 0;
 }
 
+export function clearPlayerJump() {
+  PLAYER.jumpElapsed = 0;
+  PLAYER.jumpHeight = 0;
+  PLAYER.previousJumpHeight = 0;
+}
+
+/** Start one buffered jump if the player is grounded. */
+export function startPlayerJump() {
+  if (PLAYER.jumpElapsed > 0) return false;
+  PLAYER.jumpElapsed = Number.EPSILON;
+  PLAYER.jumpHeight = 0;
+  PLAYER.previousJumpHeight = 0;
+  PLAYER.jumpActivationId++;
+  return true;
+}
+
+function advancePlayerJump(dt: number) {
+  if (PLAYER.jumpElapsed <= 0) {
+    PLAYER.jumpHeight = 0;
+    return;
+  }
+  const jump = GAME_CONFIG.player.jump;
+  PLAYER.jumpElapsed = Math.min(jump.durationSeconds, PLAYER.jumpElapsed + dt);
+  if (PLAYER.jumpElapsed >= jump.durationSeconds) {
+    clearPlayerJump();
+    return;
+  }
+  const progress = PLAYER.jumpElapsed / jump.durationSeconds;
+  PLAYER.jumpHeight = jump.height * Math.sin(Math.PI * progress);
+}
+
 /** Apply the common 5-second movement effect without changing ability cooldowns. */
 export function applyBoostEffect(agent: Agent) {
   if (agent.boostEffectRemaining > 0) return false;
@@ -206,6 +249,7 @@ export function activatePlayerBoost() {
 }
 
 export function cancelPlayerActions(resetCooldown = false) {
+  clearPlayerJump();
   if (PLAYER.dashState === "active") cancelPlayerDash();
   if (resetCooldown) {
     resetPlayerDash();
@@ -486,6 +530,8 @@ export function resetSimulation() {
   WORLD_STATE.bounceNormalZ = 1;
   WORLD_STATE.cameraYaw = PLAYER.heading;
   WORLD_STATE.previousCameraYaw = PLAYER.heading;
+  WORLD_STATE.cameraPitch = 0;
+  WORLD_STATE.cameraManualRemaining = 0;
   WORLD_STATE.renderAlpha = 0;
   if (barrierWasClosed) rebuildNavigationGraph();
   for (const agent of AGENTS) agent.hidden = 1;
@@ -524,6 +570,10 @@ export function resetSimulation() {
     agent.dashStartX = spawn.x;
     agent.dashStartZ = spawn.z;
     agent.dashCameraRemaining = 0;
+    agent.jumpElapsed = 0;
+    agent.jumpHeight = 0;
+    agent.previousJumpHeight = 0;
+    agent.jumpActivationId = 0;
     agent.boostEffectRemaining = 0;
     agent.playerBoostActiveRemaining = 0;
     agent.playerBoostCooldownRemaining = 0;
@@ -538,6 +588,8 @@ export function resetSimulation() {
   }
   WORLD_STATE.cameraYaw = PLAYER.heading;
   WORLD_STATE.previousCameraYaw = PLAYER.heading;
+  WORLD_STATE.cameraPitch = 0;
+  WORLD_STATE.cameraManualRemaining = 0;
 }
 
 const selectedTarget = { agent: PLAYER, dist: Infinity };
@@ -1091,8 +1143,11 @@ export function resolveCameraRelativeInput(
   const forwardZ = Math.cos(cameraYaw);
   const rightX = Math.cos(cameraYaw);
   const rightZ = -Math.sin(cameraYaw);
-  playerWorldInput.x = -forwardX * input.z + rightX * input.x;
-  playerWorldInput.z = -forwardZ * input.z + rightZ * input.x;
+  // The semantic input vector is (left/right, backward/forward). Resolve both
+  // axes against the same camera basis so movement and facing never depend on
+  // keyboard-specific world-space signs.
+  playerWorldInput.x = forwardX * input.z + rightX * input.x;
+  playerWorldInput.z = forwardZ * input.z + rightZ * input.x;
   return playerWorldInput;
 }
 
@@ -1148,18 +1203,21 @@ function separateRunners() {
 export function step(
   dt: number,
   input: { x: number; z: number } | null,
-  commands: { dash: boolean; speedBoost: boolean },
+  commands: { dash: boolean; speedBoost: boolean; jump?: boolean },
   freezePlayer: boolean,
   freezeWorld = false,
   cameraTurnAxis = 0,
   cameraMode: "normal" | "recenter" | "tactical" = "normal",
+  cameraDrag = { x: 0, y: 0 },
 ) {
   for (const agent of AGENTS) {
     agent.previousX = agent.x;
     agent.previousZ = agent.z;
     agent.previousHeading = agent.heading;
   }
+  PLAYER.previousJumpHeight = PLAYER.jumpHeight;
   WORLD_STATE.previousCameraYaw = WORLD_STATE.cameraYaw;
+  WORLD_STATE.cameraManualRemaining = Math.max(0, WORLD_STATE.cameraManualRemaining - dt);
   if (cameraMode === "recenter") {
     const difference = Math.atan2(
       Math.sin(PLAYER.heading - WORLD_STATE.cameraYaw),
@@ -1168,6 +1226,24 @@ export function step(
     WORLD_STATE.cameraYaw += difference * (1 - Math.exp(-GAME_CONFIG.camera.recenterSpeed * dt));
   } else if (cameraMode === "normal") {
     WORLD_STATE.cameraYaw += cameraTurnAxis * GAME_CONFIG.camera.yawSpeed * dt;
+    WORLD_STATE.cameraYaw += cameraDrag.x * 0.012;
+    WORLD_STATE.cameraPitch = Math.max(
+      -10,
+      Math.min(10, WORLD_STATE.cameraPitch - cameraDrag.y * 0.08),
+    );
+    if (cameraDrag.x !== 0 || cameraDrag.y !== 0) {
+      // Manual orbit owns the camera while dragging and for a short release
+      // grace period, preventing an immediate snap behind a turning player.
+      WORLD_STATE.cameraManualRemaining = GAME_CONFIG.camera.manualPersistenceSeconds;
+    } else if (WORLD_STATE.cameraManualRemaining <= 0) {
+      const followDifference = Math.atan2(
+        Math.sin(PLAYER.heading - WORLD_STATE.cameraYaw),
+        Math.cos(PLAYER.heading - WORLD_STATE.cameraYaw),
+      );
+      const followRate = Math.min(10, 2.2 + Math.abs(followDifference) * 3.4);
+      WORLD_STATE.cameraYaw += followDifference * (1 - Math.exp(-followRate * dt));
+      WORLD_STATE.cameraPitch *= Math.exp(-2.8 * dt);
+    }
   }
   WORLD_STATE.cameraYaw = Math.atan2(
     Math.sin(WORLD_STATE.cameraYaw),
@@ -1176,6 +1252,7 @@ export function step(
   advancePlayerDashTimers(dt);
 
   if (freezeWorld) {
+    clearPlayerJump();
     if (PLAYER.dashState === "active") cancelPlayerDash();
     for (const agent of AGENTS) advanceAgentActionTimers(agent, dt);
     for (const agent of AGENTS) {
@@ -1188,8 +1265,11 @@ export function step(
 
   advanceBarrier(dt);
   const worldInput = resolveCameraRelativeInput(input);
+  if (freezePlayer) clearPlayerJump();
   if (!freezePlayer) {
     if (commands.speedBoost) activatePlayerBoost();
+    if (commands.jump) startPlayerJump();
+    advancePlayerJump(dt);
     if (commands.dash) {
       startPlayerDash(
         worldInput ?? {

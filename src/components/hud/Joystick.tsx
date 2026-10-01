@@ -1,61 +1,46 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { joystick, setCameraJoystick } from "@/lib/catchy/input";
+import { joystick } from "@/lib/catchy/input";
+import { calculateJoystickVector, measureJoystickGeometry } from "@/lib/catchy/joystick";
 
-export function Joystick({ side = "movement" }: { side?: "movement" | "camera" }) {
+export function Joystick() {
   const base = useRef<HTMLDivElement>(null);
-  const layout = useRef<{ centerX: number; centerY: number; max: number } | null>(null);
+  const knobElement = useRef<HTMLDivElement>(null);
   const [knob, setKnob] = useState({ x: 0, y: 0 });
   const pointer = useRef<number | null>(null);
-  const isCameraStick = side === "camera";
 
-  const update = (clientX: number, clientY: number) => {
-    const el = base.current;
-    if (!el) return;
-    let bounds = layout.current;
-    if (!bounds) {
-      const rect = el.getBoundingClientRect();
-      bounds = {
-        centerX: rect.left + rect.width / 2,
-        centerY: rect.top + rect.height / 2,
-        max: rect.width * 0.34,
-      };
-      layout.current = bounds;
-    }
-    let dx = clientX - bounds.centerX;
-    let dy = clientY - bounds.centerY;
-    const d = Math.hypot(dx, dy);
-    if (d > bounds.max) {
-      dx = (dx / d) * bounds.max;
-      dy = (dy / d) * bounds.max;
-    }
-    setKnob({ x: dx, y: dy });
-    const n = Math.max(Math.hypot(dx, dy), 0.001);
-    const mag = Math.min(d / bounds.max, 1);
-    const x = (dx / n) * mag * (d > 0 ? 1 : 0);
-    const y = (dy / n) * mag * (d > 0 ? 1 : 0);
-    if (isCameraStick) setCameraJoystick(x, y, true);
-    else {
-      joystick.x = x;
-      joystick.z = y;
-      joystick.active = true;
-    }
+  const readGeometry = () => {
+    const baseElement = base.current;
+    const knob = knobElement.current;
+    if (!baseElement || !knob) return null;
+    const rect = baseElement.getBoundingClientRect();
+    const knobRect = knob.getBoundingClientRect();
+    return measureJoystickGeometry(
+      rect,
+      baseElement.clientWidth,
+      baseElement.clientHeight,
+      knobRect.width,
+      knobRect.height,
+    );
   };
 
-  const release = useCallback(
-    (pointerId?: number) => {
-      if (pointerId !== undefined && pointer.current !== pointerId) return;
-      pointer.current = null;
-      layout.current = null;
-      setKnob({ x: 0, y: 0 });
-      if (isCameraStick) setCameraJoystick(0, 0, false);
-      else {
-        joystick.x = 0;
-        joystick.z = 0;
-        joystick.active = false;
-      }
-    },
-    [isCameraStick],
-  );
+  const update = (clientX: number, clientY: number) => {
+    const geometry = readGeometry();
+    if (!geometry) return;
+    const vector = calculateJoystickVector(clientX, clientY, geometry);
+    setKnob({ x: vector.knobX, y: vector.knobY });
+    joystick.x = vector.x;
+    joystick.z = -vector.y;
+    joystick.active = true;
+  };
+
+  const release = useCallback((pointerId?: number) => {
+    if (pointerId !== undefined && pointer.current !== pointerId) return;
+    pointer.current = null;
+    setKnob({ x: 0, y: 0 });
+    joystick.x = 0;
+    joystick.z = 0;
+    joystick.active = false;
+  }, []);
 
   useEffect(() => {
     const clear = () => release();
@@ -70,29 +55,31 @@ export function Joystick({ side = "movement" }: { side?: "movement" | "camera" }
   return (
     <div
       ref={base}
-      onPointerDown={(e) => {
-        if (pointer.current !== null || e.button !== 0) return;
-        if (e.pointerType !== "mouse") e.preventDefault();
-        pointer.current = e.pointerId;
+      onPointerDown={(event) => {
+        if (pointer.current !== null || event.button !== 0) return;
+        if (event.pointerType !== "mouse") event.preventDefault();
+        const geometry = readGeometry();
+        if (!geometry) return;
+        pointer.current = event.pointerId;
         try {
-          e.currentTarget.setPointerCapture(e.pointerId);
+          event.currentTarget.setPointerCapture(event.pointerId);
         } catch {
-          release(e.pointerId);
+          release(event.pointerId);
           return;
         }
-        update(e.clientX, e.clientY);
+        update(event.clientX, event.clientY);
       }}
-      onPointerMove={(e) => {
-        if (pointer.current === e.pointerId) update(e.clientX, e.clientY);
+      onPointerMove={(event) => {
+        if (pointer.current !== event.pointerId) return;
+        update(event.clientX, event.clientY);
       }}
-      onPointerUp={(e) => {
-        release(e.pointerId);
-      }}
-      onPointerCancel={(e) => release(e.pointerId)}
-      onLostPointerCapture={(e) => release(e.pointerId)}
+      onPointerUp={(event) => release(event.pointerId)}
+      onPointerCancel={(event) => release(event.pointerId)}
+      onLostPointerCapture={(event) => release(event.pointerId)}
       role="group"
-      aria-label={isCameraStick ? "Camera joystick" : "Movement joystick"}
-      className={`pointer-events-auto relative touch-stick size-[var(--joystick-size)] touch-none rounded-full select-none ${isCameraStick ? "touch-stick-camera" : "touch-stick-movement"}`}
+      aria-label="Movement joystick"
+      aria-description="Drag controls player movement; center is neutral"
+      className="pointer-events-auto relative touch-stick touch-stick-movement size-[var(--joystick-size)] touch-none rounded-full select-none"
       style={{
         background:
           "radial-gradient(circle at 50% 42%, oklch(1 0 0 / 0.42), oklch(1 0 0 / 0.14) 62%, oklch(1 0 0 / 0.06))",
@@ -101,14 +88,22 @@ export function Joystick({ side = "movement" }: { side?: "movement" | "camera" }
         backdropFilter: "blur(6px)",
       }}
     >
-      <div className="absolute inset-[18%] rounded-full border border-white/35" />
+      <div className="absolute inset-[18%] z-0 rounded-full border border-white/35" />
+      <div className="pointer-events-none absolute inset-[18%] z-0 rounded-full border-white/35" />
+      <div />
+      className="pointer-events-none absolute top-1/2 left-1/2 z-10 grid size-[34%] -translate-x-1/2
+      -translate-y-1/2 place-items-center rounded-full border border-white/75"
       <div
-        className="absolute top-1/2 left-1/2 size-[42%] -translate-x-1/2 -translate-y-1/2 rounded-full transition-transform duration-75"
+        ref={knobElement}
+        data-testid="joystick-knob"
+        className="absolute top-1/2 left-1/2 z-20 size-[42%] rounded-full"
         style={{
+          // The inline transform is the only knob translation: Tailwind's
+          // -translate-* utilities set the independent `translate` property,
+          // which composes with `transform` and shifts the neutral knob off
+          // the outer circle's center.
           transform: `translate(calc(-50% + ${knob.x}px), calc(-50% + ${knob.y}px))`,
-          background: isCameraStick
-            ? "radial-gradient(circle at 40% 32%, oklch(0.95 0.06 205), oklch(0.72 0.14 220))"
-            : "radial-gradient(circle at 40% 32%, oklch(0.99 0.01 95), oklch(0.9 0.05 80))",
+          background: "radial-gradient(circle at 40% 32%, oklch(0.99 0.01 95), oklch(0.9 0.05 80))",
           boxShadow: "0 6px 14px -4px oklch(0.34 0.07 152 / 0.55)",
         }}
       />

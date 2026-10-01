@@ -36,6 +36,9 @@ type E2EPlayer = Pick<
   | "dashState"
   | "boostEffectRemaining"
   | "playerBoostCooldownRemaining"
+  | "jumpElapsed"
+  | "jumpHeight"
+  | "jumpActivationId"
   | "slowMultiplier"
 > & { boostState: BoostState };
 type E2ERunner = Pick<Agent, "id" | "x" | "z" | "hidden" | "state" | "respawns">;
@@ -128,6 +131,9 @@ export function installCatchyE2EBridge() {
         boostState: getPlayerBoostState(),
         boostEffectRemaining: PLAYER.boostEffectRemaining,
         playerBoostCooldownRemaining: PLAYER.playerBoostCooldownRemaining,
+        jumpElapsed: PLAYER.jumpElapsed,
+        jumpHeight: PLAYER.jumpHeight,
+        jumpActivationId: PLAYER.jumpActivationId,
         slowMultiplier: PLAYER.slowMultiplier,
       };
     },

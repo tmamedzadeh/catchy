@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Joystick } from "./Joystick";
+import { CameraSurface } from "./CameraSurface";
 import { useGameStore } from "@/store/gameStore";
-import { requestPlayerDash, requestPlayerSpeedBoost } from "@/lib/catchy/input";
+import { requestPlayerDash, requestPlayerJump, requestPlayerSpeedBoost } from "@/lib/catchy/input";
 import { GAME_CONFIG } from "@/lib/catchy/config";
 
 const ONBOARDING_KEY = "catchy-first-session-controls-v1";
@@ -17,6 +18,7 @@ const MOVEMENT_KEYS = new Set([
   "ShiftLeft",
   "ShiftRight",
   "KeyE",
+  "Space",
 ]);
 
 const ClockIcon = (
@@ -277,14 +279,15 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
         </div>
       )}
 
+      <CameraSurface />
       <div className="touch-controls absolute">
         <Joystick />
       </div>
-      <div className="camera-controls absolute">
-        <Joystick side="camera" />
-      </div>
-      <div className="ability-controls absolute flex flex-col-reverse items-end gap-2">
+      <div className="ability-controls absolute flex items-center gap-2">
         <DashControl gameReady={gameReady} state={state} status={dashStatus} />
+        <JumpControl gameReady={gameReady} state={state} />
+      </div>
+      <div className="speed-boost-control absolute">
         <SpeedBoostControl
           gameReady={gameReady}
           state={state}
@@ -358,6 +361,50 @@ function DashControl({
           <span className="font-display text-[0.55rem] font-bold tracking-wide">
             {isChasing ? label : "LOCK"}
           </span>
+        </span>
+      </button>
+    </div>
+  );
+}
+
+function JumpControl({
+  gameReady,
+  state,
+}: {
+  gameReady: boolean;
+  state: ReturnType<typeof useGameStore.getState>["state"];
+}) {
+  const isChasing = state === "chase" || state === "nearby";
+  const enabled = gameReady && isChasing;
+
+  return (
+    <div className="jump-control">
+      <button
+        type="button"
+        data-sound="jump"
+        aria-label="Jump"
+        title="Jump"
+        disabled={!enabled}
+        onPointerDown={(event) => {
+          if (event.button !== 0 || !enabled) return;
+          event.preventDefault();
+          event.stopPropagation();
+          requestPlayerJump();
+        }}
+        onPointerCancel={(event) => event.preventDefault()}
+        onContextMenu={(event) => event.preventDefault()}
+        className="dash-control-button pointer-events-auto relative grid place-items-center rounded-full text-white transition-transform active:scale-95 disabled:cursor-default"
+      >
+        <span className="relative flex items-center leading-none">
+          <svg viewBox="0 0 24 24" className="size-6" fill="none" aria-hidden="true">
+            <path
+              d="M12 19V5m0 0L6.5 10.5M12 5l5.5 5.5"
+              stroke="currentColor"
+              strokeWidth="2.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
         </span>
       </button>
     </div>
@@ -518,7 +565,7 @@ function FirstSessionOnboarding({ gameReady }: { gameReady: boolean }) {
     const onPointerDown = (event: PointerEvent) => {
       if (
         event.target instanceof Element &&
-        event.target.closest(".touch-controls, .camera-controls, .ability-controls")
+        event.target.closest(".touch-controls, .ability-controls, .speed-boost-control")
       )
         finish();
     };
@@ -564,8 +611,8 @@ function FirstSessionOnboarding({ gameReady }: { gameReady: boolean }) {
         <div className="font-display text-sm font-semibold text-catchy-ink">Ready to chase?</div>
         <div className="mt-0.5 text-xs text-catchy-ink-soft">
           {isCoarsePointer
-            ? "Left stick moves · Right stick turns, recenters, or shows the arena · Dash / boost buttons"
-            : "W / S forward / back · A left · D right · ← / → camera · ↑ recenter · ↓ overview · Shift dash · E boost"}
+            ? "Left stick moves · drag the world to look · Dash · Jump · Speed Up"
+            : "W / S move · A / D strafe · mouse drag looks · ↑ recenter · ↓ overview · Shift dash · E Speed Up · Space jump"}
         </div>
       </div>
     </div>

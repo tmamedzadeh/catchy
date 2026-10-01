@@ -216,7 +216,9 @@ export function Character({ index }: { index: number }) {
 
     // torso: bounce at stride frequency, lean into the run, subtle side roll
     if (body.current) {
-      body.current.position.y = Math.abs(c) * 0.04 * run;
+      const jumpHeight =
+        agent.previousJumpHeight + (agent.jumpHeight - agent.previousJumpHeight) * alpha;
+      body.current.position.y = jumpHeight + Math.abs(c) * 0.04 * run;
       body.current.rotation.x = 0.05 + run * 0.18;
       body.current.rotation.z = s * 0.025 * run;
     }

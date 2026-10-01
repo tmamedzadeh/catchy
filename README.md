@@ -6,20 +6,23 @@ Catchy is a browser based 3D tag arena. One player chases three runners in a fiv
 
 Desktop:
 
-- **W / S** move forward and backward; **A** moves left and **D** moves right relative to the camera. Catchy faces the direction of travel.
-- **Left / Right Arrow** rotate the camera.
+- **W** moves forward, **S** backward, **A** left, and **D** right relative to the camera. Catchy faces the direction of travel.
+- **Mouse drag** rotates the camera.
 - **Up Arrow** holds Camera Recenter.
 - **Down Arrow** holds Tactical Overview.
 - **Shift** uses Dash.
 - **E** uses Speed Boost.
-- **Space** has no gameplay action.
+- **Space** jumps.
 - Restart is available from the round end screen.
 
-Touch screens:
+Mobile:
 
-- Left joystick moves.
-- Right joystick turns the camera; push up to hold Camera Recenter or down to hold Tactical Overview.
-- Separate Dash and Speed Boost buttons sit beside the right joystick.
+- The left joystick controls movement only.
+- Drag the gameplay area to rotate the camera.
+- Bottom-right: Dash is left of Jump, with Jump rightmost.
+- Speed Up is above the Dash/Jump row.
+- Camera follow is automatic; there is no second joystick on mobile.
+- Touch ownership is explicit: the left stick moves, action buttons trigger one action, and all other gameplay touches drag the camera. The stick and camera can be used simultaneously.
 
 The direction finder points toward the selected active runner. Install is optional. Play requests fullscreen and landscape where the browser supports them; denied or unavailable requests do not prevent play. On iOS Safari, Add to Home Screen is offered as guidance for an installed fullscreen experience.
 
@@ -46,7 +49,7 @@ npm run build
 npm run test:all
 ```
 
-Unit and simulation tests use Vitest; the current suite executes **81 test cases across six files**. Browser E2E tests use Playwright's own Chromium against an isolated E2E build served by Wrangler's local Cloudflare Worker preview. For a local first run, install Chromium with `npx playwright install chromium`. CI installs Chromium and runs the complete quality gate. The regular production build checks that the E2E bridge and camera tuning UI are absent and verifies the production PWA icons.
+Unit and simulation tests use Vitest; the suite covers input ownership, camera-relative movement, camera follow/persistence, joystick geometry, and the existing gameplay mechanics. Browser E2E tests use Playwright's own Chromium against an isolated E2E build served by Wrangler's local Cloudflare Worker preview. For a local first run, install Chromium with `npx playwright install chromium`. CI installs Chromium and runs the complete quality gate. The regular production build checks that the E2E bridge and camera tuning UI are absent and verifies the production PWA icons.
 
 **Important feature rule:** every important feature, gameplay change, state transition, control change, and bug fix must include an appropriate automated regression test in the same change. A feature without its test is incomplete.
 
