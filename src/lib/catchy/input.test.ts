@@ -34,10 +34,10 @@ describe("keyboard movement, camera modes, and action buffer", () => {
 
   it("uses arrows only for camera control and buffers Dash and Speed Boost", () => {
     pressInputKey("ArrowLeft");
-    expect(cameraTurnInput()).toBe(-1);
+    expect(cameraTurnInput()).toBe(1);
     releaseInputKey("ArrowLeft");
     pressInputKey("ArrowRight");
-    expect(cameraTurnInput()).toBe(1);
+    expect(cameraTurnInput()).toBe(-1);
     releaseInputKey("ArrowRight");
 
     expect(pressInputKey("ArrowUp")).toBe(true);

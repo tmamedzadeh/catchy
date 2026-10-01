@@ -139,8 +139,8 @@ export function inputVector(): { x: number; z: number } | null {
 export function cameraTurnInput() {
   if (cameraModeInput() !== "normal") return 0;
   let axis = 0;
-  if (keys.has("ArrowLeft")) axis -= 1;
-  if (keys.has("ArrowRight")) axis += 1;
+  if (keys.has("ArrowLeft")) axis += 1;
+  if (keys.has("ArrowRight")) axis -= 1;
   if (cameraJoystick.active) axis += cameraJoystick.x;
   return Math.max(-1, Math.min(1, axis));
 }
