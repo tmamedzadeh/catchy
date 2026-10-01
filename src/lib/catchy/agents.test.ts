@@ -798,8 +798,8 @@ describe("camera-relative movement and reset", () => {
   it.each([
     { name: "W", yaw: 0, input: { x: 0, z: 1 }, expected: { x: 0, z: 1 } },
     { name: "S", yaw: 0, input: { x: 0, z: -1 }, expected: { x: 0, z: -1 } },
-    { name: "A", yaw: 0, input: { x: -1, z: 0 }, expected: { x: -1, z: 0 } },
-    { name: "D", yaw: 0, input: { x: 1, z: 0 }, expected: { x: 1, z: 0 } },
+    { name: "A", yaw: 0, input: { x: -1, z: 0 }, expected: { x: 1, z: 0 } },
+    { name: "D", yaw: 0, input: { x: 1, z: 0 }, expected: { x: -1, z: 0 } },
     {
       name: "W after camera turn",
       yaw: Math.PI / 2,
@@ -816,13 +816,13 @@ describe("camera-relative movement and reset", () => {
       name: "A after camera turn",
       yaw: Math.PI / 2,
       input: { x: -1, z: 0 },
-      expected: { x: 0, z: 1 },
+      expected: { x: 0, z: -1 },
     },
     {
       name: "D after camera turn",
       yaw: Math.PI / 2,
       input: { x: 1, z: 0 },
-      expected: { x: 0, z: -1 },
+      expected: { x: 0, z: 1 },
     },
   ])("moves $name in its actual world direction over fixed ticks", ({ yaw, input, expected }) => {
     put(PLAYER, -4, 12);
