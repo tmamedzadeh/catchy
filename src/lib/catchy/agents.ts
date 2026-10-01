@@ -1275,7 +1275,9 @@ export function step(
     WORLD_STATE.cameraYaw += difference * (1 - Math.exp(-GAME_CONFIG.camera.recenterSpeed * dt));
   } else if (cameraMode === "normal") {
     WORLD_STATE.cameraYaw += cameraTurnAxis * GAME_CONFIG.camera.yawSpeed * dt;
-    WORLD_STATE.cameraYaw += cameraDrag.x * 0.012;
+    // Positive horizontal pointer motion moves the orbit camera to screen-right,
+    // which is a negative yaw with the rig's (yaw + PI) position convention.
+    WORLD_STATE.cameraYaw -= cameraDrag.x * 0.012;
     WORLD_STATE.cameraPitch = Math.max(
       -10,
       Math.min(10, WORLD_STATE.cameraPitch + cameraDrag.y * 0.08),

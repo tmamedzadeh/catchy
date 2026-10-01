@@ -185,14 +185,14 @@ test("mouse drag changes the rendered camera direction while A/D and side arrows
   // pointerup delta just as the next production fixed tick would.
   await page.evaluate(() => window.__CATCHY_E2E__!.step(40));
   await page.evaluate(() => window.__CATCHY_E2E__!.step(20));
-  await page.waitForFunction(() => window.__CATCHY_E2E__!.getWorld().cameraYaw < -0.2);
+  await page.waitForFunction(() => window.__CATCHY_E2E__!.getWorld().cameraYaw > 0.2);
   await page.waitForFunction(
-    (startX) => window.__CATCHY_E2E__!.getRenderedCamera()!.forwardX < startX - 0.08,
-    leftStart.forwardX,
+    (startX) => window.__CATCHY_E2E__!.getRenderedCamera()!.x < startX - 0.5,
+    leftStart.x,
     { timeout: 10_000 },
   );
   const afterLeft = (await page.evaluate(() => window.__CATCHY_E2E__!.getRenderedCamera()))!;
-  expect(afterLeft.forwardX).toBeLessThan(leftStart.forwardX - 0.08);
+  expect(afterLeft.x).toBeLessThan(leftStart.x - 0.5);
   const manuallySelectedYaw = (await readWorld(page)).cameraYaw as number;
   await page.evaluate(() => window.__CATCHY_E2E__!.step(3_000));
   const stationaryCamera = (await page.evaluate(() =>
@@ -214,14 +214,14 @@ test("mouse drag changes the rendered camera direction while A/D and side arrows
   await page.mouse.up();
   await page.evaluate(() => window.__CATCHY_E2E__!.step(40));
   await page.evaluate(() => window.__CATCHY_E2E__!.step(20));
-  await page.waitForFunction(() => window.__CATCHY_E2E__!.getWorld().cameraYaw > 0.2);
+  await page.waitForFunction(() => window.__CATCHY_E2E__!.getWorld().cameraYaw < -0.2);
   await page.waitForFunction(
-    (startX) => window.__CATCHY_E2E__!.getRenderedCamera()!.forwardX > startX + 0.08,
-    rightStart.forwardX,
+    (startX) => window.__CATCHY_E2E__!.getRenderedCamera()!.x > startX + 0.5,
+    rightStart.x,
     { timeout: 10_000 },
   );
   const afterRight = (await page.evaluate(() => window.__CATCHY_E2E__!.getRenderedCamera()))!;
-  expect(afterRight.forwardX).toBeGreaterThan(rightStart.forwardX + 0.08);
+  expect(afterRight.x).toBeGreaterThan(rightStart.x + 0.5);
 
   await page.evaluate(() => {
     const game = window.__CATCHY_E2E__!;

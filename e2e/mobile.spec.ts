@@ -292,15 +292,15 @@ test.describe("landscape coarse-pointer controls", () => {
     await page.evaluate(() => window.__CATCHY_E2E__!.step(20));
     const moved = await readPlayer(page);
     expect(moved.z).toBeGreaterThan((movementStart.z as number) + 0.5);
-    expect((await readWorld(page)).cameraYaw as number).toBeGreaterThan(0.15);
+    expect((await readWorld(page)).cameraYaw as number).toBeLessThan(-0.15);
     await page.waitForFunction(
-      (startX) => window.__CATCHY_E2E__!.getRenderedCamera()!.forwardX > startX + 0.05,
-      cameraDirectionStart.forwardX,
+      (startX) => window.__CATCHY_E2E__!.getRenderedCamera()!.x > startX + 0.5,
+      cameraDirectionStart.x,
     );
     const cameraDirectionMoved = (await page.evaluate(() =>
       window.__CATCHY_E2E__!.getRenderedCamera(),
     ))!;
-    expect(cameraDirectionMoved.forwardX).toBeGreaterThan(cameraDirectionStart.forwardX + 0.05);
+    expect(cameraDirectionMoved.x).toBeGreaterThan(cameraDirectionStart.x + 0.5);
     await dispatchTouch("touchCancel", []);
     expect(await owners()).toEqual([]);
 
@@ -340,7 +340,7 @@ test.describe("landscape coarse-pointer controls", () => {
         { id: 11, x: cameraX + 30, y: cameraY },
       ]);
       await page.evaluate(() => window.__CATCHY_E2E__!.step(80));
-      expect((await readWorld(page)).cameraYaw as number).toBeGreaterThan(yawBefore + 0.1);
+      expect((await readWorld(page)).cameraYaw as number).toBeLessThan(yawBefore - 0.1);
       await dispatchTouch("touchEnd", []);
       await page.evaluate(() => window.__CATCHY_E2E__!.step(50));
       expect(await owners()).toEqual([]);
@@ -429,7 +429,7 @@ test.describe("landscape coarse-pointer controls", () => {
       { pointerId: remainingPointerId, x: cameraX + 44, y: cameraY },
     );
     await page.evaluate(() => window.__CATCHY_E2E__!.step(50));
-    expect((await readWorld(page)).cameraYaw as number).toBeGreaterThan(yawBeforeSingle + 0.1);
+    expect((await readWorld(page)).cameraYaw as number).toBeLessThan(yawBeforeSingle - 0.1);
     await dispatchTouch("touchEnd", []);
     expect(await owners()).toEqual([]);
 

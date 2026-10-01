@@ -936,7 +936,7 @@ describe("camera-relative movement and reset", () => {
     WORLD_STATE.cameraManualRemaining = 0;
     step(DT, null, noCommands, false, false, 0, "normal", { x: -20, y: -100 });
     expect(PLAYER.heading).toBe(1.2);
-    expect(WORLD_STATE.cameraYaw).toBeLessThan(0);
+    expect(WORLD_STATE.cameraYaw).toBeGreaterThan(0);
     expect(WORLD_STATE.cameraPitch).toBeLessThan(0);
     const manualYaw = WORLD_STATE.cameraYaw;
     const manualRemaining = WORLD_STATE.cameraManualRemaining;
@@ -977,6 +977,18 @@ describe("camera-relative movement and reset", () => {
     expect(largestFollowStep).toBeLessThan(0.25);
     for (let index = 31; index < followErrors.length; index++)
       expect(followErrors[index]).toBeLessThanOrEqual(followErrors[index - 1]! + 0.01);
+  });
+
+  it.each([
+    { deltaX: 24, expectedYaw: -0.288 },
+    { deltaX: -24, expectedYaw: 0.288 },
+  ])("maps horizontal drag $deltaX to the matching screen-space orbit yaw", ({ deltaX, expectedYaw }) => {
+    WORLD_STATE.cameraYaw = 0;
+    WORLD_STATE.previousCameraYaw = 0;
+
+    step(DT, null, noCommands, false, false, 0, "normal", { x: deltaX, y: 0 });
+
+    expect(WORLD_STATE.cameraYaw).toBeCloseTo(expectedYaw, 8);
   });
 
   it("clamps camera pitch and pinch zoom to safe camera bounds", () => {
