@@ -8,7 +8,7 @@ export const GAME_CONFIG = {
   player: {
     radius: 0.55,
     speed: 9.2,
-    facingRotationSpeed: 18,
+    facingRotationSpeed: 10,
     spawn: { x: -4, z: 12 },
     jump: {
       height: 1.15,
