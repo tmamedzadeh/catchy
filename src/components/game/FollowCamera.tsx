@@ -2,9 +2,12 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useRef } from "react";
 import * as THREE from "three";
 import { PLAYER, WORLD_STATE } from "@/lib/catchy/agents";
+import { getCameraBasis, type CameraBasis } from "@/lib/catchy/camera";
 import { GAME_CONFIG } from "@/lib/catchy/config";
-import { cameraModeInput } from "@/lib/catchy/input";
 import { useGameStore } from "@/store/gameStore";
+
+const orbitBasis: CameraBasis = { forwardX: 0, forwardZ: 1, rightX: -1, rightZ: 0 };
+const lookAheadBasis: CameraBasis = { forwardX: 0, forwardZ: 1, rightX: -1, rightZ: 0 };
 
 /** Smooth follow camera with independent yaw and subtle turn anticipation. */
 export function FollowCamera() {
@@ -17,40 +20,24 @@ export function FollowCamera() {
   const composedLookAt = useRef(new THREE.Vector3());
   const renderedDirection = useRef(new THREE.Vector3());
   const currentDistance = useRef(GAME_CONFIG.camera.distance * 0.9);
-  const currentAngle = useRef(GAME_CONFIG.camera.angle);
+  const currentAngle = useRef(GAME_CONFIG.camera.pitch);
   const currentLookAhead = useRef(GAME_CONFIG.camera.lookAhead);
   const currentCompositionOffset = useRef(GAME_CONFIG.camera.compositionOffset);
-  const activeMode = useRef<ReturnType<typeof cameraModeInput>>("normal");
-  const modeTransitionRemaining = useRef(0);
   const baseFov = useRef((camera as THREE.PerspectiveCamera).fov);
   const fov = useRef(baseFov.current);
 
   useFrame((_, rawDelta) => {
     const dt = Math.min(rawDelta, 0.05);
-    const { camHeight, camAngle, camLookAhead, camCompositionOffset, state } =
+    const { camDistance, camPitch, camLookAhead, camCompositionOffset, state } =
       useGameStore.getState();
-    const mode = cameraModeInput();
-    if (mode !== activeMode.current) {
-      activeMode.current = mode;
-      modeTransitionRemaining.current = GAME_CONFIG.camera.modeTransitionSeconds;
-    }
-    const transitioning = modeTransitionRemaining.current > 0;
-    const blend =
-      1 - Math.exp(-(transitioning ? GAME_CONFIG.camera.modeTransitionSpeed : 3.2) * dt);
-    modeTransitionRemaining.current = Math.max(0, modeTransitionRemaining.current - dt);
+    const blend = 1 - Math.exp(-3.2 * dt);
     const aspect = (camera as THREE.PerspectiveCamera).aspect ?? 1.6;
     const portrait = aspect < 1 ? 1.42 : aspect < 1.4 ? 1.14 : 1;
-    const tactical = mode === "tactical";
-    const captureZoom = !tactical && (state === "capture" || state === "after") ? 0.78 : 1;
-    const normalDistance = WORLD_STATE.cameraDistance * 0.9 * portrait * captureZoom;
-    const targetDistance = tactical
-      ? GAME_CONFIG.camera.tacticalDistance * 0.9 * portrait
-      : normalDistance;
-    const targetAngle = tactical ? GAME_CONFIG.camera.tacticalAngle : camAngle;
-    const targetLookAhead = tactical ? GAME_CONFIG.camera.tacticalLookAhead : camLookAhead;
-    const targetComposition = tactical
-      ? GAME_CONFIG.camera.tacticalCompositionOffset
-      : camCompositionOffset;
+    const captureZoom = state === "capture" || state === "after" ? 0.78 : 1;
+    const targetDistance = WORLD_STATE.cameraDistance * 0.9 * portrait * captureZoom;
+    const targetAngle = camPitch;
+    const targetLookAhead = camLookAhead;
+    const targetComposition = camCompositionOffset;
     currentDistance.current += (targetDistance - currentDistance.current) * blend;
     currentAngle.current += (targetAngle - currentAngle.current) * blend;
     currentLookAhead.current += (targetLookAhead - currentLookAhead.current) * blend;
@@ -67,27 +54,24 @@ export function FollowCamera() {
     );
     const yaw = WORLD_STATE.previousCameraYaw + yawDelta * alpha;
     const anticipation =
-      mode === "normal"
-        ? THREE.MathUtils.clamp(
-            PLAYER.turnRate * GAME_CONFIG.camera.turnAnticipationPerRadianPerSecond,
-            -GAME_CONFIG.camera.turnAnticipationMaxRadians,
-            GAME_CONFIG.camera.turnAnticipationMaxRadians,
-          )
-        : 0;
+      THREE.MathUtils.clamp(PLAYER.turnRate, -1, 1) *
+      WORLD_STATE.cameraTurnAnticipation *
+      (Math.PI / 180);
     const lookYaw = yaw + anticipation;
-    const back = yaw + Math.PI;
-    const anchorX = tactical ? 0 : playerX;
-    const anchorZ = tactical ? 0 : playerZ;
+    const anchorX = playerX;
+    const anchorZ = playerZ;
+    const cameraBasis = getCameraBasis(yaw, orbitBasis);
 
     desiredPosition.current.set(
-      anchorX + Math.sin(back) * distance,
+      anchorX - cameraBasis.forwardX * distance,
       Math.max(2.5, distance * Math.tan(angle)),
-      anchorZ + Math.cos(back) * distance,
+      anchorZ - cameraBasis.forwardZ * distance,
     );
+    const lookBasis = getCameraBasis(lookYaw, lookAheadBasis);
     desiredLookAt.current.set(
-      anchorX + Math.sin(lookYaw) * currentLookAhead.current,
+      anchorX + lookBasis.forwardX * currentLookAhead.current,
       0.9,
-      anchorZ + Math.cos(lookYaw) * currentLookAhead.current,
+      anchorZ + lookBasis.forwardZ * currentLookAhead.current,
     );
 
     const perspective = camera as THREE.PerspectiveCamera;

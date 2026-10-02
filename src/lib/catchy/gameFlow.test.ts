@@ -1,13 +1,19 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { AGENTS, PLAYER, RUNNERS, WORLD_STATE, getPlayerBoostState } from "./agents";
 import { GAME_CONFIG } from "./config";
-import { advanceSimulationFrame, resetSimulationRuntime, SIMULATION_FIXED_DT } from "./runtime";
+import {
+  advanceSimulationFrame,
+  resetSimulationRuntime,
+  setSimulationEnabled,
+  SIMULATION_FIXED_DT,
+} from "./runtime";
 import {
   clearInput,
   installInputEventListeners,
   requestPlayerDash,
   requestPlayerJump,
   requestPlayerSpeedBoost,
+  setGameplayInputEnabled,
 } from "./input";
 import { CAM_DEFAULTS, useGameStore } from "@/store/gameStore";
 
@@ -31,6 +37,8 @@ function stepTicks(count: number) {
 beforeEach(() => {
   useGameStore.getState().restart();
   resetSimulationRuntime();
+  setGameplayInputEnabled(true);
+  setSimulationEnabled(true);
 });
 
 describe("round, capture, score, and respawn flow", () => {
@@ -119,21 +127,30 @@ describe("restart and action reset", () => {
 
   it("restores camera tuning defaults and keeps composition offset separate", () => {
     const store = useGameStore.getState();
-    store.setCamHeight(31.8);
-    store.setCamAngle(63.4);
+    store.setCamDistance(31.8);
+    store.setCamPitch(63.4);
     store.setCamLookAhead(4.2);
     store.setCamCompositionOffset(0.21);
-    expect(useGameStore.getState().camHeight).toBe(32);
+    store.setCamFollowYawSpeed(7.1);
+    store.setCamTurnAnticipation(12);
+    store.setCamFollowResumeSpeed(5.3);
+    expect(useGameStore.getState().camDistance).toBe(32);
     expect(WORLD_STATE.cameraDistance).toBe(32);
-    expect(useGameStore.getState().camAngle).toBe(63);
+    expect(useGameStore.getState().camPitch).toBe(63);
     expect(useGameStore.getState().camLookAhead).toBe(4.2);
     expect(useGameStore.getState().camCompositionOffset).toBe(0.21);
+    expect(WORLD_STATE.cameraFollowYawSpeed).toBe(7);
+    expect(WORLD_STATE.cameraTurnAnticipation).toBe(12);
+    expect(WORLD_STATE.cameraFollowResumeSpeed).toBe(5.25);
     useGameStore.getState().resetCamera();
     expect(useGameStore.getState()).toMatchObject({
-      camHeight: CAM_DEFAULTS.distance,
-      camAngle: CAM_DEFAULTS.angle,
+      camDistance: CAM_DEFAULTS.distance,
+      camPitch: CAM_DEFAULTS.pitch,
       camLookAhead: CAM_DEFAULTS.lookAhead,
       camCompositionOffset: CAM_DEFAULTS.compositionOffset,
+      camFollowYawSpeed: CAM_DEFAULTS.followYawSpeed,
+      camTurnAnticipation: CAM_DEFAULTS.turnAnticipation,
+      camFollowResumeSpeed: CAM_DEFAULTS.followResumeSpeed,
     });
     expect(WORLD_STATE.cameraYaw).toBe(PLAYER.heading);
     expect(WORLD_STATE.cameraDistance).toBe(CAM_DEFAULTS.distance);
@@ -149,6 +166,21 @@ describe("simulation runtime fixed-tick integration", () => {
     expect(result.ticks).toBe(GAME_CONFIG.simulation.maxCatchUpSteps);
     expect(result.alpha).toBeLessThan(1);
     expect(Math.hypot(PLAYER.x - before, PLAYER.z - 12)).toBeLessThan(2);
+  });
+
+  it("does not advance the timer, player, or NPCs until the ready signal enables simulation", () => {
+    const playerStart = { x: PLAYER.x, z: PLAYER.z };
+    const runnerStart = { x: RUNNERS[0]!.x, z: RUNNERS[0]!.z };
+    const timeStart = useGameStore.getState().time;
+    setSimulationEnabled(false);
+    const result = advanceSimulationFrame(10_000);
+    expect(result.ticks).toBe(0);
+    expect(useGameStore.getState().time).toBe(timeStart);
+    expect({ x: PLAYER.x, z: PLAYER.z }).toEqual(playerStart);
+    expect({ x: RUNNERS[0]!.x, z: RUNNERS[0]!.z }).toEqual(runnerStart);
+    setSimulationEnabled(true);
+    stepTicks(GAME_CONFIG.simulation.tickHz + 1);
+    expect(useGameStore.getState().time).toBeLessThan(timeStart);
   });
 
   it("applies movement commands through the same runtime path", () => {

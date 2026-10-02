@@ -1,7 +1,6 @@
 {
   "name": "catchy",
   "private": true,
-  "sideEffects": false,
   "type": "module",
   "scripts": {
     "dev": "vite dev",
@@ -55,7 +54,7 @@
     "@tanstack/react-query": "^5.101.1",
     "@tanstack/react-router": "1.170.41",
     "@tanstack/react-start": "1.168.60",
-    "@tanstack/router-plugin": "1.168.23",
+    "@tanstack/router-plugin": "1.168.42",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -95,7 +94,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
-    "nitro": "3.0.260603-beta",
+    "nitro": "3.0.260903-beta",
     "prettier": "^3.7.3",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1",

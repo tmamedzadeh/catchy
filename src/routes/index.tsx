@@ -3,7 +3,7 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useState } fro
 import { useProgress } from "@react-three/drei";
 import { HUD } from "@/components/hud/HUD";
 import { GameFeedback, unlockGameAudio } from "@/lib/catchy/feedback";
-import { installInputEventListeners, setPlayerJumpInputEnabled } from "@/lib/catchy/input";
+import { installInputEventListeners, setGameplayInputEnabled } from "@/lib/catchy/input";
 import {
   beginPlaySession,
   isIOSPlatform,
@@ -38,15 +38,15 @@ export const Route = createFileRoute("/")({
 
 function Game() {
   const [started, setStarted] = useState(false);
-  const [gameReady, setGameReady] = useState(() => isAssetQueueComplete());
+  const [gameReady, setGameReady] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<DeferredInstallPrompt | null>(null);
   const [installedMode, setInstalledMode] = useState(() => isStandaloneOrFullscreen());
   const [showInstallHelp, setShowInstallHelp] = useState(false);
   const markReady = useCallback(() => setGameReady(true), []);
 
   useLayoutEffect(() => {
-    setPlayerJumpInputEnabled(started && gameReady);
-    return () => setPlayerJumpInputEnabled(false);
+    setGameplayInputEnabled(started && gameReady);
+    return () => setGameplayInputEnabled(false);
   }, [started, gameReady]);
 
   useEffect(() => {
@@ -116,7 +116,7 @@ function Game() {
       {started ? (
         <>
           <Suspense fallback={null}>
-            <GameCanvas />
+            <GameCanvas gameReady={gameReady} />
           </Suspense>
           <HUD gameReady={gameReady} />
           <GameFeedback />

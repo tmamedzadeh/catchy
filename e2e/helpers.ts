@@ -49,9 +49,8 @@ export async function openStartScreen(page: Page) {
 export async function startGame(page: Page) {
   await page.getByRole("button", { name: "PLAY" }).click();
   await expect(page.locator(".game-canvas canvas")).toBeVisible();
-  await page.waitForFunction(() => Boolean(window.__CATCHY_E2E__));
+  await page.waitForFunction(() => window.__CATCHY_E2E__?.isReady() === true);
   await expect(page.getByRole("group", { name: "Game status" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Dash", exact: true })).toBeEnabled();
   await page.evaluate(() => window.__CATCHY_E2E__!.reset());
 }
 

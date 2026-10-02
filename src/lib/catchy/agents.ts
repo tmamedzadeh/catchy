@@ -6,6 +6,7 @@ import {
   type InteractiveMapObject,
   type Obstacle,
 } from "./config";
+import { getCameraBasis, NEUTRAL_CAMERA_INPUT, type CameraBasis, type CameraInput } from "./camera";
 
 export type Agent = {
   id: string;
@@ -155,14 +156,15 @@ const TEMPORARY_BARRIER = INTERACTIVE_OBJECTS.find((item) => item.kind === "temp
 export const WORLD_STATE = {
   cameraYaw: PLAYER.heading,
   previousCameraYaw: PLAYER.heading,
-  /** Camera yaw captured for the current uninterrupted movement gesture. */
-  movementCameraYaw: PLAYER.heading,
-  movementInputFrame: null as string | null,
   cameraPitch: 0,
   /** Movement-only grace before heading follow resumes; frozen while the player is still. */
   cameraManualRemaining: 0,
   /** Distance is mutable simulation state so pinch never needs React renders. */
   cameraDistance: Number(GAME_CONFIG.camera.distance),
+  cameraFollowYawSpeed: Number(GAME_CONFIG.camera.followYawSpeed),
+  cameraTurnAnticipation: Number(GAME_CONFIG.camera.turnAnticipation),
+  cameraFollowResumeSpeed: Number(GAME_CONFIG.camera.followResumeSpeed),
+  cameraFollowBlend: 1,
   barrierClosed: false,
   barrierRemaining: GAME_CONFIG.barrier.openSeconds,
   speedPadPulseRemaining: 0,
@@ -237,14 +239,14 @@ function advancePlayerJump(dt: number) {
   PLAYER.jumpHeight = jump.height * Math.sin(Math.PI * progress);
 }
 
-/** Apply the common 5-second movement effect without changing ability cooldowns. */
+/** V1 boost sources share one effect timer and never stack or extend it. */
 export function applyBoostEffect(agent: Agent) {
   if (agent.boostEffectRemaining > 0) return false;
   agent.boostEffectRemaining = GAME_CONFIG.player.speedBoost.durationSeconds;
   return true;
 }
 
-/** The personal button starts its recharge at activation, alongside the shared effect. */
+/** Personal Speed Up starts its own cooldown at activation; pads never touch that timer. */
 export function activatePlayerBoost() {
   if (!canActivatePlayerBoost() || !applyBoostEffect(PLAYER)) return false;
   PLAYER.playerBoostActiveRemaining = GAME_CONFIG.player.speedBoost.durationSeconds;
@@ -535,11 +537,13 @@ export function resetSimulation() {
   WORLD_STATE.bounceNormalZ = 1;
   WORLD_STATE.cameraYaw = PLAYER.heading;
   WORLD_STATE.previousCameraYaw = PLAYER.heading;
-  WORLD_STATE.movementCameraYaw = PLAYER.heading;
-  WORLD_STATE.movementInputFrame = null;
   WORLD_STATE.cameraPitch = 0;
   WORLD_STATE.cameraManualRemaining = 0;
   WORLD_STATE.cameraDistance = GAME_CONFIG.camera.distance;
+  WORLD_STATE.cameraFollowYawSpeed = GAME_CONFIG.camera.followYawSpeed;
+  WORLD_STATE.cameraTurnAnticipation = GAME_CONFIG.camera.turnAnticipation;
+  WORLD_STATE.cameraFollowResumeSpeed = GAME_CONFIG.camera.followResumeSpeed;
+  WORLD_STATE.cameraFollowBlend = 1;
   WORLD_STATE.renderAlpha = 0;
   if (barrierWasClosed) rebuildNavigationGraph();
   for (const agent of AGENTS) agent.hidden = 1;
@@ -596,10 +600,12 @@ export function resetSimulation() {
   }
   WORLD_STATE.cameraYaw = PLAYER.heading;
   WORLD_STATE.previousCameraYaw = PLAYER.heading;
-  WORLD_STATE.movementCameraYaw = PLAYER.heading;
-  WORLD_STATE.movementInputFrame = null;
   WORLD_STATE.cameraPitch = 0;
   WORLD_STATE.cameraManualRemaining = 0;
+  WORLD_STATE.cameraFollowYawSpeed = GAME_CONFIG.camera.followYawSpeed;
+  WORLD_STATE.cameraTurnAnticipation = GAME_CONFIG.camera.turnAnticipation;
+  WORLD_STATE.cameraFollowResumeSpeed = GAME_CONFIG.camera.followResumeSpeed;
+  WORLD_STATE.cameraFollowBlend = 1;
 }
 
 const selectedTarget = { agent: PLAYER, dist: Infinity };
@@ -1068,8 +1074,9 @@ function move(
 ) {
   const length = Math.hypot(ax, az);
   if (length > 0.001) {
-    ax = (ax / length) * maxSpeed;
-    az = (az / length) * maxSpeed;
+    const inputMagnitude = agent.role === "player" ? Math.min(1, length) : 1;
+    ax = (ax / length) * maxSpeed * inputMagnitude;
+    az = (az / length) * maxSpeed * inputMagnitude;
   } else {
     ax = 0;
     az = 0;
@@ -1155,6 +1162,7 @@ export function updateSpeedPad(agent: Agent) {
 }
 
 const playerWorldInput = { x: 0, z: 0 };
+const playerCameraBasis: CameraBasis = { forwardX: 0, forwardZ: 1, rightX: -1, rightZ: 0 };
 
 export function resolveCameraRelativeInput(
   input: { x: number; z: number } | null,
@@ -1165,17 +1173,9 @@ export function resolveCameraRelativeInput(
     playerWorldInput.z = 0;
     return null;
   }
-  // Canonical semantic axes: input.z is positive FORWARD and input.x is
-  // positive RIGHT. At yaw zero, the camera looks toward world +Z. Three.js
-  // renders screen-right as camera-forward × world-up, which is world -X in
-  // that pose. Derive that rendered basis here so A/D agree with what players
-  // see instead of treating world +X as camera-right.
-  const forwardX = Math.sin(cameraYaw);
-  const forwardZ = Math.cos(cameraYaw);
-  const rightX = -forwardZ;
-  const rightZ = forwardX;
-  playerWorldInput.x = forwardX * input.z + rightX * input.x;
-  playerWorldInput.z = forwardZ * input.z + rightZ * input.x;
+  const basis = getCameraBasis(cameraYaw, playerCameraBasis);
+  playerWorldInput.x = basis.forwardX * input.z + basis.rightX * input.x;
+  playerWorldInput.z = basis.forwardZ * input.z + basis.rightZ * input.x;
   return playerWorldInput;
 }
 
@@ -1234,11 +1234,8 @@ export function step(
   commands: { dash: boolean; speedBoost: boolean; jump?: boolean },
   freezePlayer: boolean,
   freezeWorld = false,
-  cameraTurnAxis = 0,
-  cameraMode: "normal" | "recenter" | "tactical" = "normal",
-  cameraDrag = { x: 0, y: 0 },
-  cameraZoom = 0,
-  movementFrameToken?: string | null,
+  cameraYawForTick = WORLD_STATE.cameraYaw,
+  cameraInput: CameraInput = NEUTRAL_CAMERA_INPUT,
 ) {
   for (const agent of AGENTS) {
     agent.previousX = agent.x;
@@ -1247,62 +1244,6 @@ export function step(
   }
   PLAYER.previousJumpHeight = PLAYER.jumpHeight;
   WORLD_STATE.previousCameraYaw = WORLD_STATE.cameraYaw;
-  const playerIsMovingForCameraFollow =
-    Math.hypot(PLAYER.vx, PLAYER.vz) > GAME_CONFIG.camera.followMovementSpeedThreshold;
-  const hasManualCameraInput =
-    cameraTurnAxis !== 0 ||
-    cameraZoom !== 0 ||
-    cameraDrag.x !== 0 ||
-    cameraDrag.y !== 0;
-  if (playerIsMovingForCameraFollow && !hasManualCameraInput) {
-    WORLD_STATE.cameraManualRemaining = Math.max(0, WORLD_STATE.cameraManualRemaining - dt);
-  }
-  if (cameraZoom !== 0 && cameraMode === "normal") {
-    WORLD_STATE.cameraDistance = Math.max(
-      GAME_CONFIG.camera.tuningRanges.distance.min,
-      Math.min(
-        GAME_CONFIG.camera.tuningRanges.distance.max,
-        WORLD_STATE.cameraDistance - cameraZoom * 0.045,
-      ),
-    );
-    WORLD_STATE.cameraManualRemaining = GAME_CONFIG.camera.manualPersistenceSeconds;
-  }
-  if (cameraMode === "recenter") {
-    const difference = Math.atan2(
-      Math.sin(PLAYER.heading - WORLD_STATE.cameraYaw),
-      Math.cos(PLAYER.heading - WORLD_STATE.cameraYaw),
-    );
-    WORLD_STATE.cameraYaw += difference * (1 - Math.exp(-GAME_CONFIG.camera.recenterSpeed * dt));
-  } else if (cameraMode === "normal") {
-    WORLD_STATE.cameraYaw += cameraTurnAxis * GAME_CONFIG.camera.yawSpeed * dt;
-    // Positive horizontal pointer motion moves the orbit camera to screen-right,
-    // which is a negative yaw with the rig's (yaw + PI) position convention.
-    WORLD_STATE.cameraYaw -= cameraDrag.x * 0.012;
-    WORLD_STATE.cameraPitch = Math.max(
-      -10,
-      Math.min(10, WORLD_STATE.cameraPitch + cameraDrag.y * 0.08),
-    );
-    if (cameraDrag.x !== 0 || cameraDrag.y !== 0) {
-      // Manual orbit owns the camera while dragging and for a short release
-      // grace period, preventing an immediate snap behind a turning player.
-      WORLD_STATE.cameraManualRemaining = GAME_CONFIG.camera.manualPersistenceSeconds;
-    } else if (
-      playerIsMovingForCameraFollow &&
-      WORLD_STATE.cameraManualRemaining <= 0
-    ) {
-      const followDifference = Math.atan2(
-        Math.sin(PLAYER.heading - WORLD_STATE.cameraYaw),
-        Math.cos(PLAYER.heading - WORLD_STATE.cameraYaw),
-      );
-      const followRate = Math.min(10, 2.2 + Math.abs(followDifference) * 3.4);
-      WORLD_STATE.cameraYaw += followDifference * (1 - Math.exp(-followRate * dt));
-      WORLD_STATE.cameraPitch *= Math.exp(-2.8 * dt);
-    }
-  }
-  WORLD_STATE.cameraYaw = Math.atan2(
-    Math.sin(WORLD_STATE.cameraYaw),
-    Math.cos(WORLD_STATE.cameraYaw),
-  );
   advancePlayerDashTimers(dt);
 
   if (freezeWorld) {
@@ -1314,28 +1255,12 @@ export function step(
       agent.vz = 0;
       agent.speed = 0;
     }
+    updateCameraAfterMovement(dt, cameraInput, false, null, null);
     return;
   }
 
   advanceBarrier(dt);
-  // Capture yaw when a movement gesture starts or when the player deliberately
-  // moves the camera. Follow yaw may continue to catch the player's facing, but
-  // it cannot rotate the coordinate system underneath unchanged movement input.
-  const hasMovementInput = Boolean(input && Math.hypot(input.x, input.z) > 0.001);
-  const inputFrame = hasMovementInput
-    ? (movementFrameToken ?? `direct:${input!.x.toFixed(4)}:${input!.z.toFixed(4)}`)
-    : null;
-  const deliberateCameraMotion =
-    cameraMode === "recenter" || cameraDrag.x !== 0 || cameraDrag.y !== 0;
-  if (!hasMovementInput) {
-    WORLD_STATE.movementInputFrame = null;
-    WORLD_STATE.movementCameraYaw = WORLD_STATE.cameraYaw;
-  } else if (inputFrame !== WORLD_STATE.movementInputFrame || deliberateCameraMotion) {
-    WORLD_STATE.movementInputFrame = inputFrame;
-    WORLD_STATE.movementCameraYaw = WORLD_STATE.cameraYaw;
-  }
-  const movementCameraYaw = WORLD_STATE.movementCameraYaw;
-  const worldInput = resolveCameraRelativeInput(input, movementCameraYaw);
+  const worldInput = resolveCameraRelativeInput(input, cameraYawForTick);
   if (freezePlayer) clearPlayerJump();
   if (!freezePlayer) {
     if (commands.speedBoost) activatePlayerBoost();
@@ -1379,6 +1304,12 @@ export function step(
       );
     }
   }
+
+  // Camera follow is updated after player movement. The yaw used above remains
+  // the stable start-of-tick snapshot, and the next tick samples the new yaw.
+  const playerIsMovingForCameraFollow =
+    Math.hypot(PLAYER.vx, PLAYER.vz) > GAME_CONFIG.camera.followMovementSpeedThreshold;
+  updateCameraAfterMovement(dt, cameraInput, playerIsMovingForCameraFollow, input, worldInput);
 
   for (const runner of RUNNERS) {
     if (!advanceRunner(runner, dt)) continue;
@@ -1466,6 +1397,75 @@ export function step(
     advanceAgentActionTimers(agent, dt);
   }
   WORLD_STATE.speedPadPulseRemaining = Math.max(0, WORLD_STATE.speedPadPulseRemaining - dt);
+}
+
+function updateCameraAfterMovement(
+  dt: number,
+  cameraInput: CameraInput,
+  playerIsMoving: boolean,
+  input: { x: number; z: number } | null,
+  worldInput: { x: number; z: number } | null,
+) {
+  if (cameraInput.zoomDelta !== 0) {
+    WORLD_STATE.cameraDistance = Math.max(
+      GAME_CONFIG.camera.tuningRanges.distance.min,
+      Math.min(
+        GAME_CONFIG.camera.tuningRanges.distance.max,
+        WORLD_STATE.cameraDistance - cameraInput.zoomDelta * 0.045,
+      ),
+    );
+  }
+  WORLD_STATE.cameraYaw += cameraInput.yawDelta;
+  WORLD_STATE.cameraPitch = Math.max(
+    -10,
+    Math.min(10, WORLD_STATE.cameraPitch + cameraInput.pitchDelta),
+  );
+
+  if (cameraInput.manual) {
+    WORLD_STATE.cameraManualRemaining = GAME_CONFIG.camera.manualPersistenceSeconds;
+    WORLD_STATE.cameraFollowBlend = 0;
+  } else if (playerIsMoving) {
+    WORLD_STATE.cameraManualRemaining = Math.max(0, WORLD_STATE.cameraManualRemaining - dt);
+    if (WORLD_STATE.cameraManualRemaining <= 0) {
+      // Use current camera-local intent, and wait for smoothed velocity to
+      // travel with it before heading-driven follow can turn the movement basis.
+      let forwardCameraRelativeMovement = false;
+      if (input !== null && input.z > 0 && worldInput !== null) {
+        const inputMagnitude = Math.min(1, Math.hypot(input.x, input.z));
+        const worldInputMagnitude = Math.hypot(worldInput.x, worldInput.z);
+        const forwardSpeedAlongInput =
+          worldInputMagnitude === 0
+            ? 0
+            : (PLAYER.vx * worldInput.x + PLAYER.vz * worldInput.z) / worldInputMagnitude;
+        const minimumFollowSpeed = Math.max(
+          GAME_CONFIG.camera.followMovementSpeedThreshold,
+          GAME_CONFIG.player.speed * effectiveSpeedMultiplier(PLAYER) * inputMagnitude * 0.4,
+        );
+        forwardCameraRelativeMovement = forwardSpeedAlongInput > minimumFollowSpeed;
+      }
+      const followTarget = forwardCameraRelativeMovement ? 1 : 0;
+      WORLD_STATE.cameraFollowBlend +=
+        (followTarget - WORLD_STATE.cameraFollowBlend) *
+        (1 - Math.exp(-WORLD_STATE.cameraFollowResumeSpeed * dt));
+      if (forwardCameraRelativeMovement) {
+        const followDifference = Math.atan2(
+          Math.sin(PLAYER.heading - WORLD_STATE.cameraYaw),
+          Math.cos(PLAYER.heading - WORLD_STATE.cameraYaw),
+        );
+        WORLD_STATE.cameraYaw +=
+          followDifference *
+          (1 - Math.exp(-WORLD_STATE.cameraFollowYawSpeed * WORLD_STATE.cameraFollowBlend * dt));
+      }
+      WORLD_STATE.cameraPitch *= Math.exp(-2.8 * dt);
+    } else {
+      WORLD_STATE.cameraFollowBlend = 0;
+    }
+  }
+
+  WORLD_STATE.cameraYaw = Math.atan2(
+    Math.sin(WORLD_STATE.cameraYaw),
+    Math.cos(WORLD_STATE.cameraYaw),
+  );
 }
 
 resetSimulation();

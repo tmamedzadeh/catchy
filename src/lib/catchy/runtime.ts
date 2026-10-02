@@ -10,15 +10,12 @@ import {
   step,
 } from "./agents";
 import { GAME_CONFIG } from "./config";
+import { getCameraRelativeBearing } from "./camera";
 import { consumeFixedSteps } from "./fixedStep";
 import {
-  cameraModeInput,
-  cameraTurnInput,
-  consumeCameraDrag,
-  consumeCameraZoom,
+  consumeCameraInput,
   consumePlayerActionCommands,
   inputVector,
-  movementInputFrameToken,
   registerInputResetHandler,
 } from "./input";
 import { useGameStore } from "@/store/gameStore";
@@ -30,6 +27,7 @@ const runtime = {
   captureTimer: 0,
   targetId: null as string | null,
   telemetryAcc: 0,
+  simulationEnabled: false,
   lastRestartCount: useGameStore.getState().restartCount,
 };
 
@@ -46,7 +44,9 @@ function simulateTick(dt: number) {
 
   state.tick(dt);
   state = useGameStore.getState();
+  const cameraYawForTick = WORLD_STATE.cameraYaw;
   const input = inputVector();
+  const cameraInput = consumeCameraInput(dt);
   const commands = consumePlayerActionCommands();
   const jumpAllowed = state.state === "chase" || state.state === "nearby";
   if (!jumpAllowed) commands.jump = false;
@@ -59,11 +59,8 @@ function simulateTick(dt: number) {
     commands,
     presentation || roundEnded,
     presentation || roundEnded,
-    cameraTurnInput(),
-    cameraModeInput(),
-    consumeCameraDrag(),
-    consumeCameraZoom(),
-    movementInputFrameToken(),
+    cameraYawForTick,
+    cameraInput,
   );
 
   const store = useGameStore.getState();
@@ -125,29 +122,15 @@ function simulateTick(dt: number) {
     runtime.telemetryAcc %= 0.1;
     const latest = useGameStore.getState();
     const cameraAnticipation =
-      cameraModeInput() === "normal"
-        ? Math.max(
-            -GAME_CONFIG.camera.turnAnticipationMaxRadians,
-            Math.min(
-              GAME_CONFIG.camera.turnAnticipationMaxRadians,
-              PLAYER.turnRate * GAME_CONFIG.camera.turnAnticipationPerRadianPerSecond,
-            ),
-          )
-        : 0;
+      Math.max(-1, Math.min(1, PLAYER.turnRate)) *
+      WORLD_STATE.cameraTurnAnticipation *
+      (Math.PI / 180);
     const viewYaw = WORLD_STATE.cameraYaw + cameraAnticipation;
-    const forwardX = Math.sin(viewYaw);
-    const forwardZ = Math.cos(viewYaw);
-    const rightX = Math.cos(viewYaw);
-    const rightZ = -Math.sin(viewYaw);
     let bearing = 0;
     if (target) {
       const dx = target.agent.x - PLAYER.x;
       const dz = target.agent.z - PLAYER.z;
-      const length = Math.hypot(dx, dz) || 1;
-      bearing = Math.atan2(
-        (dx * rightX + dz * rightZ) / length,
-        (dx * forwardX + dz * forwardZ) / length,
-      );
+      bearing = getCameraRelativeBearing(dx, dz, viewYaw);
     }
 
     useGameStore.getState().setTelemetry({
@@ -174,6 +157,7 @@ function simulateTick(dt: number) {
 
 /** Advance game state from elapsed render time while keeping gameplay at a fixed rate. */
 export function advanceSimulationFrame(frameDelta: number) {
+  if (!runtime.simulationEnabled) return { accumulator: 0, alpha: 0, ticks: 0 };
   const result = consumeFixedSteps(
     runtime.accumulator,
     frameDelta,
@@ -184,6 +168,18 @@ export function advanceSimulationFrame(frameDelta: number) {
   runtime.accumulator = result.accumulator;
   WORLD_STATE.renderAlpha = result.alpha;
   return result;
+}
+
+/** Simulation startup is tied to the same asset-ready state as the loading UI. */
+export function setSimulationEnabled(enabled: boolean) {
+  if (runtime.simulationEnabled === enabled) return;
+  runtime.simulationEnabled = enabled;
+  runtime.accumulator = 0;
+  if (!enabled) WORLD_STATE.renderAlpha = 0;
+}
+
+export function isSimulationEnabled() {
+  return runtime.simulationEnabled;
 }
 
 /** Used after an explicit test reset so the next manual tick starts from a clean clock. */

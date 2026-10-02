@@ -25,7 +25,10 @@ test("Speed Pad, Slow Zone, Dash Bounce, barrier cycling, and event debouncing w
   let state = await page.evaluate(() => window.__CATCHY_E2E__!.getState());
   expect(state.interactionCueKind).toBe("speedPad");
   expect(state.interactionCueId).toBe(1);
+  expect(state.boostEffectActive).toBe(true);
+  expect(state.speedBoostStatus).toBe("ready");
   expect((await readPlayer(page)).boostEffectRemaining as number).toBeGreaterThan(4.9);
+  await expect(page.locator(".speed-boost-control")).toBeHidden();
   await page.evaluate(() => window.__CATCHY_E2E__!.step(300));
   state = await page.evaluate(() => window.__CATCHY_E2E__!.getState());
   expect(state.interactionCueId).toBe(1);

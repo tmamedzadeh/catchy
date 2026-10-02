@@ -39,14 +39,20 @@ export type Telemetry = {
 };
 
 type Store = {
-  camHeight: number;
-  camAngle: number;
+  camDistance: number;
+  camPitch: number;
   camLookAhead: number;
   camCompositionOffset: number;
-  setCamHeight: (value: number) => void;
-  setCamAngle: (value: number) => void;
+  camFollowYawSpeed: number;
+  camTurnAnticipation: number;
+  camFollowResumeSpeed: number;
+  setCamDistance: (value: number) => void;
+  setCamPitch: (value: number) => void;
   setCamLookAhead: (value: number) => void;
   setCamCompositionOffset: (value: number) => void;
+  setCamFollowYawSpeed: (value: number) => void;
+  setCamTurnAnticipation: (value: number) => void;
+  setCamFollowResumeSpeed: (value: number) => void;
   resetCamera: () => void;
 
   state: GameState;
@@ -88,9 +94,12 @@ type Store = {
 
 export const CAM_DEFAULTS = {
   distance: GAME_CONFIG.camera.distance,
-  angle: GAME_CONFIG.camera.angle,
+  pitch: GAME_CONFIG.camera.pitch,
   lookAhead: GAME_CONFIG.camera.lookAhead,
   compositionOffset: GAME_CONFIG.camera.compositionOffset,
+  followYawSpeed: GAME_CONFIG.camera.followYawSpeed,
+  turnAnticipation: GAME_CONFIG.camera.turnAnticipation,
+  followResumeSpeed: GAME_CONFIG.camera.followResumeSpeed,
 };
 
 function snapCameraValue(value: number, range: { min: number; max: number; step: number }) {
@@ -113,17 +122,20 @@ const initialTelemetry: Telemetry = {
 };
 
 export const useGameStore = create<Store>((set, get) => ({
-  camHeight: CAM_DEFAULTS.distance,
-  camAngle: CAM_DEFAULTS.angle,
+  camDistance: CAM_DEFAULTS.distance,
+  camPitch: CAM_DEFAULTS.pitch,
   camLookAhead: CAM_DEFAULTS.lookAhead,
   camCompositionOffset: CAM_DEFAULTS.compositionOffset,
-  setCamHeight: (value) => {
+  camFollowYawSpeed: CAM_DEFAULTS.followYawSpeed,
+  camTurnAnticipation: CAM_DEFAULTS.turnAnticipation,
+  camFollowResumeSpeed: CAM_DEFAULTS.followResumeSpeed,
+  setCamDistance: (value) => {
     const distance = snapCameraValue(value, GAME_CONFIG.camera.tuningRanges.distance);
     WORLD_STATE.cameraDistance = distance;
-    set({ camHeight: distance });
+    set({ camDistance: distance });
   },
-  setCamAngle: (value) =>
-    set({ camAngle: snapCameraValue(value, GAME_CONFIG.camera.tuningRanges.angle) }),
+  setCamPitch: (value) =>
+    set({ camPitch: snapCameraValue(value, GAME_CONFIG.camera.tuningRanges.pitch) }),
   setCamLookAhead: (value) =>
     set({ camLookAhead: snapCameraValue(value, GAME_CONFIG.camera.tuningRanges.lookAhead) }),
   setCamCompositionOffset: (value) =>
@@ -133,19 +145,45 @@ export const useGameStore = create<Store>((set, get) => ({
         GAME_CONFIG.camera.tuningRanges.compositionOffset,
       ),
     }),
+  setCamFollowYawSpeed: (value) => {
+    const followYawSpeed = snapCameraValue(value, GAME_CONFIG.camera.tuningRanges.followYawSpeed);
+    WORLD_STATE.cameraFollowYawSpeed = followYawSpeed;
+    set({ camFollowYawSpeed: followYawSpeed });
+  },
+  setCamTurnAnticipation: (value) => {
+    const turnAnticipation = snapCameraValue(
+      value,
+      GAME_CONFIG.camera.tuningRanges.turnAnticipation,
+    );
+    WORLD_STATE.cameraTurnAnticipation = turnAnticipation;
+    set({ camTurnAnticipation: turnAnticipation });
+  },
+  setCamFollowResumeSpeed: (value) => {
+    const followResumeSpeed = snapCameraValue(
+      value,
+      GAME_CONFIG.camera.tuningRanges.followResumeSpeed,
+    );
+    WORLD_STATE.cameraFollowResumeSpeed = followResumeSpeed;
+    set({ camFollowResumeSpeed: followResumeSpeed });
+  },
   resetCamera: () => {
     WORLD_STATE.cameraYaw = PLAYER.heading;
     WORLD_STATE.previousCameraYaw = PLAYER.heading;
-    WORLD_STATE.movementCameraYaw = PLAYER.heading;
-    WORLD_STATE.movementInputFrame = null;
     WORLD_STATE.cameraPitch = 0;
     WORLD_STATE.cameraDistance = CAM_DEFAULTS.distance;
     WORLD_STATE.cameraManualRemaining = 0;
+    WORLD_STATE.cameraFollowYawSpeed = CAM_DEFAULTS.followYawSpeed;
+    WORLD_STATE.cameraTurnAnticipation = CAM_DEFAULTS.turnAnticipation;
+    WORLD_STATE.cameraFollowResumeSpeed = CAM_DEFAULTS.followResumeSpeed;
+    WORLD_STATE.cameraFollowBlend = 1;
     set({
-      camHeight: CAM_DEFAULTS.distance,
-      camAngle: CAM_DEFAULTS.angle,
+      camDistance: CAM_DEFAULTS.distance,
+      camPitch: CAM_DEFAULTS.pitch,
       camLookAhead: CAM_DEFAULTS.lookAhead,
       camCompositionOffset: CAM_DEFAULTS.compositionOffset,
+      camFollowYawSpeed: CAM_DEFAULTS.followYawSpeed,
+      camTurnAnticipation: CAM_DEFAULTS.turnAnticipation,
+      camFollowResumeSpeed: CAM_DEFAULTS.followResumeSpeed,
       cameraYaw: WORLD_STATE.cameraYaw,
     });
   },
@@ -233,10 +271,13 @@ export const useGameStore = create<Store>((set, get) => ({
     clearInput();
     roundTimeRemaining = GAME_CONFIG.roundSeconds;
     set((state) => ({
-      camHeight: CAM_DEFAULTS.distance,
-      camAngle: CAM_DEFAULTS.angle,
+      camDistance: CAM_DEFAULTS.distance,
+      camPitch: CAM_DEFAULTS.pitch,
       camLookAhead: CAM_DEFAULTS.lookAhead,
       camCompositionOffset: CAM_DEFAULTS.compositionOffset,
+      camFollowYawSpeed: CAM_DEFAULTS.followYawSpeed,
+      camTurnAnticipation: CAM_DEFAULTS.turnAnticipation,
+      camFollowResumeSpeed: CAM_DEFAULTS.followResumeSpeed,
       caught: 0,
       time: GAME_CONFIG.roundSeconds,
       state: "chase",

@@ -123,17 +123,17 @@ function Slider({
   onChange: (value: number) => void;
 }) {
   const progress = ((value - min) / (max - min)) * 100;
+  const formatValue = (number: number) =>
+    unit === "%"
+      ? `${(number * 100).toFixed(0)}%`
+      : unit === "°"
+        ? `${number.toFixed(0)}°`
+        : `${number.toFixed(1)}${unit}`;
   return (
     <label className="pointer-events-auto block">
       <div className="mb-1 flex items-center justify-between font-display text-[0.7rem] tracking-wide text-catchy-ink-soft uppercase">
         <span>{label}</span>
-        <span className="text-catchy-accent-2">
-          {unit === "%"
-            ? `${(value * 100).toFixed(0)}%`
-            : unit === "°"
-              ? `${value.toFixed(0)}°`
-              : `${value.toFixed(1)}${unit}`}
-        </span>
+        <span className="text-catchy-accent-2">{formatValue(value)}</span>
       </div>
       <input
         type="range"
@@ -148,6 +148,10 @@ function Slider({
           background: `linear-gradient(90deg, var(--catchy-accent) ${progress}%, oklch(0.34 0.07 152 / 0.15) ${progress}%)`,
         }}
       />
+      <div className="-mt-0.5 flex justify-between font-body text-[0.55rem] text-catchy-ink-soft">
+        <span>Min {formatValue(min)}</span>
+        <span>Max {formatValue(max)}</span>
+      </div>
     </label>
   );
 }
@@ -257,7 +261,7 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
                   className="size-3 transition-transform duration-100"
                   style={{ transform: "rotate(" + bearing + "rad)" }}
                   fill="currentColor"
-                  aria-label="Direction to nearest runner"
+                  aria-label="Direction to target runner"
                   role="img"
                 >
                   <path
@@ -351,9 +355,9 @@ export function HUD({ gameReady }: { gameReady: boolean }) {
         </div>
       )}
 
-      <CameraSurface />
+      <CameraSurface enabled={gameReady} />
       <div className="touch-controls absolute">
-        <Joystick />
+        <Joystick enabled={gameReady} />
       </div>
       <div className="ability-controls absolute flex items-center gap-2">
         <DashControl gameReady={gameReady} state={state} status={dashStatus} />
@@ -504,7 +508,9 @@ function SpeedBoostControl({
 }) {
   const isChasing = state === "chase" || state === "nearby";
   const enabled = gameReady && isChasing && status === "ready" && !effectActive;
-  const label = status === "active" ? "ACTIVE" : status === "cooldown" ? "RECHARGING" : "READY";
+  const active = status === "active" || effectActive;
+  const label = active ? "ACTIVE" : status === "cooldown" ? "RECHARGING" : "READY";
+  const accessibleStatus = active ? "active" : status;
   const pointerHandlers = useActionPointer("speedBoost", enabled, requestPlayerSpeedBoost);
 
   return (
@@ -513,7 +519,7 @@ function SpeedBoostControl({
         {...pointerHandlers}
         type="button"
         data-sound="boost"
-        aria-label={`Speed Up ${isChasing ? status : "unavailable"}`}
+        aria-label={`Speed Up ${isChasing ? accessibleStatus : "unavailable"}`}
         title={label}
         disabled={!enabled}
         onClick={(event) => {
@@ -549,14 +555,20 @@ function SpeedBoostControl({
 }
 
 function CameraTuningPanel() {
-  const camHeight = useGameStore((s) => s.camHeight);
-  const camAngle = useGameStore((s) => s.camAngle);
+  const camDistance = useGameStore((s) => s.camDistance);
+  const camPitch = useGameStore((s) => s.camPitch);
   const camLookAhead = useGameStore((s) => s.camLookAhead);
   const camCompositionOffset = useGameStore((s) => s.camCompositionOffset);
-  const setCamHeight = useGameStore((s) => s.setCamHeight);
-  const setCamAngle = useGameStore((s) => s.setCamAngle);
+  const camFollowYawSpeed = useGameStore((s) => s.camFollowYawSpeed);
+  const camTurnAnticipation = useGameStore((s) => s.camTurnAnticipation);
+  const camFollowResumeSpeed = useGameStore((s) => s.camFollowResumeSpeed);
+  const setCamDistance = useGameStore((s) => s.setCamDistance);
+  const setCamPitch = useGameStore((s) => s.setCamPitch);
   const setCamLookAhead = useGameStore((s) => s.setCamLookAhead);
   const setCamCompositionOffset = useGameStore((s) => s.setCamCompositionOffset);
+  const setCamFollowYawSpeed = useGameStore((s) => s.setCamFollowYawSpeed);
+  const setCamTurnAnticipation = useGameStore((s) => s.setCamTurnAnticipation);
+  const setCamFollowResumeSpeed = useGameStore((s) => s.setCamFollowResumeSpeed);
   const resetCamera = useGameStore((s) => s.resetCamera);
   const ranges = GAME_CONFIG.camera.tuningRanges;
   const cameraYaw = useGameStore((s) => s.cameraYaw);
@@ -573,13 +585,13 @@ function CameraTuningPanel() {
         Camera tuning
       </div>
       <Slider
-        label="Distance / zoom"
-        value={camHeight}
+        label="Distance"
+        value={camDistance}
         {...ranges.distance}
-        unit=""
-        onChange={setCamHeight}
+        unit=" u"
+        onChange={setCamDistance}
       />
-      <Slider label="Angle" value={camAngle} {...ranges.angle} unit="°" onChange={setCamAngle} />
+      <Slider label="Pitch" value={camPitch} {...ranges.pitch} unit="°" onChange={setCamPitch} />
       <Slider
         label="Look ahead"
         value={camLookAhead}
@@ -593,6 +605,27 @@ function CameraTuningPanel() {
         {...ranges.compositionOffset}
         unit="%"
         onChange={setCamCompositionOffset}
+      />
+      <Slider
+        label="Follow yaw speed"
+        value={camFollowYawSpeed}
+        {...ranges.followYawSpeed}
+        unit=" /s"
+        onChange={setCamFollowYawSpeed}
+      />
+      <Slider
+        label="Turn anticipation"
+        value={camTurnAnticipation}
+        {...ranges.turnAnticipation}
+        unit="°"
+        onChange={setCamTurnAnticipation}
+      />
+      <Slider
+        label="Follow resume speed"
+        value={camFollowResumeSpeed}
+        {...ranges.followResumeSpeed}
+        unit=" /s"
+        onChange={setCamFollowResumeSpeed}
       />
       <button
         onClick={resetCamera}
@@ -688,7 +721,7 @@ function FirstSessionOnboarding({ gameReady }: { gameReady: boolean }) {
         <div className="mt-0.5 text-xs text-catchy-ink-soft">
           {isCoarsePointer
             ? "Left stick moves · drag the world to look · Dash · Jump · Speed Up"
-            : "W / S move · A / D strafe · mouse drag looks · ↑ recenter · ↓ overview · Shift dash · E Speed Up · Space jump"}
+            : "W / S move · A / D strafe · drag or arrow keys look · Shift Dash · E Speed Up · Space Jump"}
         </div>
       </div>
     </div>

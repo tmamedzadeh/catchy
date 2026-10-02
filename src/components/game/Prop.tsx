@@ -1,8 +1,10 @@
+import { Suspense } from "react";
 import { useLoader } from "@react-three/fiber";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as THREE from "three";
 import { PROPS, PROP_MODELS, type MapObject } from "@/lib/catchy/config";
+import { NonCriticalAssetBoundary } from "./NonCriticalAssetBoundary";
 
 /** Each kit keeps its own Textures/ folder, so models live in kit subfolders. */
 function modelUrl(model: string) {
@@ -196,7 +198,11 @@ export function Props() {
   return (
     <group>
       {PROP_MODELS.map((model) => (
-        <PropGroup key={model} model={model} />
+        <Suspense key={model} fallback={null}>
+          <NonCriticalAssetBoundary>
+            <PropGroup model={model} />
+          </NonCriticalAssetBoundary>
+        </Suspense>
       ))}
     </group>
   );

@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef } from "react";
 import { claimTouchPointer, joystick, releaseTouchPointer } from "@/lib/catchy/input";
 import { calculateJoystickVector, measureJoystickGeometry } from "@/lib/catchy/joystick";
 
-export function Joystick() {
+export function Joystick({ enabled }: { enabled: boolean }) {
   const base = useRef<HTMLDivElement>(null);
   const knobElement = useRef<HTMLDivElement>(null);
   const pointer = useRef<number | null>(null);
   const geometry = useRef<ReturnType<typeof measureJoystickGeometry> | null>(null);
+  const vector = useRef({ knobX: 0, knobY: 0, x: 0, y: 0 });
 
   const readGeometry = useCallback(() => {
     const baseElement = base.current;
@@ -26,13 +27,13 @@ export function Joystick() {
   const update = (clientX: number, clientY: number) => {
     const measured = geometry.current ?? readGeometry();
     if (!measured) return;
-    const vector = calculateJoystickVector(clientX, clientY, measured);
+    const currentVector = calculateJoystickVector(clientX, clientY, measured, vector.current);
     knobElement.current?.style.setProperty(
       "transform",
-      `translate(calc(-50% + ${vector.knobX}px), calc(-50% + ${vector.knobY}px))`,
+      `translate(calc(-50% + ${currentVector.knobX}px), calc(-50% + ${currentVector.knobY}px))`,
     );
-    joystick.x = vector.x;
-    joystick.z = -vector.y;
+    joystick.x = currentVector.x;
+    joystick.z = -currentVector.y;
     joystick.active = true;
   };
 
@@ -50,6 +51,7 @@ export function Joystick() {
   }, []);
 
   useEffect(() => {
+    if (!enabled) release();
     const resize = () => readGeometry();
     const clear = () => release();
     const onVisibilityChange = () => {
@@ -68,14 +70,18 @@ export function Joystick() {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       release();
     };
-  }, [readGeometry, release]);
+  }, [enabled, readGeometry, release]);
 
   return (
     <div
       ref={base}
       onPointerDown={(event) => {
         event.stopPropagation();
-        if (pointer.current !== null || (event.pointerType === "mouse" && event.button !== 0))
+        if (
+          !enabled ||
+          pointer.current !== null ||
+          (event.pointerType === "mouse" && event.button !== 0)
+        )
           return;
         if (!claimTouchPointer(event.pointerId, "movement")) return;
         event.preventDefault();

@@ -12,7 +12,7 @@ import { pinchZoomDelta } from "@/lib/catchy/pinch";
 type OwnedPointer = { x: number; y: number };
 
 /** Camera owns only pointers that did not begin on another HUD control. */
-export function CameraSurface() {
+export function CameraSurface({ enabled }: { enabled: boolean }) {
   const pointers = useRef(new Map<number, OwnedPointer>());
   const pinchDistance = useRef<number | null>(null);
 
@@ -47,6 +47,7 @@ export function CameraSurface() {
       aria-hidden="true"
       className="camera-surface pointer-events-auto absolute inset-0 touch-none"
       onPointerDown={(event) => {
+        if (!enabled) return;
         if (event.pointerType === "mouse" && event.button !== 0) return;
         if (!claimTouchPointer(event.pointerId, "camera")) return;
         event.preventDefault();

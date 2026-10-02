@@ -1,4 +1,3 @@
-import { Suspense } from "react";
 import { Lightformer } from "@react-three/drei";
 import { EnvironmentCapture } from "./EnvironmentCapture";
 import { Arena, SkyDome } from "./Arena";
@@ -9,9 +8,14 @@ import { CaptureBurst, DashStreak, Dust, TargetBeacon } from "./Effects";
 import { FollowCamera } from "./FollowCamera";
 import { Director } from "./Director";
 import { QUALITY_LEVELS, type QualityTier } from "./quality";
-import { NonCriticalAssetBoundary } from "./NonCriticalAssetBoundary";
 
-export function Scene({ qualityTier }: { qualityTier: QualityTier }) {
+export function Scene({
+  qualityTier,
+  gameReady,
+}: {
+  qualityTier: QualityTier;
+  gameReady: boolean;
+}) {
   return (
     <>
       <fog attach="fog" args={["#bde6ff", 88, 205]} />
@@ -49,11 +53,7 @@ export function Scene({ qualityTier }: { qualityTier: QualityTier }) {
       </EnvironmentCapture>
 
       <Arena />
-      <Suspense fallback={null}>
-        <NonCriticalAssetBoundary>
-          <Props />
-        </NonCriticalAssetBoundary>
-      </Suspense>
+      <Props />
       <ArenaInteractions />
       <Characters />
       <Dust />
@@ -62,7 +62,7 @@ export function Scene({ qualityTier }: { qualityTier: QualityTier }) {
       <TargetBeacon />
 
       <FollowCamera />
-      <Director />
+      <Director gameReady={gameReady} />
     </>
   );
 }

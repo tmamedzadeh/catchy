@@ -109,6 +109,7 @@ export function calculateJoystickVector(
   clientX: number,
   clientY: number,
   geometry: JoystickGeometry,
+  vector: JoystickVector = { knobX: 0, knobY: 0, x: 0, y: 0 },
 ): JoystickVector {
   const rawX = clientX - geometry.centerX;
   const rawY = clientY - geometry.centerY;
@@ -117,10 +118,9 @@ export function calculateJoystickVector(
   const knobX = rawX * scale;
   const knobY = rawY * scale;
   const inverseRadius = geometry.maxRadius > 0 ? 1 / geometry.maxRadius : 0;
-  return {
-    knobX,
-    knobY,
-    x: knobX * inverseRadius,
-    y: knobY * inverseRadius,
-  };
+  vector.knobX = knobX;
+  vector.knobY = knobY;
+  vector.x = knobX * inverseRadius;
+  vector.y = knobY * inverseRadius;
+  return vector;
 }

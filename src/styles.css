@@ -313,6 +313,7 @@
 }
 
 .ability-controls {
+  display: none;
   right: var(--control-right-inset);
   bottom: var(--control-bottom-inset);
   gap: var(--action-control-gap);
@@ -320,6 +321,7 @@
 }
 
 .speed-boost-control {
+  display: none;
   right: var(--control-right-inset);
   bottom: calc(
     var(--control-bottom-inset) + var(--action-control-size) + var(--action-control-gap)
@@ -654,10 +656,12 @@
   }
 
   .ability-controls {
+    display: flex;
     right: var(--control-right-inset);
   }
 
   .speed-boost-control {
+    display: block;
     right: var(--control-right-inset);
   }
 }

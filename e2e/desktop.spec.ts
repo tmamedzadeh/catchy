@@ -28,7 +28,8 @@ test("start screen, compact HUD, manifest, and production-only UI gates", async 
   expect(statusBounds).not.toBeNull();
   expect(Math.abs(brandBounds!.height - statusBounds!.height)).toBeLessThanOrEqual(2);
   expect(await status.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-  await expect(page.getByRole("button", { name: "Speed Up ready" })).toBeEnabled();
+  await expect(page.locator(".ability-controls")).toBeHidden();
+  await expect(page.locator(".speed-boost-control")).toBeHidden();
   await expect(page.getByText("Camera tuning", { exact: true })).toHaveCount(0);
   await expect(page.locator(".game-canvas canvas")).toBeVisible();
 });
@@ -56,9 +57,7 @@ test("desktop movement, camera holds, Jump, Dash, and Speed Boost use the approv
       const camera = window.__CATCHY_E2E__!.getRenderedCamera();
       return camera !== null && Math.abs(camera.forwardX) < 0.04 && camera.forwardZ > 0.9;
     });
-    const renderedCamera = (await page.evaluate(() =>
-      window.__CATCHY_E2E__!.getRenderedCamera(),
-    ))!;
+    const renderedCamera = (await page.evaluate(() => window.__CATCHY_E2E__!.getRenderedCamera()))!;
     const forwardLength = Math.hypot(renderedCamera.forwardX, renderedCamera.forwardZ);
     const cameraForward = {
       x: renderedCamera.forwardX / forwardLength,
@@ -76,7 +75,10 @@ test("desktop movement, camera holds, Jump, Dash, and Speed Boost use the approv
     const expected = control.axis === "forward" ? cameraForward : cameraRight;
     const progress = (dx * expected.x + dz * expected.z) * control.sign;
     const crossTrack = Math.abs(dx * expected.z - dz * expected.x);
-    expect(progress, `${control.name} must move in the rendered camera-relative direction`).toBeGreaterThan(6);
+    expect(
+      progress,
+      `${control.name} must move in the rendered camera-relative direction`,
+    ).toBeGreaterThan(6);
     expect(
       crossTrack,
       `${control.name} must move straight instead of orbiting as Follow turns`,
@@ -121,29 +123,36 @@ test("desktop movement, camera holds, Jump, Dash, and Speed Boost use the approv
   expect(afterHeldSpace.dashState).toBe("ready");
   expect(afterHeldSpace.boostState).toBe("ready");
 
-  await page.evaluate(() => window.__CATCHY_E2E__!.turnCamera(1.4));
-  const headingAtRecenter = (await readPlayer(page)).heading as number;
-  const yawBeforeRecenter = (await readWorld(page)).cameraYaw as number;
+  await page.evaluate(() => {
+    const game = window.__CATCHY_E2E__!;
+    game.reset();
+    game.turnCamera(0);
+  });
+  const yawBeforeKeys = (await readWorld(page)).cameraYaw as number;
   await page.keyboard.down("ArrowUp");
-  expect(await page.evaluate(() => window.__CATCHY_E2E__!.getCameraMode())).toBe("recenter");
-  await page.evaluate(() => window.__CATCHY_E2E__!.step(350));
+  await page.evaluate(() => window.__CATCHY_E2E__!.step(120));
   await page.keyboard.up("ArrowUp");
-  const headingAfterRecenter = (await readPlayer(page)).heading as number;
-  const yawAfterRecenter = (await readWorld(page)).cameraYaw as number;
-  const errorBeforeRecenter = Math.atan2(
-    Math.sin(yawBeforeRecenter - headingAtRecenter),
-    Math.cos(yawBeforeRecenter - headingAtRecenter),
-  );
-  const errorAfterRecenter = Math.atan2(
-    Math.sin(yawAfterRecenter - headingAfterRecenter),
-    Math.cos(yawAfterRecenter - headingAfterRecenter),
-  );
-  expect(headingAfterRecenter).toBe(headingAtRecenter);
-  expect(Math.abs(errorAfterRecenter)).toBeLessThan(Math.abs(errorBeforeRecenter));
+  expect((await readWorld(page)).cameraPitch).toBeLessThan(0);
+  const yawAfterUp = (await readWorld(page)).cameraYaw as number;
+  expect(yawAfterUp).toBeCloseTo(yawBeforeKeys, 6);
+
   await page.keyboard.down("ArrowDown");
-  expect(await page.evaluate(() => window.__CATCHY_E2E__!.getCameraMode())).toBe("tactical");
+  await page.evaluate(() => window.__CATCHY_E2E__!.step(240));
   await page.keyboard.up("ArrowDown");
-  expect(await page.evaluate(() => window.__CATCHY_E2E__!.getCameraMode())).toBe("normal");
+  expect((await readWorld(page)).cameraPitch).toBeGreaterThan(0);
+
+  await page.keyboard.down("ArrowLeft");
+  await page.evaluate(() => window.__CATCHY_E2E__!.step(300));
+  await page.keyboard.up("ArrowLeft");
+  const yawAfterLeft = (await readWorld(page)).cameraYaw as number;
+  expect(yawAfterLeft).toBeGreaterThan(yawBeforeKeys + 0.5);
+  await page.evaluate(() => window.__CATCHY_E2E__!.step(100));
+  expect((await readWorld(page)).cameraYaw).toBeCloseTo(yawAfterLeft, 6);
+
+  await page.keyboard.down("ArrowRight");
+  await page.evaluate(() => window.__CATCHY_E2E__!.step(300));
+  await page.keyboard.up("ArrowRight");
+  expect((await readWorld(page)).cameraYaw).toBeLessThan(yawAfterLeft - 0.5);
 
   await page.keyboard.down("Shift");
   await page.evaluate(() => window.__CATCHY_E2E__!.step(50));
@@ -155,9 +164,7 @@ test("desktop movement, camera holds, Jump, Dash, and Speed Boost use the approv
   expect((await readPlayer(page)).boostState).toBe("active");
 });
 
-test("mouse drag changes the rendered camera direction while A/D and side arrows do not", async ({
-  page,
-}) => {
+test("mouse drag and arrows rotate the camera while WASD stays movement-only", async ({ page }) => {
   test.setTimeout(150_000);
   await openStartScreen(page);
   await startGame(page);
@@ -281,7 +288,7 @@ test("mouse drag changes the rendered camera direction while A/D and side arrows
     game.turnCamera(0);
     game.placePlayer(-4, 12);
   });
-  for (const key of ["a", "d", "ArrowLeft", "ArrowRight"]) {
+  for (const key of ["a", "d"]) {
     await page.evaluate(() => {
       const game = window.__CATCHY_E2E__!;
       game.reset();

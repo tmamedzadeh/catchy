@@ -8,13 +8,12 @@ import {
 } from "./agents";
 import { GAME_CONFIG } from "./config";
 import {
-  cameraModeInput,
   clearInput,
   getTouchPointerOwners,
   requestPlayerDash,
   requestPlayerSpeedBoost,
 } from "./input";
-import { advanceSimulationFrame, resetSimulationRuntime } from "./runtime";
+import { advanceSimulationFrame, isSimulationEnabled, resetSimulationRuntime } from "./runtime";
 import { useGameStore } from "@/store/gameStore";
 
 type E2EState = Pick<
@@ -25,6 +24,7 @@ type E2EState = Pick<
   | "capture"
   | "dashStatus"
   | "speedBoostStatus"
+  | "boostEffectActive"
   | "boostCueId"
   | "interactionCueId"
   | "interactionCueKind"
@@ -55,7 +55,7 @@ type E2EWorld = {
   cameraPitch: number;
   cameraDistance: number;
   cameraManualRemaining: number;
-  movementCameraYaw: number;
+  cameraFollowBlend: number;
   speedPadPulseRemaining: number;
   bounceImpactId: number;
 };
@@ -69,6 +69,7 @@ type E2ERenderedCamera = {
 };
 
 export type CatchyE2EApi = {
+  isReady: () => boolean;
   reset: () => void;
   step: (milliseconds: number) => void;
   getState: () => E2EState;
@@ -77,7 +78,6 @@ export type CatchyE2EApi = {
   getWorld: () => E2EWorld;
   getRenderedCamera: () => E2ERenderedCamera | null;
   getTouchPointerOwners: () => Array<[number, string]>;
-  getCameraMode: () => "normal" | "recenter" | "tactical";
   activateDash: () => void;
   activateBoost: () => void;
   placePlayer: (x: number, z: number, vx?: number, vz?: number) => void;
@@ -107,6 +107,7 @@ function syncAgentPosition(agent: (typeof AGENTS)[number], x: number, z: number)
 /** This module is dynamically imported only by the dedicated E2E build. */
 export function installCatchyE2EBridge() {
   const api: CatchyE2EApi = {
+    isReady: isSimulationEnabled,
     reset() {
       useGameStore.getState().restart();
       clearInput();
@@ -132,6 +133,7 @@ export function installCatchyE2EBridge() {
         capture: state.capture,
         dashStatus: state.dashStatus,
         speedBoostStatus: state.speedBoostStatus,
+        boostEffectActive: state.boostEffectActive,
         boostCueId: state.boostCueId,
         interactionCueId: state.interactionCueId,
         interactionCueKind: state.interactionCueKind,
@@ -175,7 +177,7 @@ export function installCatchyE2EBridge() {
         cameraPitch: WORLD_STATE.cameraPitch,
         cameraDistance: WORLD_STATE.cameraDistance,
         cameraManualRemaining: WORLD_STATE.cameraManualRemaining,
-        movementCameraYaw: WORLD_STATE.movementCameraYaw,
+        cameraFollowBlend: WORLD_STATE.cameraFollowBlend,
         speedPadPulseRemaining: WORLD_STATE.speedPadPulseRemaining,
         bounceImpactId: WORLD_STATE.bounceImpactId,
       };
@@ -189,7 +191,6 @@ export function installCatchyE2EBridge() {
     getTouchPointerOwners() {
       return getTouchPointerOwners();
     },
-    getCameraMode: cameraModeInput,
     activateDash() {
       requestPlayerDash();
     },
@@ -215,8 +216,7 @@ export function installCatchyE2EBridge() {
       WORLD_STATE.cameraYaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
       WORLD_STATE.previousCameraYaw = WORLD_STATE.cameraYaw;
       WORLD_STATE.cameraManualRemaining = GAME_CONFIG.camera.manualPersistenceSeconds;
-      WORLD_STATE.movementInputFrame = null;
-      WORLD_STATE.movementCameraYaw = WORLD_STATE.cameraYaw;
+      WORLD_STATE.cameraFollowBlend = 0;
     },
     endRound() {
       useGameStore.getState().tick(GAME_CONFIG.roundSeconds);
