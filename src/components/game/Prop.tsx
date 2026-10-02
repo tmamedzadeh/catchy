@@ -3,7 +3,8 @@ import { useLoader } from "@react-three/fiber";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as THREE from "three";
-import { PROPS, PROP_MODELS, type MapObject } from "@/lib/catchy/config";
+import { ASSET_CATALOG, getActiveMap } from "@/lib/catchy/maps";
+import type { MapObject } from "@/lib/catchy/maps";
 import { NonCriticalAssetBoundary } from "./NonCriticalAssetBoundary";
 
 /** Each kit keeps its own Textures/ folder, so models live in kit subfolders. */
@@ -89,7 +90,9 @@ const SHADOW_CASTERS = new Set([
   "stone_largeC",
 ]);
 
-PROP_MODELS.forEach((model) => useLoader.preload(GLTFLoader, modelUrl(model)));
+ASSET_CATALOG.map((asset) => asset.id).forEach((model) =>
+  useLoader.preload(GLTFLoader, modelUrl(model)),
+);
 
 type InstancedPartData = {
   geometry: THREE.BufferGeometry;
@@ -152,7 +155,10 @@ function InstancedPropPart({ part, castShadow }: { part: InstancedPartData; cast
 /** One model group shares GLTF materials and instances repeated static meshes. */
 function PropGroup({ model }: { model: string }) {
   const { scene } = useLoader(GLTFLoader, modelUrl(model));
-  const items = useMemo(() => PROPS.filter((prop) => prop.model === model), [model]);
+  const items = useMemo(
+    () => getActiveMap().objects.filter((prop) => prop.model === model),
+    [model],
+  );
   const atlasUrl = useMemo(() => modelAtlasUrl(model), [model]);
   const parts = useMemo(
     () => (items.length > 1 ? buildInstancedParts(scene, items, atlasUrl) : []),
@@ -195,9 +201,10 @@ function PropGroup({ model }: { model: string }) {
 }
 
 export function Props() {
+  const models = Array.from(new Set(getActiveMap().objects.map((object) => object.model)));
   return (
     <group>
-      {PROP_MODELS.map((model) => (
+      {models.map((model) => (
         <Suspense key={model} fallback={null}>
           <NonCriticalAssetBoundary>
             <PropGroup model={model} />

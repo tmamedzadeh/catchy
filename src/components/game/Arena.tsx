@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { ARENA, GAME_CONFIG } from "@/lib/catchy/config";
+import { ARENA } from "@/lib/catchy/config";
+import { getActiveMap } from "@/lib/catchy/maps";
 import { createTerrainTexture } from "@/lib/catchy/textures";
 
 const SAND = "#edb75f";
@@ -101,7 +102,7 @@ function StoneRim() {
     const dummy = new THREE.Object3D();
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2;
-      const radius = GAME_CONFIG.arenaRadius + 0.08;
+      const radius = getActiveMap().arena.radius + 0.08;
       dummy.position.set(
         Math.cos(angle) * radius,
         0.72 + (i % 3) * 0.035,
@@ -125,7 +126,7 @@ function StoneRim() {
 
 /** Sand ground disc, boundary wall and the cliff the arena sits on. */
 export function Arena() {
-  const R = GAME_CONFIG.arenaRadius;
+  const R = getActiveMap().arena.radius;
   const textures = useMemo(
     () => ({
       sand: createTerrainTexture("sand", 12),
@@ -159,10 +160,16 @@ export function Arena() {
         <meshStandardMaterial map={textures.sand} color={SAND} roughness={0.8} />
       </mesh>
 
-      {/* smaller irregular wear marks replace the old flat circular stains */}
-      <IrregularIsland position={[-12, 9]} radius={5.4} color={SAND_DARK} y={0.062} />
-      <IrregularIsland position={[10, 11]} radius={4.8} color="#f1c875" y={0.063} />
-      <IrregularIsland position={[-2, -15]} radius={4.2} color="#e4a552" y={0.064} />
+      {/* map-owned decorative wear marks */}
+      {(getActiveMap().decorations ?? []).map((decoration) => (
+        <IrregularIsland
+          key={decoration.id}
+          position={[decoration.position.x, decoration.position.z]}
+          radius={decoration.radius}
+          color={decoration.color}
+          y={decoration.y}
+        />
+      ))}
 
       {/* thin boundary wall */}
       <mesh position={[0, ARENA.rimHeight / 2, 0]} castShadow receiveShadow>

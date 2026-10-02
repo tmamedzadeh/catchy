@@ -1,11 +1,7 @@
 // Mutable simulation state. Nothing here is stored in React at frame rate.
-import {
-  GAME_CONFIG,
-  INTERACTIVE_OBJECTS,
-  OBSTACLES,
-  type InteractiveMapObject,
-  type Obstacle,
-} from "./config";
+import { GAME_CONFIG, type Obstacle, type InteractiveMapObject } from "./config";
+import { getActiveMap, setActiveMap } from "./maps";
+import type { MapDefinition } from "./maps/types";
 import { getCameraBasis, NEUTRAL_CAMERA_INPUT, type CameraBasis, type CameraInput } from "./camera";
 
 export type Agent = {
@@ -71,12 +67,37 @@ export type Agent = {
 export type DashState = "ready" | "active" | "cooldown";
 export type BoostState = "ready" | "active" | "cooldown";
 
-const initialPositions = [
-  { id: "player", role: "player" as const, ...GAME_CONFIG.player.spawn, heading: -1.2, phase: 0 },
-  { id: "pink", role: "runner" as const, ...GAME_CONFIG.npc.spawns[0], heading: 1, phase: 1.3 },
-  { id: "purple", role: "runner" as const, ...GAME_CONFIG.npc.spawns[1], heading: 2, phase: 2.6 },
-  { id: "orange", role: "runner" as const, ...GAME_CONFIG.npc.spawns[2], heading: -2, phase: 4.1 },
-];
+function positionsForMap(map: MapDefinition) {
+  return [
+    { id: "player", role: "player" as const, ...map.playerSpawn, heading: -1.2, phase: 0 },
+    {
+      ...map.runnerSpawns[0]!,
+      id: map.runnerSpawns[0]?.id ?? "pink",
+      role: "runner" as const,
+      heading: 1,
+      phase: 1.3,
+    },
+    {
+      ...map.runnerSpawns[1]!,
+      id: map.runnerSpawns[1]?.id ?? "purple",
+      role: "runner" as const,
+      heading: 2,
+      phase: 2.6,
+    },
+    {
+      ...map.runnerSpawns[2]!,
+      id: map.runnerSpawns[2]?.id ?? "orange",
+      role: "runner" as const,
+      heading: -2,
+      phase: 4.1,
+    },
+  ];
+}
+
+let activeWorld = getActiveMap();
+let initialPositions = positionsForMap(activeWorld);
+let OBSTACLES: Obstacle[] = activeWorld.objects;
+let INTERACTIVE_OBJECTS: InteractiveMapObject[] = activeWorld.interactiveObjects;
 
 function makeAgent(index: number): Agent {
   const initial = initialPositions[index]!;
@@ -146,12 +167,29 @@ export const AGENTS: Agent[] = initialPositions.map((_, index) => makeAgent(inde
 export const PLAYER = AGENTS[0]!;
 export const RUNNERS = AGENTS.slice(1);
 
+export function installMapForSimulation(map: MapDefinition) {
+  activeWorld = setActiveMap(map);
+  initialPositions = positionsForMap(activeWorld);
+  OBSTACLES = activeWorld.objects;
+  INTERACTIVE_OBJECTS = activeWorld.interactiveObjects;
+  SPEED_PAD = INTERACTIVE_OBJECTS.find((item) => item.kind === "speedPad")!;
+  SLOW_ZONE = INTERACTIVE_OBJECTS.find((item) => item.kind === "slowZone")!;
+  ELASTIC_BOUNCE = INTERACTIVE_OBJECTS.find((item) => item.kind === "elasticBounce")!;
+  TEMPORARY_BARRIER = INTERACTIVE_OBJECTS.find((item) => item.kind === "temporaryBarrier")!;
+  rebuildNavigationGraph();
+  resetSimulation();
+}
+
+export function getSimulationMap() {
+  return activeWorld;
+}
+
 export type InteractionKind = "speedPad" | "slowZone" | "elasticBounce" | "dash";
 
-const SPEED_PAD = INTERACTIVE_OBJECTS.find((item) => item.kind === "speedPad")!;
-const SLOW_ZONE = INTERACTIVE_OBJECTS.find((item) => item.kind === "slowZone")!;
-const ELASTIC_BOUNCE = INTERACTIVE_OBJECTS.find((item) => item.kind === "elasticBounce")!;
-const TEMPORARY_BARRIER = INTERACTIVE_OBJECTS.find((item) => item.kind === "temporaryBarrier")!;
+let SPEED_PAD = INTERACTIVE_OBJECTS.find((item) => item.kind === "speedPad")!;
+let SLOW_ZONE = INTERACTIVE_OBJECTS.find((item) => item.kind === "slowZone")!;
+let ELASTIC_BOUNCE = INTERACTIVE_OBJECTS.find((item) => item.kind === "elasticBounce")!;
+let TEMPORARY_BARRIER = INTERACTIVE_OBJECTS.find((item) => item.kind === "temporaryBarrier")!;
 
 export const WORLD_STATE = {
   cameraYaw: PLAYER.heading,
@@ -344,7 +382,7 @@ type NavLink = { node: number; cost: number };
 type NavNode = { x: number; z: number; links: NavLink[] };
 
 export function isWalkablePoint(x: number, z: number, radius: number) {
-  if (Math.hypot(x, z) + radius > GAME_CONFIG.arenaRadius - WALL_MARGIN) return false;
+  if (Math.hypot(x, z) + radius > activeWorld.arena.radius - WALL_MARGIN) return false;
   for (const obstacle of OBSTACLES) {
     if (overlapsObstacle(x, z, radius, obstacle)) return false;
   }
@@ -368,7 +406,7 @@ export function isWalkableSegment(x1: number, z1: number, x2: number, z2: number
 function buildNavigationGraph() {
   const spacing = GAME_CONFIG.npc.navigation.gridSpacing;
   const extent = Math.floor(
-    (GAME_CONFIG.arenaRadius - GAME_CONFIG.npc.radius - WALL_MARGIN) / spacing,
+    (activeWorld.arena.radius - GAME_CONFIG.npc.radius - WALL_MARGIN) / spacing,
   );
   const width = extent * 2 + 1;
   const grid = new Int32Array(width * width);
@@ -473,7 +511,7 @@ export function getNavigationSummary() {
 rebuildNavigationGraph();
 
 export function isSafeSpawn(agent: Agent, x: number, z: number) {
-  if (Math.hypot(x, z) + agent.radius > GAME_CONFIG.arenaRadius - WALL_MARGIN) return false;
+  if (Math.hypot(x, z) + agent.radius > activeWorld.arena.radius - WALL_MARGIN) return false;
   for (const obstacle of OBSTACLES) {
     if (overlapsObstacle(x, z, agent.radius, obstacle)) return false;
   }
@@ -513,8 +551,8 @@ export function findSafeSpawn(
 
   // Deterministic whole-map fallback; validate every candidate against the
   // same live collision and separation rules as the normal search.
-  for (let z = -GAME_CONFIG.arenaRadius + 2; z < GAME_CONFIG.arenaRadius - 2; z += 1.5) {
-    for (let x = -GAME_CONFIG.arenaRadius + 2; x < GAME_CONFIG.arenaRadius - 2; x += 1.5) {
+  for (let z = -activeWorld.arena.radius + 2; z < activeWorld.arena.radius - 2; z += 1.5) {
+    for (let x = -activeWorld.arena.radius + 2; x < activeWorld.arena.radius - 2; x += 1.5) {
       if (isSafeSpawn(agent, x, z)) return { x, z };
     }
   }
@@ -803,7 +841,7 @@ export function resolveWorld(agent: Agent) {
   }
 
   const d = Math.hypot(agent.x, agent.z);
-  const maxRadius = GAME_CONFIG.arenaRadius - agent.radius;
+  const maxRadius = activeWorld.arena.radius - agent.radius;
   if (d > maxRadius) {
     const nx = agent.x / d;
     const nz = agent.z / d;
@@ -1441,7 +1479,20 @@ function updateCameraAfterMovement(
           GAME_CONFIG.camera.followMovementSpeedThreshold,
           GAME_CONFIG.player.speed * effectiveSpeedMultiplier(PLAYER) * inputMagnitude * 0.4,
         );
-        forwardCameraRelativeMovement = forwardSpeedAlongInput > minimumFollowSpeed;
+        const velocityMagnitude = Math.hypot(PLAYER.vx, PLAYER.vz);
+        const velocityAlignment =
+          velocityMagnitude > 0.001 && worldInputMagnitude > 0.001
+            ? (PLAYER.vx * worldInput.x + PLAYER.vz * worldInput.z) /
+              (velocityMagnitude * worldInputMagnitude)
+            : 0;
+        const headingAlignment = Math.cos(PLAYER.heading - Math.atan2(worldInput.x, worldInput.z));
+        // Do not hand the camera basis back to automatic follow while the
+        // avatar is still reversing. Waiting for both velocity and facing to
+        // agree prevents S → W from turning the movement basis mid-transition.
+        forwardCameraRelativeMovement =
+          forwardSpeedAlongInput > minimumFollowSpeed &&
+          velocityAlignment > 0.92 &&
+          headingAlignment > 0.92;
       }
       const followTarget = forwardCameraRelativeMovement ? 1 : 0;
       WORLD_STATE.cameraFollowBlend +=

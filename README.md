@@ -8,8 +8,7 @@ Desktop:
 
 - **W** moves forward, **S** backward, **A** left, and **D** right relative to the camera. Catchy faces the direction of travel.
 - **Mouse drag** rotates the camera.
-- **Up Arrow** holds Camera Recenter.
-- **Down Arrow** holds Tactical Overview.
+- **ArrowLeft** yaws the camera left, **ArrowRight** yaws right, **ArrowUp** pitches up, and **ArrowDown** pitches down.
 - **Space** jumps, **Shift** uses Dash, and **E** uses Speed Up.
 - Restart is available from the round end screen.
 
@@ -22,7 +21,7 @@ Mobile:
 - Camera follow is automatic; there is no second joystick on mobile.
 - Touch ownership is explicit: the left stick moves, action buttons trigger one action, and all other gameplay touches drag the camera. The stick and camera can be used simultaneously.
 
-The direction finder points toward the selected active runner. Install is optional. Play requests fullscreen and landscape where the browser supports them; denied or unavailable requests do not prevent play. On iOS Safari, Add to Home Screen is offered as guidance for an installed fullscreen experience.
+The direction finder points toward the selected active runner. Catchy opens with a map library: choose Default or a custom map, then press **START**. Custom maps are saved on this device in browser storage. Open `/editor` for the desktop-first map editor; it uses the same serializable map data as gameplay, supports bundled assets, spawn editing, collider-aware validation, undo-friendly layout changes, and JSON export. Default is built-in and protected; duplicate it to customize. The V1 editor does not support online sharing, arbitrary asset uploads, or terrain authoring. Install is optional. Play requests fullscreen and landscape where the browser supports them; denied or unavailable requests do not prevent play. On iOS Safari, Add to Home Screen is offered as guidance for an installed fullscreen experience.
 
 ## Development
 

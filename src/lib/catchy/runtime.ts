@@ -10,6 +10,8 @@ import {
   step,
 } from "./agents";
 import { GAME_CONFIG } from "./config";
+import { getActiveMap } from "./maps";
+import { installMapForSimulation } from "./agents";
 import { getCameraRelativeBearing } from "./camera";
 import { consumeFixedSteps } from "./fixedStep";
 import {
@@ -172,6 +174,7 @@ export function advanceSimulationFrame(frameDelta: number) {
 
 /** Simulation startup is tied to the same asset-ready state as the loading UI. */
 export function setSimulationEnabled(enabled: boolean) {
+  if (enabled) installMapForSimulation(getActiveMap());
   if (runtime.simulationEnabled === enabled) return;
   runtime.simulationEnabled = enabled;
   runtime.accumulator = 0;

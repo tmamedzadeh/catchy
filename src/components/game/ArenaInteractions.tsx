@@ -3,13 +3,13 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { Billboard, Text } from "@react-three/drei";
 import { WORLD_STATE } from "@/lib/catchy/agents";
-import { GAME_CONFIG, INTERACTIVE_OBJECTS } from "@/lib/catchy/config";
+import { GAME_CONFIG } from "@/lib/catchy/config";
+import { getActiveMap } from "@/lib/catchy/maps";
 import { useGameStore } from "@/store/gameStore";
 
-const SPEED_PAD = INTERACTIVE_OBJECTS.find((item) => item.kind === "speedPad")!;
-const SLOW_ZONE = INTERACTIVE_OBJECTS.find((item) => item.kind === "slowZone")!;
-const ELASTIC_BOUNCE = INTERACTIVE_OBJECTS.find((item) => item.kind === "elasticBounce")!;
-const TEMPORARY_BARRIER = INTERACTIVE_OBJECTS.find((item) => item.kind === "temporaryBarrier")!;
+function getInteractive(kind: "speedPad" | "slowZone" | "elasticBounce" | "temporaryBarrier") {
+  return getActiveMap().interactiveObjects.find((item) => item.kind === kind)!;
+}
 const SPEED_PAD_SEGMENTS = 24;
 const CHARGE_READY = new THREE.Color("#caff8b");
 
@@ -56,9 +56,13 @@ function SpeedPadVisual() {
 
   return (
     <group
-      position={[SPEED_PAD.position.x, SPEED_PAD.y, SPEED_PAD.position.z]}
-      rotation-y={SPEED_PAD.rotation}
-      scale={SPEED_PAD.scale}
+      position={[
+        getInteractive("speedPad").position.x,
+        getInteractive("speedPad").y,
+        getInteractive("speedPad").position.z,
+      ]}
+      rotation-y={getInteractive("speedPad").rotation}
+      scale={getInteractive("speedPad").scale}
     >
       <mesh position-y={0.045} receiveShadow>
         <cylinderGeometry args={[1.52, 1.52, 0.09, 32]} />
@@ -128,7 +132,7 @@ function SlowZoneVisual() {
   const edge = useRef<THREE.Mesh>(null);
   const ripples = useRef<THREE.Group>(null);
   const rippleMaterials = useRef<(THREE.MeshStandardMaterial | null)[]>([]);
-  const radius = (SLOW_ZONE.triggerRadius ?? 3) * SLOW_ZONE.scale;
+  const radius = (getInteractive("slowZone").triggerRadius ?? 3) * getInteractive("slowZone").scale;
 
   useFrame(({ clock }) => {
     const t = clock.elapsedTime;
@@ -145,7 +149,13 @@ function SlowZoneVisual() {
   });
 
   return (
-    <group position={[SLOW_ZONE.position.x, SLOW_ZONE.y, SLOW_ZONE.position.z]}>
+    <group
+      position={[
+        getInteractive("slowZone").position.x,
+        getInteractive("slowZone").y,
+        getInteractive("slowZone").position.z,
+      ]}
+    >
       <mesh rotation-x={-Math.PI / 2} receiveShadow>
         <circleGeometry args={[radius, 40]} />
         <meshStandardMaterial
@@ -219,8 +229,8 @@ function ElasticBounceVisual() {
     normalX: 0,
     normalZ: 1,
   });
-  const radius =
-    GAME_CONFIG.interactiveObjects.elasticBounce.collisionRadius * ELASTIC_BOUNCE.scale;
+  const elastic = getInteractive("elasticBounce");
+  const radius = elastic.collision.type === "circle" ? elastic.collision.radius * elastic.scale : 1;
 
   useFrame(({ clock }) => {
     const mesh = sphere.current;
@@ -255,7 +265,13 @@ function ElasticBounceVisual() {
   });
 
   return (
-    <group position={[ELASTIC_BOUNCE.position.x, ELASTIC_BOUNCE.y, ELASTIC_BOUNCE.position.z]}>
+    <group
+      position={[
+        getInteractive("elasticBounce").position.x,
+        getInteractive("elasticBounce").y,
+        getInteractive("elasticBounce").position.z,
+      ]}
+    >
       <mesh ref={sphere} castShadow receiveShadow>
         <sphereGeometry args={[radius, 28, 20]} />
         <meshStandardMaterial
@@ -345,6 +361,7 @@ function InteractionMessage() {
 
 function TemporaryBarrierVisual() {
   const group = useRef<THREE.Group>(null);
+  const barrier = getInteractive("temporaryBarrier");
   const settings = GAME_CONFIG.interactiveObjects.temporaryBarrier;
 
   useFrame(() => {
@@ -354,9 +371,9 @@ function TemporaryBarrierVisual() {
   return (
     <group
       ref={group}
-      position={[TEMPORARY_BARRIER.position.x, TEMPORARY_BARRIER.y, TEMPORARY_BARRIER.position.z]}
-      rotation-y={TEMPORARY_BARRIER.rotation}
-      scale={TEMPORARY_BARRIER.scale}
+      position={[barrier.position.x, barrier.y, barrier.position.z]}
+      rotation-y={barrier.rotation}
+      scale={barrier.scale}
       visible={WORLD_STATE.barrierClosed}
     >
       <mesh position-y={settings.height / 2} castShadow receiveShadow>

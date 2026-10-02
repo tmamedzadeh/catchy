@@ -47,6 +47,10 @@ describe("Catchy mobile startup", () => {
   it("renders CATCHY, PLAY, and optional install guidance in browser mode", () => {
     const html = renderToStaticMarkup(
       createElement(StartScreen, {
+        maps: [],
+        selectedMapId: "default",
+        onSelectMap: () => undefined,
+        onRefreshMaps: () => undefined,
         installedMode: false,
         hasInstallPrompt: false,
         showInstallHelp: false,
@@ -56,13 +60,17 @@ describe("Catchy mobile startup", () => {
     );
 
     expect(html).toContain("CATCHY");
-    expect(html).toContain("PLAY");
+    expect(html).toContain("START");
     expect(html).toContain("Install Catchy for the best fullscreen experience");
   });
 
   it("hides install guidance in standalone or fullscreen mode", () => {
     const html = renderToStaticMarkup(
       createElement(StartScreen, {
+        maps: [],
+        selectedMapId: "default",
+        onSelectMap: () => undefined,
+        onRefreshMaps: () => undefined,
         installedMode: true,
         hasInstallPrompt: false,
         showInstallHelp: false,
@@ -71,7 +79,7 @@ describe("Catchy mobile startup", () => {
       }),
     );
 
-    expect(html).toContain("PLAY");
+    expect(html).toContain("START");
     expect(html).not.toContain("Install Catchy");
     expect(html).not.toContain("How to install");
   });
