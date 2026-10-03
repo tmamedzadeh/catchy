@@ -37,6 +37,8 @@ export type MapDecoration = {
 };
 
 export type MapDefinition = {
+  /** Public map format version. `schemaVersion` remains for V1 compatibility. */
+  version: typeof MAP_SCHEMA_VERSION;
   schemaVersion: typeof MAP_SCHEMA_VERSION;
   id: string;
   name: string;

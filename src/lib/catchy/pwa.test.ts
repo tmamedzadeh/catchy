@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { DEFAULT_MAP } from "./maps/defaultMap";
 import { StartScreen } from "@/routes/index";
 import {
   beginPlaySession,
@@ -47,10 +48,9 @@ describe("Catchy mobile startup", () => {
   it("renders CATCHY, PLAY, and optional install guidance in browser mode", () => {
     const html = renderToStaticMarkup(
       createElement(StartScreen, {
-        maps: [],
+        maps: [DEFAULT_MAP],
         selectedMapId: "default",
         onSelectMap: () => undefined,
-        onRefreshMaps: () => undefined,
         installedMode: false,
         hasInstallPrompt: false,
         showInstallHelp: false,
@@ -61,7 +61,9 @@ describe("Catchy mobile startup", () => {
 
     expect(html).toContain("CATCHY");
     expect(html).toContain("START");
+    expect(html).toContain("Default");
     expect(html).toContain("Install Catchy for the best fullscreen experience");
+    expect(html).not.toMatch(/EDITOR|CREATE MAP|REFRESH MAPS|DUPLICATE|DELETE|EXPORT|IMPORT/);
   });
 
   it("hides install guidance in standalone or fullscreen mode", () => {
@@ -70,7 +72,6 @@ describe("Catchy mobile startup", () => {
         maps: [],
         selectedMapId: "default",
         onSelectMap: () => undefined,
-        onRefreshMaps: () => undefined,
         installedMode: true,
         hasInstallPrompt: false,
         showInstallHelp: false,

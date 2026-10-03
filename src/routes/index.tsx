@@ -4,7 +4,7 @@ import { useProgress } from "@react-three/drei";
 import { HUD } from "@/components/hud/HUD";
 import { GameFeedback, unlockGameAudio } from "@/lib/catchy/feedback";
 import { installInputEventListeners, setGameplayInputEnabled } from "@/lib/catchy/input";
-import { mapRepository, setActiveMap, type MapDefinition } from "@/lib/catchy/maps";
+import { mapRepository, setActiveMap, validateMap, type MapDefinition } from "@/lib/catchy/maps";
 import {
   beginPlaySession,
   isIOSPlatform,
@@ -39,7 +39,7 @@ export const Route = createFileRoute("/")({
 
 function Game() {
   const [started, setStarted] = useState(false);
-  const [maps, setMaps] = useState<MapDefinition[]>(() => mapRepository.listMaps());
+  const [maps] = useState<MapDefinition[]>(() => mapRepository.listMaps());
   const [selectedMapId, setSelectedMapId] = useState(() => {
     const saved = mapRepository.getLastSelectedId();
     return saved && mapRepository.hasMap(saved) ? saved : "default";
@@ -62,6 +62,7 @@ function Game() {
 
   const play = useCallback(() => {
     const selected = maps.find((map) => map.id === selectedMapId) ?? maps[0]!;
+    if (!selected || !validateMap(selected).valid) return;
     setActiveMap(selected);
     mapRepository.setLastSelectedId(selected.id);
     void unlockGameAudio();
@@ -143,7 +144,6 @@ function Game() {
             setSelectedMapId(id);
             mapRepository.setLastSelectedId(id);
           }}
-          onRefreshMaps={() => setMaps(mapRepository.listMaps())}
           onPlay={play}
         />
       )}
@@ -159,13 +159,11 @@ export function StartScreen({
   maps,
   selectedMapId,
   onSelectMap,
-  onRefreshMaps,
   onPlay,
 }: {
   maps: MapDefinition[];
   selectedMapId: string;
   onSelectMap: (id: string) => void;
-  onRefreshMaps: () => void;
   installedMode: boolean;
   hasInstallPrompt: boolean;
   showInstallHelp: boolean;
@@ -177,17 +175,13 @@ export function StartScreen({
     <main className="catchy-start-screen">
       <div className="catchy-start-card">
         <h1 className="catchy-start-title">CATCHY</h1>
-        <p className="catchy-start-subtitle">Tag arena</p>
-        <div className="mb-5 mt-5 w-full max-w-2xl text-left">
-          <div className="mb-2 flex items-center justify-between px-1">
+        <section className="catchy-map-selector mt-6 w-full text-left" aria-label="Maps">
+          <div className="mb-3 px-1">
             <span className="text-xs font-extrabold tracking-[0.25em] text-catchy-ink-soft">
               MAPS
             </span>
-            <a className="text-sm font-bold text-catchy-ink underline" href="/editor">
-              EDITOR
-            </a>
           </div>
-          <div className="grid max-h-[38vh] grid-cols-1 gap-3 overflow-auto pr-1 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 pr-1 sm:grid-cols-2">
             {maps.map((map) => (
               <MapCard
                 key={map.id}
@@ -197,22 +191,7 @@ export function StartScreen({
               />
             ))}
           </div>
-          <div className="mt-3 flex gap-2">
-            <a
-              className="flex-1 rounded-xl border-catchy-ink/20 bg-white/50 px-3 py-2 text-center text-sm font-bold text-catchy-ink"
-              href="/editor"
-            >
-              CREATE MAP / EDITOR
-            </a>
-            <button
-              type="button"
-              className="flex-1 rounded-xl border-catchy-ink/20 bg-white/50 px-3 py-2 text-sm font-bold text-catchy-ink"
-              onClick={onRefreshMaps}
-            >
-              REFRESH MAPS
-            </button>
-          </div>
-        </div>
+        </section>
         <button type="button" className="catchy-play-button" onClick={onPlay}>
           START
         </button>
@@ -249,7 +228,7 @@ function MapCard({
     <button
       type="button"
       onClick={onSelect}
-      className={`rounded-2xl border-2 p-3 text-left transition ${selected ? "border-catchy-accent bg-white shadow-lg" : "border-white/70 bg-white/45 hover:bg-white/70"}`}
+      className={`min-w-0 rounded-2xl border-2 p-3 text-left transition ${selected ? "border-catchy-accent bg-white shadow-lg" : "border-white/70 bg-white/45 hover:bg-white/70"}`}
       aria-pressed={selected}
     >
       <div className="flex gap-3">
@@ -284,7 +263,7 @@ function MapCard({
             />
           ))}
         </svg>
-        <span>
+        <span className="min-w-0 flex-1">
           <strong className="block text-lg text-catchy-ink">{map.name}</strong>
           <small className="block text-catchy-ink-soft">
             {map.id === "default" ? "Default" : "Saved on this device"}

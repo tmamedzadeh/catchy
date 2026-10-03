@@ -3,18 +3,13 @@ import { useLoader } from "@react-three/fiber";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as THREE from "three";
-import { ASSET_CATALOG, getActiveMap } from "@/lib/catchy/maps";
+import { ASSET_BY_ID, ASSET_CATALOG, getActiveMap } from "@/lib/catchy/maps";
 import type { MapObject } from "@/lib/catchy/maps";
 import { NonCriticalAssetBoundary } from "./NonCriticalAssetBoundary";
 
-/** Each kit keeps its own Textures/ folder, so models live in kit subfolders. */
-function modelUrl(model: string) {
-  const kit = /^(tree_|plant_|flower_|grass_|stone_|statue_)/.test(model)
-    ? "nature"
-    : /^(crate|barrel|chest|flag-)/.test(model)
-      ? "pirate"
-      : "town";
-  return `/models/${kit}/${model}.glb`;
+/** Catalog paths keep GLBs beside the atlas in their original kit folders. */
+function modelUrl(model: string): string | undefined {
+  return ASSET_BY_ID.get(model)?.modelPath;
 }
 
 const materialCache = new WeakMap<THREE.Material, THREE.Material>();
@@ -71,8 +66,9 @@ function sharedEnhancedMaterial(source: THREE.Material, atlasUrl: string) {
   return material;
 }
 
-function modelAtlasUrl(model: string) {
+function modelAtlasUrl(model: string): string | undefined {
   const assetUrl = modelUrl(model);
+  if (!assetUrl) return undefined;
   return `${assetUrl.slice(0, assetUrl.lastIndexOf("/"))}/Textures/colormap.png`;
 }
 
@@ -90,9 +86,7 @@ const SHADOW_CASTERS = new Set([
   "stone_largeC",
 ]);
 
-ASSET_CATALOG.map((asset) => asset.id).forEach((model) =>
-  useLoader.preload(GLTFLoader, modelUrl(model)),
-);
+ASSET_CATALOG.forEach((asset) => useLoader.preload(GLTFLoader, asset.modelPath));
 
 type InstancedPartData = {
   geometry: THREE.BufferGeometry;
@@ -153,15 +147,15 @@ function InstancedPropPart({ part, castShadow }: { part: InstancedPartData; cast
 }
 
 /** One model group shares GLTF materials and instances repeated static meshes. */
-function PropGroup({ model }: { model: string }) {
-  const { scene } = useLoader(GLTFLoader, modelUrl(model));
+function PropGroup({ model, assetUrl }: { model: string; assetUrl: string }) {
+  const { scene } = useLoader(GLTFLoader, assetUrl);
   const items = useMemo(
     () => getActiveMap().objects.filter((prop) => prop.model === model),
     [model],
   );
   const atlasUrl = useMemo(() => modelAtlasUrl(model), [model]);
   const parts = useMemo(
-    () => (items.length > 1 ? buildInstancedParts(scene, items, atlasUrl) : []),
+    () => (items.length > 1 && atlasUrl ? buildInstancedParts(scene, items, atlasUrl) : []),
     [atlasUrl, scene, items],
   );
   const single = useMemo(() => {
@@ -172,9 +166,11 @@ function PropGroup({ model }: { model: string }) {
       if (!mesh.isMesh) return;
       mesh.castShadow = SHADOW_CASTERS.has(model);
       mesh.receiveShadow = true;
-      mesh.material = Array.isArray(mesh.material)
-        ? mesh.material.map((source) => sharedEnhancedMaterial(source, atlasUrl))
-        : sharedEnhancedMaterial(mesh.material, atlasUrl);
+      if (atlasUrl) {
+        mesh.material = Array.isArray(mesh.material)
+          ? mesh.material.map((source) => sharedEnhancedMaterial(source, atlasUrl))
+          : sharedEnhancedMaterial(mesh.material, atlasUrl);
+      }
     });
     return clone;
   }, [atlasUrl, items, model, scene]);
@@ -201,13 +197,14 @@ function PropGroup({ model }: { model: string }) {
 }
 
 export function Props() {
-  const models = Array.from(new Set(getActiveMap().objects.map((object) => object.model)));
+  const activeModels = new Set(getActiveMap().objects.map((object) => object.model));
+  const assets = ASSET_CATALOG.filter((asset) => activeModels.has(asset.id));
   return (
     <group>
-      {models.map((model) => (
-        <Suspense key={model} fallback={null}>
+      {assets.map((asset) => (
+        <Suspense key={asset.id} fallback={null}>
           <NonCriticalAssetBoundary>
-            <PropGroup model={model} />
+            <PropGroup model={asset.id} assetUrl={asset.modelPath} />
           </NonCriticalAssetBoundary>
         </Suspense>
       ))}

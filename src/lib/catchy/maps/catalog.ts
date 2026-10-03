@@ -12,7 +12,7 @@ export type AssetCatalogEntry = {
 const circle = (radius: number): CollisionShape => ({ type: "circle", radius });
 const box = (width: number, depth: number): CollisionShape => ({ type: "box", width, depth });
 
-export const ASSET_CATALOG: AssetCatalogEntry[] = [
+export const ASSET_CATALOG: readonly AssetCatalogEntry[] = [
   {
     id: "fountain-round",
     displayName: "Fountain",
@@ -73,7 +73,7 @@ export const ASSET_CATALOG: AssetCatalogEntry[] = [
     id: "rock-large",
     displayName: "Large rock",
     category: "rocks",
-    modelPath: "/models/nature/rock-large.glb",
+    modelPath: "/models/town/rock-large.glb",
     defaultScale: 2.1,
     collision: circle(0.42),
   },
@@ -81,7 +81,7 @@ export const ASSET_CATALOG: AssetCatalogEntry[] = [
     id: "rock-wide",
     displayName: "Wide rock",
     category: "rocks",
-    modelPath: "/models/nature/rock-wide.glb",
+    modelPath: "/models/town/rock-wide.glb",
     defaultScale: 1.8,
     collision: circle(0.48),
   },
@@ -89,7 +89,7 @@ export const ASSET_CATALOG: AssetCatalogEntry[] = [
     id: "rock-small",
     displayName: "Small rock",
     category: "rocks",
-    modelPath: "/models/nature/rock-small.glb",
+    modelPath: "/models/town/rock-small.glb",
     defaultScale: 1.7,
     collision: circle(0.36),
   },
@@ -135,4 +135,6 @@ export const ASSET_CATALOG: AssetCatalogEntry[] = [
   },
 ];
 
-export const ASSET_BY_ID = new Map(ASSET_CATALOG.map((asset) => [asset.id, asset]));
+export const ASSET_BY_ID: ReadonlyMap<string, AssetCatalogEntry> = new Map(
+  ASSET_CATALOG.map((asset) => [asset.id, asset]),
+);

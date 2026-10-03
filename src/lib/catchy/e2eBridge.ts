@@ -7,6 +7,7 @@ import {
   type BoostState,
 } from "./agents";
 import { GAME_CONFIG } from "./config";
+import { getActiveMap } from "./maps";
 import {
   clearInput,
   getTouchPointerOwners,
@@ -67,6 +68,13 @@ type E2ERenderedCamera = {
   forwardY: number;
   forwardZ: number;
 };
+type E2EActiveMap = {
+  id: string;
+  arenaRadius: number;
+  playerSpawn: { x: number; z: number };
+  runnerSpawns: { id: string; x: number; z: number }[];
+  objects: { id: string; model: string; x: number; z: number }[];
+};
 
 export type CatchyE2EApi = {
   isReady: () => boolean;
@@ -76,6 +84,7 @@ export type CatchyE2EApi = {
   getPlayer: () => E2EPlayer;
   getRunners: () => E2ERunner[];
   getWorld: () => E2EWorld;
+  getActiveMap: () => E2EActiveMap;
   getRenderedCamera: () => E2ERenderedCamera | null;
   getTouchPointerOwners: () => Array<[number, string]>;
   activateDash: () => void;
@@ -180,6 +189,21 @@ export function installCatchyE2EBridge() {
         cameraFollowBlend: WORLD_STATE.cameraFollowBlend,
         speedPadPulseRemaining: WORLD_STATE.speedPadPulseRemaining,
         bounceImpactId: WORLD_STATE.bounceImpactId,
+      };
+    },
+    getActiveMap() {
+      const map = getActiveMap();
+      return {
+        id: map.id,
+        arenaRadius: map.arena.radius,
+        playerSpawn: { ...map.playerSpawn },
+        runnerSpawns: map.runnerSpawns.map((spawn) => ({ ...spawn })),
+        objects: map.objects.map((object) => ({
+          id: object.id,
+          model: object.model,
+          x: object.position.x,
+          z: object.position.z,
+        })),
       };
     },
     getRenderedCamera() {

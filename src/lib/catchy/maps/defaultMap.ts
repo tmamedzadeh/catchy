@@ -6,15 +6,24 @@ import {
 import type { MapDefinition, MapObject, InteractiveMapObject } from "./types";
 
 const props: MapObject[] = LEGACY_PROPS.map((object, index) => ({
-  ...object,
+  ...structuredClone(object),
   id: object.id ?? `default-prop-${index + 1}`,
 }));
-const interactiveObjects: InteractiveMapObject[] = LEGACY_INTERACTIVES.map((object) => ({
-  ...object,
-}));
+const interactiveObjects: InteractiveMapObject[] = LEGACY_INTERACTIVES.map((object) =>
+  structuredClone(object),
+);
+
+function freezeTree<T>(value: T): T {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const child of Object.values(value as Record<string, unknown>)) freezeTree(child);
+    Object.freeze(value);
+  }
+  return value;
+}
 
 /** The V1 layout, copied from the original descriptors without changing coordinates or tuning. */
-export const DEFAULT_MAP: MapDefinition = {
+export const DEFAULT_MAP: MapDefinition = freezeTree({
+  version: 1,
   schemaVersion: 1,
   id: "default",
   name: "Default",
@@ -54,7 +63,7 @@ export const DEFAULT_MAP: MapDefinition = {
       y: 0.064,
     },
   ],
-};
+});
 
 export function cloneMap(map: MapDefinition): MapDefinition {
   return structuredClone(map);

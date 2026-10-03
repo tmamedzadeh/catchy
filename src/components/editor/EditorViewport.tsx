@@ -6,10 +6,12 @@ import {
   useGLTF,
 } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
+import { Suspense } from "react";
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { MapDefinition, MapObject, Point2 } from "@/lib/catchy/maps";
 import { ASSET_BY_ID } from "@/lib/catchy/maps";
+import { NonCriticalAssetBoundary } from "../game/NonCriticalAssetBoundary";
 
 export type EditorSelection = string | null;
 export type EditorTransform = { x: number; y: number; z: number; rotation: number; scale: number };
@@ -20,53 +22,54 @@ type Props = {
   tool: "translate" | "rotate" | "scale";
   showGrid: boolean;
   showColliders: boolean;
+  readOnly: boolean;
   snap: boolean;
+  snapRotation: boolean;
   snapStep: number;
   rotationSnap: number;
   onSelect: (id: string | null) => void;
   onTransform: (id: string, transform: EditorTransform, committed: boolean) => void;
+  onInteractiveTransform: (id: string, transform: EditorTransform, committed: boolean) => void;
   onSpawnTransform: (id: string, point: Point2, committed: boolean) => void;
   onPlace: (point: Point2) => void;
 };
 
-function modelUrl(model: string) {
-  const asset = ASSET_BY_ID.get(model);
-  return asset?.modelPath ?? `/models/town/${model}.glb`;
-}
-
-function propTransform(object: MapObject): EditorTransform {
-  return {
-    x: object.position.x,
-    y: object.y,
-    z: object.position.z,
-    rotation: object.rotation,
-    scale: object.scale,
-  };
-}
-
-function EditorProp({
-  object,
-  selected,
-  tool,
-  showColliders,
-  snap,
-  snapStep,
-  rotationSnap,
-  onSelect,
-  onTransform,
-}: {
+type EditorPropProps = {
   object: MapObject;
   selected: boolean;
   tool: Props["tool"];
   showColliders: boolean;
+  readOnly: boolean;
   snap: boolean;
+  snapRotation: boolean;
   snapStep: number;
   rotationSnap: number;
   onSelect: Props["onSelect"];
   onTransform: Props["onTransform"];
-}) {
+};
+
+function EditorProp({ ...props }: EditorPropProps) {
+  const asset = ASSET_BY_ID.get(props.object.model);
+  if (!asset) return null;
+  return <LoadedEditorProp {...props} assetUrl={asset.modelPath} />;
+}
+
+function LoadedEditorProp({
+  object,
+  selected,
+  tool,
+  showColliders,
+  readOnly,
+  snap,
+  snapRotation,
+  snapStep,
+  rotationSnap,
+  onSelect,
+  onTransform,
+  assetUrl,
+}: EditorPropProps & { assetUrl: string }) {
   const root = useRef<THREE.Group>(null);
-  const { scene } = useGLTF(modelUrl(object.model));
+  const { scene } = useGLTF(assetUrl);
   const clone = useMemo(() => scene.clone(true), [scene]);
   const collider =
     object.collision.type === "circle" ? (
@@ -128,18 +131,18 @@ function EditorProp({
           </mesh>
         )}
       </group>
-      {selected && root.current && (
+      {selected && !readOnly && root.current && (
         <TransformControls
           object={root.current}
           mode={tool}
-          showX
-          showY={tool === "translate"}
-          showZ
+          showX={tool !== "rotate"}
+          showY={tool === "rotate"}
+          showZ={tool !== "rotate"}
           onObjectChange={() => read(false)}
           onMouseDown={() => undefined}
           onMouseUp={() => read(true)}
           translationSnap={snap ? snapStep : null}
-          rotationSnap={snap ? rotationSnap : null}
+          rotationSnap={snapRotation ? rotationSnap : null}
           scaleSnap={snap ? snapStep : null}
         />
       )}
@@ -154,10 +157,12 @@ function SpawnMarker({
   selected,
   tool,
   snap,
+  snapRotation,
   snapStep,
   rotationSnap,
   onSelect,
   onTransform,
+  readOnly,
 }: {
   id: string;
   point: Point2;
@@ -165,8 +170,10 @@ function SpawnMarker({
   selected: boolean;
   tool: Props["tool"];
   snap: boolean;
+  snapRotation: boolean;
   snapStep: number;
   rotationSnap: number;
+  readOnly: boolean;
   onSelect: Props["onSelect"];
   onTransform: Props["onSpawnTransform"];
 }) {
@@ -194,7 +201,7 @@ function SpawnMarker({
           <meshBasicMaterial color="#ffffff" />
         </mesh>
       </group>
-      {selected && root.current && (
+      {selected && !readOnly && root.current && (
         <TransformControls
           object={root.current}
           mode="translate"
@@ -203,7 +210,7 @@ function SpawnMarker({
           onMouseDown={() => undefined}
           onMouseUp={() => read(true)}
           translationSnap={snap ? snapStep : null}
-          rotationSnap={rotationSnap}
+          rotationSnap={snapRotation ? rotationSnap : null}
         />
       )}
     </>
@@ -212,34 +219,123 @@ function SpawnMarker({
 
 function InteractiveMarkers({
   map,
+  selected,
+  tool,
+  snap,
+  snapRotation,
+  snapStep,
+  rotationSnap,
   onSelect,
+  onTransform,
+  readOnly,
 }: {
   map: MapDefinition;
+  selected: EditorSelection;
+  tool: Props["tool"];
+  snap: boolean;
+  snapRotation: boolean;
+  snapStep: number;
+  rotationSnap: number;
+  readOnly: boolean;
   onSelect: Props["onSelect"];
+  onTransform: Props["onInteractiveTransform"];
 }) {
   return (
     <group>
       {map.interactiveObjects.map((item) => (
-        <mesh
+        <InteractiveMarker
           key={item.id}
-          position={[item.position.x, item.y + 0.04, item.position.z]}
-          rotation-x={-Math.PI / 2}
-          onPointerDown={(event) => {
-            event.stopPropagation();
-            onSelect(`interactive:${item.id}`);
-          }}
-        >
+          item={item}
+          selected={selected === `interactive:${item.id}`}
+          tool={tool}
+          snap={snap}
+          snapRotation={snapRotation}
+          snapStep={snapStep}
+          rotationSnap={rotationSnap}
+          readOnly={readOnly}
+          onSelect={onSelect}
+          onTransform={onTransform}
+        />
+      ))}
+    </group>
+  );
+}
+
+function InteractiveMarker({
+  item,
+  selected,
+  tool,
+  snap,
+  snapRotation,
+  snapStep,
+  rotationSnap,
+  onSelect,
+  onTransform,
+  readOnly,
+}: {
+  item: MapDefinition["interactiveObjects"][number];
+  selected: boolean;
+  tool: Props["tool"];
+  snap: boolean;
+  snapRotation: boolean;
+  snapStep: number;
+  rotationSnap: number;
+  readOnly: boolean;
+  onSelect: Props["onSelect"];
+  onTransform: Props["onInteractiveTransform"];
+}) {
+  const root = useRef<THREE.Group>(null);
+  const read = (committed: boolean) => {
+    if (!root.current) return;
+    onTransform(
+      item.id,
+      {
+        x: root.current.position.x,
+        y: root.current.position.y,
+        z: root.current.position.z,
+        rotation: root.current.rotation.y,
+        scale: root.current.scale.x,
+      },
+      committed,
+    );
+  };
+  return (
+    <>
+      <group
+        ref={root}
+        position={[item.position.x, item.y, item.position.z]}
+        rotation-y={item.rotation}
+        scale={item.scale}
+        onPointerDown={(event) => {
+          event.stopPropagation();
+          onSelect(`interactive:${item.id}`);
+        }}
+      >
+        <mesh rotation-x={-Math.PI / 2}>
           <circleGeometry
             args={[
-              (item.triggerRadius ??
-                (item.collision.type === "circle" ? item.collision.radius : 1)) * item.scale,
+              item.triggerRadius ?? (item.collision.type === "circle" ? item.collision.radius : 1),
               32,
             ]}
           />
-          <meshBasicMaterial color="#67c98b" transparent opacity={0.5} />
+          <meshBasicMaterial color={selected ? "#ffffff" : "#67c98b"} transparent opacity={0.65} />
         </mesh>
-      ))}
-    </group>
+      </group>
+      {selected && !readOnly && root.current && (
+        <TransformControls
+          object={root.current}
+          mode={tool}
+          showX={tool !== "rotate"}
+          showY={tool === "rotate"}
+          showZ={tool !== "rotate"}
+          onObjectChange={() => read(false)}
+          onMouseUp={() => read(true)}
+          translationSnap={snap ? snapStep : null}
+          rotationSnap={snapRotation ? rotationSnap : null}
+          scaleSnap={snap ? snapStep : null}
+        />
+      )}
+    </>
   );
 }
 
@@ -274,20 +370,36 @@ function EditorScene(props: Props) {
         <meshBasicMaterial color="#8b6b4b" />
       </mesh>
       {props.map.objects.map((object) => (
-        <EditorProp
-          key={object.id}
-          object={object}
-          selected={props.selected === object.id}
-          tool={props.tool}
-          showColliders={props.showColliders}
-          snap={props.snap}
-          snapStep={props.snapStep}
-          rotationSnap={props.rotationSnap}
-          onSelect={props.onSelect}
-          onTransform={props.onTransform}
-        />
+        <Suspense key={object.id} fallback={null}>
+          <NonCriticalAssetBoundary>
+            <EditorProp
+              object={object}
+              selected={props.selected === object.id}
+              tool={props.tool}
+              showColliders={props.showColliders}
+              snap={props.snap}
+              snapRotation={props.snapRotation}
+              snapStep={props.snapStep}
+              rotationSnap={props.rotationSnap}
+              onSelect={props.onSelect}
+              onTransform={props.onTransform}
+              readOnly={props.readOnly}
+            />
+          </NonCriticalAssetBoundary>
+        </Suspense>
       ))}
-      <InteractiveMarkers map={props.map} onSelect={props.onSelect} />
+      <InteractiveMarkers
+        map={props.map}
+        selected={props.selected}
+        tool={props.tool}
+        snap={props.snap}
+        snapRotation={props.snapRotation}
+        snapStep={props.snapStep}
+        rotationSnap={props.rotationSnap}
+        onSelect={props.onSelect}
+        onTransform={props.onInteractiveTransform}
+        readOnly={props.readOnly}
+      />
       <SpawnMarker
         id="spawn:player"
         point={props.map.playerSpawn}
@@ -295,10 +407,12 @@ function EditorScene(props: Props) {
         selected={props.selected === "spawn:player"}
         tool={props.tool}
         snap={props.snap}
+        snapRotation={props.snapRotation}
         snapStep={props.snapStep}
         rotationSnap={props.rotationSnap}
         onSelect={props.onSelect}
         onTransform={props.onSpawnTransform}
+        readOnly={props.readOnly}
       />
       {props.map.runnerSpawns.map((spawn) => (
         <SpawnMarker
@@ -309,10 +423,12 @@ function EditorScene(props: Props) {
           selected={props.selected === `spawn:${spawn.id}`}
           tool={props.tool}
           snap={props.snap}
+          snapRotation={props.snapRotation}
           snapStep={props.snapStep}
           rotationSnap={props.rotationSnap}
           onSelect={props.onSelect}
           onTransform={props.onSpawnTransform}
+          readOnly={props.readOnly}
         />
       ))}
     </>
@@ -324,22 +440,22 @@ export function EditorViewport(props: Props) {
     <Canvas
       orthographic
       shadows
-      camera={{ position: [0, 42, 0], zoom: 16, near: 0.1, far: 200 }}
+      camera={{ position: [0, 42, 0], zoom: 5.5, near: 0.1, far: 200 }}
       onPointerMissed={() => props.onSelect(null)}
     >
       <OrthographicCamera
         makeDefault
         position={[0, 42, 0]}
         rotation={[-Math.PI / 2, 0, 0]}
-        zoom={16}
+        zoom={5.5}
       />
       <OrbitControls
         makeDefault
         enableRotate={false}
         enablePan
         enableZoom
-        minZoom={5}
-        maxZoom={45}
+        minZoom={3}
+        maxZoom={20}
         screenSpacePanning
       />
       <EditorScene {...props} />

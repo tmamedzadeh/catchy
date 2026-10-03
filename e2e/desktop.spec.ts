@@ -336,7 +336,7 @@ test("capture, delayed respawn, round end, and restart run through the UI", asyn
 
 test("fullscreen and orientation failures never block Play", async ({ page }) => {
   await openStartScreen(page);
-  await page.getByRole("button", { name: "PLAY" }).click();
+  await page.getByRole("button", { name: "START" }).click();
   await expect(page.locator(".game-canvas canvas")).toBeVisible();
   await page.waitForFunction(() => Boolean(window.__CATCHY_E2E__));
   expect(await page.evaluate(() => window.__catchyFullscreenRequests)).toBe(1);
