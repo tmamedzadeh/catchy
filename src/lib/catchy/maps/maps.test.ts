@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { DEFAULT_MAP, cloneMap } from "./defaultMap";
+import { interactiveYForScale } from "./interactiveGeometry";
 import { mapRepository, MAP_STORAGE_KEY } from "./repository";
-import { validateMap } from "./validator";
+import { MAP_LIMITS, validateMap } from "./validator";
 
 describe("map domain", () => {
   beforeEach(() => {
@@ -44,6 +45,24 @@ describe("map domain", () => {
     expect(mapRepository.deleteMap("custom-map")).toBe(true);
     expect(JSON.parse(window.localStorage.getItem(MAP_STORAGE_KEY)!).maps).toHaveLength(1);
   });
+  it("supports the concise repository actions and selected map persistence", () => {
+    const draft = mapRepository.duplicateDraft(DEFAULT_MAP, "Draft Copy");
+    expect(draft.id).not.toBe("default");
+    const saved = mapRepository.save(draft);
+    expect(mapRepository.get(saved.id)?.name).toBe("Draft Copy");
+    expect(mapRepository.list().map((map) => map.id)).toContain(saved.id);
+
+    const duplicate = mapRepository.duplicate(saved.id, "Second Copy");
+    expect(duplicate.name).toBe("Second Copy");
+    const imported = mapRepository.import(mapRepository.export(duplicate));
+    expect(imported.name).toBe("Second Copy (Imported)");
+
+    mapRepository.setLastSelectedId(imported.id);
+    expect(mapRepository.getLastSelectedId()).toBe(imported.id);
+    expect(mapRepository.delete(saved.id)).toBe(true);
+    expect(mapRepository.delete(duplicate.id)).toBe(true);
+    expect(mapRepository.delete(imported.id)).toBe(true);
+  });
   it("imports valid exports under a new id and rejects malformed JSON", () => {
     expect(() => mapRepository.importMap("not json")).toThrow("valid JSON");
     const exported = mapRepository.exportMap(DEFAULT_MAP);
@@ -53,8 +72,26 @@ describe("map domain", () => {
     expect(imported.arena.radius).toBe(DEFAULT_MAP.arena.radius);
     expect(imported.objects.length).toBe(DEFAULT_MAP.objects.length);
     expect(imported.interactiveObjects.length).toBe(DEFAULT_MAP.interactiveObjects.length);
-    expect(imported.runnerSpawns.length).toBe(3);
+    expect(imported).not.toHaveProperty("playerSpawn");
+    expect(imported).not.toHaveProperty("runnerSpawns");
     expect(validateMap(imported).valid).toBe(true);
+  });
+
+  it("accepts radius 100, rejects values above the supported ceiling, and round trips it", () => {
+    const custom = cloneMap(DEFAULT_MAP);
+    custom.id = "radius-100";
+    custom.arena.radius = 100;
+    expect(validateMap(custom).valid).toBe(true);
+    expect(MAP_LIMITS.maxRadius).toBe(100);
+    custom.arena.radius = MAP_LIMITS.maxRadius + 1;
+    expect(validateMap(custom).errors.some((entry) => entry.code === "arena")).toBe(true);
+
+    custom.arena.radius = 100;
+    custom.id = "radius-100-roundtrip";
+    mapRepository.saveMap(custom);
+    expect(mapRepository.getMap(custom.id)?.arena.radius).toBe(100);
+    const imported = mapRepository.importMap(mapRepository.exportMap(custom));
+    expect(imported.arena.radius).toBe(100);
   });
 
   it("never allocates a custom id that can shadow Default", () => {
@@ -70,7 +107,7 @@ describe("map domain", () => {
     const invalid = cloneMap(DEFAULT_MAP);
     invalid.objects[0]!.model = "https://evil.test/model.glb";
     expect(validateMap(invalid).valid).toBe(false);
-    invalid.playerSpawn.x = Number.NaN;
+    invalid.arena.radius = Number.NaN;
     expect(validateMap(invalid).valid).toBe(false);
   });
   it("ignores corrupt storage", () => {
@@ -91,7 +128,6 @@ describe("map domain", () => {
     );
     expect(() => mapRepository.listMaps()).not.toThrow();
     expect(mapRepository.listMaps()).toHaveLength(1);
-    expect(validateMap({ ...cloneMap(DEFAULT_MAP), runnerSpawns: [null] }).valid).toBe(false);
   });
 
   it("rejects unsupported stored versions, duplicate IDs, and attempts to shadow Default", () => {
@@ -137,19 +173,25 @@ describe("map domain", () => {
     expect(() => mapRepository.saveMap(custom)).toThrow("Could not save the map");
   });
 
-  it("validates arena radius boundaries and spawn distances", () => {
+  it("validates arena radius boundaries", () => {
     const smallArena = cloneMap(DEFAULT_MAP);
     smallArena.arena.radius = 8;
-    const resSmall = validateMap(smallArena);
-    expect(resSmall.valid).toBe(false);
-    expect(resSmall.errors.some((e) => e.code === "arena")).toBe(true);
+    const result = validateMap(smallArena);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((entry) => entry.code === "arena")).toBe(true);
+  });
 
-    const closeSpawn = cloneMap(DEFAULT_MAP);
-    closeSpawn.runnerSpawns[0]!.x = closeSpawn.playerSpawn.x + 0.5;
-    closeSpawn.runnerSpawns[0]!.z = closeSpawn.playerSpawn.z + 0.5;
-    const resSpawn = validateMap(closeSpawn);
-    expect(resSpawn.valid).toBe(false);
-    expect(resSpawn.errors.some((e) => e.code === "spawn-distance")).toBe(true);
+  it("rejects hex decoration colors that Three.js cannot parse", () => {
+    const custom = cloneMap(DEFAULT_MAP);
+    const decoration = custom.decorations![0]!;
+    for (const color of ["#12", "#1234", "#12345", "#1234567", "#12345678"]) {
+      decoration.color = color;
+      expect(validateMap(custom).errors.some((entry) => entry.code === "decoration")).toBe(true);
+    }
+    for (const color of ["#abc", "#aabbcc"]) {
+      decoration.color = color;
+      expect(validateMap(custom).valid).toBe(true);
+    }
   });
 
   it("validates required interactive objects constraints", () => {
@@ -160,6 +202,82 @@ describe("map domain", () => {
     const resMissing = validateMap(missingInteractives);
     expect(resMissing.valid).toBe(false);
     expect(resMissing.errors.some((e) => e.code === "interactive")).toBe(true);
+  });
+
+  it("keeps solid interactive colliders fully inside the arena", () => {
+    for (const kind of ["elasticBounce", "temporaryBarrier"] as const) {
+      const custom = cloneMap(DEFAULT_MAP);
+      custom.id = `edge-${kind}`;
+      custom.arena.radius = 100;
+      const interactive = custom.interactiveObjects.find((item) => item.kind === kind)!;
+      interactive.position = { x: 99, z: 0 };
+      const result = validateMap(custom);
+      expect(result.errors.some((entry) => entry.code === "interactive-bounds")).toBe(true);
+    }
+  });
+
+  it("checks the full speed and slow trigger radius against the arena edge", () => {
+    for (const kind of ["speedPad", "slowZone"] as const) {
+      const custom = cloneMap(DEFAULT_MAP);
+      custom.id = `edge-trigger-${kind}`;
+      custom.arena.radius = 100;
+      const interactive = custom.interactiveObjects.find((item) => item.kind === kind)!;
+      interactive.position = { x: 99, z: 0 };
+      const result = validateMap(custom);
+      expect(result.errors.some((entry) => entry.code === "interactive-bounds")).toBe(true);
+    }
+  });
+
+  it("requires interactive collider shapes to match their gameplay kind", () => {
+    const custom = cloneMap(DEFAULT_MAP);
+    const barrier = custom.interactiveObjects.find((item) => item.kind === "temporaryBarrier")!;
+    barrier.collision = { type: "circle", radius: 1 };
+    expect(validateMap(custom).errors.some((entry) => entry.code === "interactive-transform")).toBe(
+      true,
+    );
+  });
+
+  it("keeps a scaled Bounce Ball collider centered on the arena floor", () => {
+    const custom = cloneMap(DEFAULT_MAP);
+    const bounce = custom.interactiveObjects.find((item) => item.kind === "elasticBounce")!;
+    bounce.scale = 1.5;
+    expect(validateMap(custom).errors.some((entry) => entry.path?.endsWith(".y"))).toBe(true);
+    if (bounce.collision.type === "circle") bounce.y = bounce.collision.radius * bounce.scale;
+    expect(validateMap(custom).valid).toBe(true);
+  });
+
+  it("keeps Bounce Ball grounded when its scale changes and preserves other item heights", () => {
+    const bounce = DEFAULT_MAP.interactiveObjects.find((item) => item.kind === "elasticBounce")!;
+    const speedPad = DEFAULT_MAP.interactiveObjects.find((item) => item.kind === "speedPad")!;
+    expect(interactiveYForScale(bounce, 1.5)).toBe(
+      bounce.collision.type === "circle" ? bounce.collision.radius * 1.5 : bounce.y,
+    );
+    expect(interactiveYForScale(speedPad, 1.5)).toBe(speedPad.y);
+  });
+
+  it("normalizes legacy spawn fields away on storage, import, and export", () => {
+    const legacy = {
+      ...cloneMap(DEFAULT_MAP),
+      id: "legacy-map",
+      playerSpawn: { x: Number.NaN, z: 100_000 },
+      runnerSpawns: [{ id: "legacy-runner", x: Number.NaN, z: 100_000 }],
+    };
+    expect(validateMap(legacy).valid).toBe(true);
+
+    window.localStorage.setItem(
+      MAP_STORAGE_KEY,
+      JSON.stringify({ schemaVersion: 1, maps: [legacy] }),
+    );
+    expect(mapRepository.getMap("legacy-map")).not.toHaveProperty("playerSpawn");
+    expect(mapRepository.getMap("legacy-map")).not.toHaveProperty("runnerSpawns");
+
+    const imported = mapRepository.importMap(JSON.stringify(legacy));
+    expect(imported).not.toHaveProperty("playerSpawn");
+    expect(imported).not.toHaveProperty("runnerSpawns");
+    expect(mapRepository.exportMap(legacy)).not.toContain("playerSpawn");
+    expect(mapRepository.exportMap(legacy)).not.toContain("runnerSpawns");
+    expect(mapRepository.newMap()).not.toHaveProperty("playerSpawn");
+    expect(mapRepository.newMap()).not.toHaveProperty("runnerSpawns");
   });
 
   it("updates navigation and collisions when installing a custom map", () => {

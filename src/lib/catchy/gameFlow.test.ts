@@ -161,11 +161,11 @@ describe("restart and action reset", () => {
 
 describe("simulation runtime fixed-tick integration", () => {
   it("uses accumulator ticks and discards excess stall time at the configured cap", () => {
-    const before = PLAYER.x;
+    const before = { x: PLAYER.x, z: PLAYER.z };
     const result = advanceSimulationFrame(100);
     expect(result.ticks).toBe(GAME_CONFIG.simulation.maxCatchUpSteps);
     expect(result.alpha).toBeLessThan(1);
-    expect(Math.hypot(PLAYER.x - before, PLAYER.z - 12)).toBeLessThan(2);
+    expect(Math.hypot(PLAYER.x - before.x, PLAYER.z - before.z)).toBeLessThan(2);
   });
 
   it("does not advance the timer, player, or NPCs until the ready signal enables simulation", () => {
@@ -256,7 +256,7 @@ describe("simulation runtime fixed-tick integration", () => {
 
     useGameStore.getState().restart();
     stepTicks(1);
-    expect(useGameStore.getState().state).toBe("chase");
+    expect(["chase", "nearby"]).toContain(useGameStore.getState().state);
     expect(useGameStore.getState().capture).toBeNull();
     expect(useGameStore.getState().caught).toBe(0);
     expect(RUNNERS.every((runner) => runner.hidden === 0)).toBe(true);

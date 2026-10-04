@@ -96,17 +96,18 @@ function IrregularIsland({
 
 function StoneRim() {
   const ref = useRef<THREE.InstancedMesh>(null);
-  const count = 46;
+  const radius = getActiveMap().arena.radius;
+  const count = Math.ceil((46 * radius) / 30);
   useEffect(() => {
     if (!ref.current) return;
     const dummy = new THREE.Object3D();
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2;
-      const radius = getActiveMap().arena.radius + 0.08;
+      const stoneRadius = radius + 0.08;
       dummy.position.set(
-        Math.cos(angle) * radius,
+        Math.cos(angle) * stoneRadius,
         0.72 + (i % 3) * 0.035,
-        Math.sin(angle) * radius,
+        Math.sin(angle) * stoneRadius,
       );
       dummy.rotation.set(0, -angle, (i % 2 ? 1 : -1) * 0.025);
       dummy.scale.set(1.95, 0.82 + (i % 4) * 0.035, 1.16);
@@ -114,7 +115,7 @@ function StoneRim() {
       ref.current.setMatrixAt(i, dummy.matrix);
     }
     ref.current.instanceMatrix.needsUpdate = true;
-  }, []);
+  }, [count, radius]);
 
   return (
     <instancedMesh ref={ref} args={[undefined, undefined, count]} castShadow receiveShadow>
@@ -127,6 +128,9 @@ function StoneRim() {
 /** Sand ground disc, boundary wall and the cliff the arena sits on. */
 export function Arena() {
   const R = getActiveMap().arena.radius;
+  const wallSegments = Math.ceil((64 * R) / 30);
+  const cliffSegments = Math.ceil((48 * R) / 30);
+  const rimSegments = Math.ceil((72 * R) / 30);
   const textures = useMemo(
     () => ({
       sand: createTerrainTexture("sand", 12),
@@ -144,19 +148,19 @@ export function Arena() {
     <group>
       {/* cliff base */}
       <mesh position={[0, -4.6, 0]}>
-        <cylinderGeometry args={[R + 0.6, R - 7, 9, 48, 1]} />
+        <cylinderGeometry args={[R + 0.6, R - 7, 9, cliffSegments, 1]} />
         <meshStandardMaterial map={textures.rock} color={ROCK} roughness={0.88} flatShading />
       </mesh>
 
       {/* darker soil band makes the island edge read as a raised land mass */}
       <mesh position={[0, -0.28, 0]} castShadow receiveShadow>
-        <cylinderGeometry args={[R, R - 0.45, 0.65, 64]} />
+        <cylinderGeometry args={[R, R - 0.45, 0.65, wallSegments]} />
         <meshStandardMaterial color="#6f5b43" roughness={0.95} />
       </mesh>
 
       {/* sand play surface */}
       <mesh rotation-x={-Math.PI / 2} position={[0, 0.05, 0]} receiveShadow>
-        <circleGeometry args={[R, 64]} />
+        <circleGeometry args={[R, wallSegments]} />
         <meshStandardMaterial map={textures.sand} color={SAND} roughness={0.8} />
       </mesh>
 
@@ -173,7 +177,7 @@ export function Arena() {
 
       {/* thin boundary wall */}
       <mesh position={[0, ARENA.rimHeight / 2, 0]} castShadow receiveShadow>
-        <cylinderGeometry args={[R + 0.05, R + 0.05, ARENA.rimHeight, 72, 1, true]} />
+        <cylinderGeometry args={[R + 0.05, R + 0.05, ARENA.rimHeight, rimSegments, 1, true]} />
         <meshStandardMaterial
           map={textures.stone}
           color={STONE}
@@ -182,7 +186,7 @@ export function Arena() {
         />
       </mesh>
       <mesh position={[0, ARENA.rimHeight, 0]} rotation-x={-Math.PI / 2} receiveShadow>
-        <ringGeometry args={[R - 0.55, R + 0.35, 72]} />
+        <ringGeometry args={[R - 0.55, R + 0.35, rimSegments]} />
         <meshStandardMaterial
           map={textures.stone}
           color="#eadfc9"

@@ -1,11 +1,12 @@
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
-import { Billboard, Text } from "@react-three/drei";
+import { Billboard } from "@react-three/drei";
 import { WORLD_STATE } from "@/lib/catchy/agents";
 import { GAME_CONFIG } from "@/lib/catchy/config";
 import { getActiveMap } from "@/lib/catchy/maps";
 import { useGameStore } from "@/store/gameStore";
+import { useCanvasTextTexture } from "./canvasTextTexture";
 
 function getInteractive(kind: "speedPad" | "slowZone" | "elasticBounce" | "temporaryBarrier") {
   return getActiveMap().interactiveObjects.find((item) => item.kind === kind)!;
@@ -14,6 +15,10 @@ const SPEED_PAD_SEGMENTS = 24;
 const CHARGE_READY = new THREE.Color("#caff8b");
 
 function SpeedPadVisual() {
+  const speedPad = getInteractive("speedPad");
+  const radius =
+    speedPad.triggerRadius ??
+    (speedPad.collision.type === "circle" ? speedPad.collision.radius : 1);
   const pulse = useRef<THREE.Group>(null);
   const baseMaterial = useRef<THREE.MeshStandardMaterial>(null);
   const innerRingMaterial = useRef<THREE.MeshStandardMaterial>(null);
@@ -27,14 +32,14 @@ function SpeedPadVisual() {
     const dummy = new THREE.Object3D();
     for (let i = 0; i < SPEED_PAD_SEGMENTS; i++) {
       const angle = (i / SPEED_PAD_SEGMENTS) * Math.PI * 2;
-      dummy.position.set(Math.cos(angle) * 1.74, 0.1, Math.sin(angle) * 1.74);
+      dummy.position.set(Math.cos(angle) * radius * 0.8093, 0.1, Math.sin(angle) * radius * 0.8093);
       dummy.updateMatrix();
       mesh.setMatrixAt(i, dummy.matrix);
       mesh.setColorAt(i, CHARGE_READY);
     }
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-  }, []);
+  }, [radius]);
 
   useFrame(({ clock }) => {
     const pulseSeconds = GAME_CONFIG.interactiveObjects.speedPad.pulseSeconds;
@@ -47,7 +52,7 @@ function SpeedPadVisual() {
       for (let i = 0; i < children.length; i++) {
         const streak = children[i] as THREE.Mesh;
         const phase = (clock.elapsedTime * 0.72 + i / children.length) % 1;
-        streak.position.z = -1.04 + phase * 2.08;
+        streak.position.z = -radius * 0.484 + phase * radius * 0.968;
         (streak.material as THREE.MeshStandardMaterial).opacity =
           0.12 + 0.3 * (1 - Math.abs(phase - 0.5) * 2);
       }
@@ -56,16 +61,12 @@ function SpeedPadVisual() {
 
   return (
     <group
-      position={[
-        getInteractive("speedPad").position.x,
-        getInteractive("speedPad").y,
-        getInteractive("speedPad").position.z,
-      ]}
-      rotation-y={getInteractive("speedPad").rotation}
-      scale={getInteractive("speedPad").scale}
+      position={[speedPad.position.x, speedPad.y, speedPad.position.z]}
+      rotation-y={speedPad.rotation}
+      scale={speedPad.scale}
     >
       <mesh position-y={0.045} receiveShadow>
-        <cylinderGeometry args={[1.52, 1.52, 0.09, 32]} />
+        <cylinderGeometry args={[radius * 0.707, radius * 0.707, 0.09, 32]} />
         <meshStandardMaterial
           ref={baseMaterial}
           color="#69dc72"
@@ -77,7 +78,7 @@ function SpeedPadVisual() {
       </mesh>
       <group ref={pulse}>
         <mesh rotation-x={Math.PI / 2} position-y={0.055}>
-          <torusGeometry args={[1.34, 0.075, 8, 40]} />
+          <torusGeometry args={[radius * 0.623, radius * 0.035, 8, 40]} />
           <meshStandardMaterial
             ref={innerRingMaterial}
             color="#d9ffe0"
@@ -87,7 +88,7 @@ function SpeedPadVisual() {
         </mesh>
       </group>
       <mesh rotation-x={Math.PI / 2} position-y={0.06}>
-        <torusGeometry args={[1.62, 0.035, 6, 40]} />
+        <torusGeometry args={[radius * 0.753, radius * 0.0163, 6, 40]} />
         <meshStandardMaterial
           ref={outerRingMaterial}
           color="#efffbd"
@@ -96,25 +97,25 @@ function SpeedPadVisual() {
         />
       </mesh>
       <instancedMesh ref={chargeSegments} args={[undefined, undefined, SPEED_PAD_SEGMENTS]}>
-        <sphereGeometry args={[0.075, 8, 6]} />
+        <sphereGeometry args={[radius * 0.0349, 8, 6]} />
         <meshStandardMaterial color="white" emissive="#5eaa64" emissiveIntensity={0.2} />
       </instancedMesh>
       {[-0.5, 0, 0.5].map((z) => (
-        <group key={z} position={[0, 0.12, z]}>
-          <mesh position={[-0.12, 0, 0]} rotation-y={Math.PI / 4}>
-            <boxGeometry args={[0.11, 0.055, 0.45]} />
+        <group key={z} position={[0, 0.12, z * radius * 0.465]}>
+          <mesh position={[-0.056 * radius, 0, 0]} rotation-y={Math.PI / 4}>
+            <boxGeometry args={[0.051 * radius, 0.055, 0.209 * radius]} />
             <meshStandardMaterial color="#f7ffe9" emissive="#b6ff9d" emissiveIntensity={0.5} />
           </mesh>
-          <mesh position={[0.12, 0, 0]} rotation-y={-Math.PI / 4}>
-            <boxGeometry args={[0.11, 0.055, 0.45]} />
+          <mesh position={[0.056 * radius, 0, 0]} rotation-y={-Math.PI / 4}>
+            <boxGeometry args={[0.051 * radius, 0.055, 0.209 * radius]} />
             <meshStandardMaterial color="#f7ffe9" emissive="#b6ff9d" emissiveIntensity={0.5} />
           </mesh>
         </group>
       ))}
       <group ref={streaks}>
-        {[-0.72, 0, 0.72].map((x) => (
-          <mesh key={x} position={[x, 0.095, -1]}>
-            <boxGeometry args={[0.055, 0.025, 0.3]} />
+        {[-0.335, 0, 0.335].map((x) => (
+          <mesh key={x} position={[x * radius, 0.095, -radius * 0.465]}>
+            <boxGeometry args={[radius * 0.0256, 0.025, radius * 0.14]} />
             <meshStandardMaterial
               color="#efffbd"
               emissive="#a3df54"
@@ -132,7 +133,9 @@ function SlowZoneVisual() {
   const edge = useRef<THREE.Mesh>(null);
   const ripples = useRef<THREE.Group>(null);
   const rippleMaterials = useRef<(THREE.MeshStandardMaterial | null)[]>([]);
-  const radius = (getInteractive("slowZone").triggerRadius ?? 3) * getInteractive("slowZone").scale;
+  const slowZone = getInteractive("slowZone");
+  const radius = slowZone.triggerRadius ?? 3;
+  const labelTexture = useCanvasTextTexture("SLOW", "#7b431d", "#ffe5ae");
 
   useFrame(({ clock }) => {
     const t = clock.elapsedTime;
@@ -150,11 +153,9 @@ function SlowZoneVisual() {
 
   return (
     <group
-      position={[
-        getInteractive("slowZone").position.x,
-        getInteractive("slowZone").y,
-        getInteractive("slowZone").position.z,
-      ]}
+      position={[slowZone.position.x, slowZone.y, slowZone.position.z]}
+      rotation-y={slowZone.rotation}
+      scale={slowZone.scale}
     >
       <mesh rotation-x={-Math.PI / 2} receiveShadow>
         <circleGeometry args={[radius, 40]} />
@@ -193,19 +194,12 @@ function SlowZoneVisual() {
           </mesh>
         ))}
       </group>
-      <Text
-        position={[0, 0.09, 0]}
-        rotation-x={-Math.PI / 2}
-        fontSize={0.62}
-        letterSpacing={0.06}
-        anchorX="center"
-        anchorY="middle"
-        color="#7b431d"
-        outlineColor="#ffe5ae"
-        outlineWidth={0.018}
-      >
-        SLOW
-      </Text>
+      {labelTexture && (
+        <mesh position={[0, 0.09, 0]} rotation-x={-Math.PI / 2}>
+          <planeGeometry args={[2.1, 0.525]} />
+          <meshBasicMaterial map={labelTexture} transparent depthWrite={false} toneMapped={false} />
+        </mesh>
+      )}
       <mesh position={[0, 0.12, -1.65]} rotation-x={Math.PI / 2}>
         <coneGeometry args={[0.15, 0.28, 3]} />
         <meshStandardMaterial color="#d87c2c" emissive="#a34f21" emissiveIntensity={0.22} />
@@ -230,7 +224,7 @@ function ElasticBounceVisual() {
     normalZ: 1,
   });
   const elastic = getInteractive("elasticBounce");
-  const radius = elastic.collision.type === "circle" ? elastic.collision.radius * elastic.scale : 1;
+  const radius = elastic.collision.type === "circle" ? elastic.collision.radius : 1;
 
   useFrame(({ clock }) => {
     const mesh = sphere.current;
@@ -266,11 +260,9 @@ function ElasticBounceVisual() {
 
   return (
     <group
-      position={[
-        getInteractive("elasticBounce").position.x,
-        getInteractive("elasticBounce").y,
-        getInteractive("elasticBounce").position.z,
-      ]}
+      position={[elastic.position.x, elastic.y, elastic.position.z]}
+      rotation-y={elastic.rotation}
+      scale={elastic.scale}
     >
       <mesh ref={sphere} castShadow receiveShadow>
         <sphereGeometry args={[radius, 28, 20]} />
@@ -340,21 +332,19 @@ function InteractionMessage() {
   });
 
   const message = cueKind ? INTERACTION_MESSAGES[cueKind] : null;
+  const labelTexture = useCanvasTextTexture(
+    message?.text ?? "",
+    message?.color ?? "#ffffff",
+    "#254353",
+  );
   return (
     <Billboard ref={billboard} visible={false} follow>
-      <Text
-        ref={text}
-        position={[0, 2.05, 0]}
-        fontSize={0.54}
-        fontWeight={800}
-        anchorX="center"
-        anchorY="middle"
-        color={message?.color ?? "#ffffff"}
-        outlineColor="#254353"
-        outlineWidth={0.035}
-      >
-        {message?.text ?? ""}
-      </Text>
+      {labelTexture && (
+        <mesh ref={text} position={[0, 2.05, 0]}>
+          <planeGeometry args={[3.9, 0.975]} />
+          <meshBasicMaterial map={labelTexture} transparent depthWrite={false} toneMapped={false} />
+        </mesh>
+      )}
     </Billboard>
   );
 }
@@ -368,6 +358,9 @@ function TemporaryBarrierVisual() {
     if (group.current) group.current.visible = WORLD_STATE.barrierClosed;
   });
 
+  if (barrier.collision.type !== "box") return null;
+  const { width, depth } = barrier.collision;
+
   return (
     <group
       ref={group}
@@ -377,12 +370,12 @@ function TemporaryBarrierVisual() {
       visible={WORLD_STATE.barrierClosed}
     >
       <mesh position-y={settings.height / 2} castShadow receiveShadow>
-        <boxGeometry args={[settings.width, settings.height, settings.depth]} />
+        <boxGeometry args={[width, settings.height, depth]} />
         <meshStandardMaterial color="#7894a8" roughness={0.48} metalness={0.16} />
       </mesh>
       {[-1, 1].map((side) => (
-        <mesh key={side} position={[0, 0.22, side * (settings.depth / 2 - 0.08)]} castShadow>
-          <boxGeometry args={[settings.width * 1.3, 0.44, 0.17]} />
+        <mesh key={side} position={[0, 0.22, side * (depth / 2 - 0.08)]} castShadow>
+          <boxGeometry args={[width * 1.3, 0.44, 0.17]} />
           <meshStandardMaterial color="#efc56c" roughness={0.55} />
         </mesh>
       ))}

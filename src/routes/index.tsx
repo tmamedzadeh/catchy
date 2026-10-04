@@ -247,21 +247,6 @@ function MapCard({
               fill="#6f5b43"
             />
           ))}
-          <circle
-            cx={50 + (map.playerSpawn.x / map.arena.radius) * 42}
-            cy={50 + (map.playerSpawn.z / map.arena.radius) * 42}
-            r="3"
-            fill="#3a8dff"
-          />
-          {map.runnerSpawns.map((spawn) => (
-            <circle
-              key={spawn.id}
-              cx={50 + (spawn.x / map.arena.radius) * 42}
-              cy={50 + (spawn.z / map.arena.radius) * 42}
-              r="2.5"
-              fill="#e85b67"
-            />
-          ))}
         </svg>
         <span className="min-w-0 flex-1">
           <strong className="block text-lg text-catchy-ink">{map.name}</strong>

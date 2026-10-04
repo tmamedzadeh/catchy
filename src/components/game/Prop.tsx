@@ -86,8 +86,6 @@ const SHADOW_CASTERS = new Set([
   "stone_largeC",
 ]);
 
-ASSET_CATALOG.forEach((asset) => useLoader.preload(GLTFLoader, asset.modelPath));
-
 type InstancedPartData = {
   geometry: THREE.BufferGeometry;
   material: THREE.Material | THREE.Material[];
@@ -199,6 +197,7 @@ function PropGroup({ model, assetUrl }: { model: string; assetUrl: string }) {
 export function Props() {
   const activeModels = new Set(getActiveMap().objects.map((object) => object.model));
   const assets = ASSET_CATALOG.filter((asset) => activeModels.has(asset.id));
+  assets.forEach((asset) => useLoader.preload(GLTFLoader, asset.modelPath));
   return (
     <group>
       {assets.map((asset) => (

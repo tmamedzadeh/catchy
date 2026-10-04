@@ -44,8 +44,10 @@ export type MapDefinition = {
   name: string;
   description?: string;
   arena: { radius: number };
-  playerSpawn: Point2;
-  runnerSpawns: { id: string; x: number; z: number }[];
+  /** @deprecated Legacy maps may contain this field; it is ignored and removed on normalization. */
+  playerSpawn?: Point2;
+  /** @deprecated Legacy maps may contain this field; it is ignored and removed on normalization. */
+  runnerSpawns?: { id: string; x: number; z: number }[];
   objects: MapObject[];
   interactiveObjects: InteractiveMapObject[];
   decorations?: MapDecoration[];

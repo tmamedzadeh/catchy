@@ -41,3 +41,9 @@ export function getCameraRelativeBearing(dx: number, dz: number, yaw: number) {
     dx * basis.forwardX + dz * basis.forwardZ,
   );
 }
+
+/** Preserve the configured horizontal base distance while applying view and capture framing. */
+export function getCameraRenderDistance(baseDistance: number, aspect: number, capture: boolean) {
+  const portrait = aspect < 1 ? 1.42 : aspect < 1.4 ? 1.14 : 1;
+  return baseDistance * portrait * (capture ? 0.78 : 1);
+}

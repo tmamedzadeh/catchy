@@ -1,5 +1,18 @@
 import { createFileRoute, Link, useBlocker } from "@tanstack/react-router";
-import { useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowLeft,
+  Copy,
+  Download,
+  PanelLeftOpen,
+  Plus,
+  Redo2,
+  Save,
+  Trash2,
+  Undo2,
+  Upload,
+  type LucideIcon,
+} from "lucide-react";
 import {
   EditorViewport,
   type EditorSelection,
@@ -7,12 +20,23 @@ import {
 } from "@/components/editor/EditorViewport";
 import {
   ASSET_CATALOG,
+  DEFAULT_MAP,
+  MAP_LIMITS,
   mapRepository,
   validateMap,
   type CollisionShape,
+  type InteractiveKind,
   type MapDefinition,
   type Point2,
+  interactiveYForScale,
 } from "@/lib/catchy/maps";
+import {
+  EDITOR_FREE_MOVE_STEP,
+  nudgeEditorPoint,
+  nudgeEditorRotation,
+  nudgeEditorScale,
+  snapEditorScale,
+} from "@/lib/catchy/maps/editorTransforms";
 
 export const Route = createFileRoute("/editor")({ ssr: false, component: Editor });
 
@@ -21,6 +45,59 @@ const ASSET_GROUPS = [
   { label: "Town", categories: ["town", "walls"] },
   { label: "Pirate", categories: ["crates", "barrels"] },
 ] as const;
+
+const INTERACTIVE_LABELS: Record<InteractiveKind, string> = {
+  speedPad: "Speed Up",
+  slowZone: "Slow Down",
+  elasticBounce: "Bounce Ball",
+  temporaryBarrier: "Temporary Barrier",
+};
+
+const INTERACTIVE_KINDS: InteractiveKind[] = [
+  "speedPad",
+  "slowZone",
+  "elasticBounce",
+  "temporaryBarrier",
+];
+
+type ToolbarIconButtonProps = {
+  label: string;
+  icon: LucideIcon;
+  onClick: () => void;
+  disabled?: boolean;
+  prominent?: boolean;
+  destructive?: boolean;
+};
+
+function ToolbarIconButton({
+  label,
+  icon: Icon,
+  onClick,
+  disabled = false,
+  prominent = false,
+  destructive = false,
+}: ToolbarIconButtonProps) {
+  return (
+    <span className="group relative inline-flex">
+      <button
+        type="button"
+        aria-label={label}
+        title={label}
+        disabled={disabled}
+        onClick={onClick}
+        className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border border-black/10 transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-catchy-ink disabled:cursor-not-allowed disabled:opacity-40 ${prominent ? "bg-catchy-accent" : destructive ? "bg-red-100 text-red-700" : "bg-white/80"}`}
+      >
+        <Icon aria-hidden="true" size={18} strokeWidth={2.4} />
+      </button>
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute left-1/2 top-full z-40 mt-1 -translate-x-1/2 whitespace-nowrap rounded-md bg-catchy-ink px-2 py-1 text-xs font-semibold text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+      >
+        {label}
+      </span>
+    </span>
+  );
+}
 
 function Editor() {
   const [maps, setMaps] = useState(() => mapRepository.listMaps());
@@ -42,7 +119,16 @@ function Editor() {
   const [placement, setPlacement] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [selected, setSelected] = useState<EditorSelection>(null);
+  const [viewport, setViewport] = useState({ x: 0, z: 0, zoom: 5.5 });
   const dragStartMap = useRef<MapDefinition | null>(null);
+  const keyHandler = useRef<(event: KeyboardEvent) => void>(() => {});
+  const [drawerPinned, setDrawerPinned] = useState(false);
+  const [drawerHovered, setDrawerHovered] = useState(false);
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => keyHandler.current(event);
+    window.addEventListener("keydown", listener, true);
+    return () => window.removeEventListener("keydown", listener, true);
+  }, []);
   const validation = useMemo(() => (map ? validateMap(map) : null), [map]);
   useBlocker({
     shouldBlockFn: ({ current, next }) =>
@@ -99,8 +185,6 @@ function Editor() {
     const ids = new Set([
       ...map.objects.map((object) => object.id),
       ...map.interactiveObjects.map((object) => object.id),
-      ...map.runnerSpawns.map((spawn) => spawn.id),
-      "player",
     ]);
     const unique = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     let id = `${model}-${unique}`;
@@ -122,6 +206,48 @@ function Editor() {
       ],
     });
     setSelected(id);
+  };
+  const placeInteractive = (kind: InteractiveKind, point: Point2) => {
+    if (!map || map.id === "default") return;
+    if (map.interactiveObjects.some((item) => item.kind === kind)) {
+      const existing = map.interactiveObjects.find((item) => item.kind === kind)!;
+      setSelected(`interactive:${existing.id}`);
+      setPlacement(null);
+      return;
+    }
+    const canonical = DEFAULT_MAP.interactiveObjects.find((item) => item.kind === kind);
+    if (!canonical) return;
+    const usedIds = new Set([
+      ...map.objects.map((object) => object.id),
+      ...map.interactiveObjects.map((object) => object.id),
+    ]);
+    let id = canonical.id;
+    let suffix = 1;
+    while (usedIds.has(id)) id = `${canonical.id}-${++suffix}`;
+    const object = {
+      ...structuredClone(canonical),
+      id,
+      position: { x: snapValue(point.x), z: snapValue(point.z) },
+    };
+    update({ ...map, interactiveObjects: [...map.interactiveObjects, object] });
+    setSelected(`interactive:${id}`);
+    setPlacement(null);
+  };
+  const selectOrPlaceInteractive = (kind: InteractiveKind) => {
+    if (!map) return;
+    const existing = map.interactiveObjects.find((item) => item.kind === kind);
+    if (existing) {
+      setSelected(`interactive:${existing.id}`);
+      setPlacement(null);
+      return;
+    }
+    if (map.id === "default") {
+      setMessage("Default is protected. Duplicate it before adding interactive objects.");
+      return;
+    }
+    setSelected(null);
+    setPlacement(`interactive:${kind}`);
+    setMessage(`Click inside the arena to place ${INTERACTIVE_LABELS[kind]}.`);
   };
   const moveSelected = (axis: "x" | "z", value: number) => {
     if (!map || map.id === "default" || !selected || !Number.isFinite(value)) return;
@@ -147,14 +273,7 @@ function Editor() {
     });
   };
   const duplicateSelected = () => {
-    if (
-      !map ||
-      map.id === "default" ||
-      !selected ||
-      selected.startsWith("spawn:") ||
-      selected.startsWith("interactive:")
-    )
-      return;
+    if (!map || map.id === "default" || !selected || selected.startsWith("interactive:")) return;
     const source = map.objects.find((object) => object.id === selected);
     if (!source) return;
     let index = 1;
@@ -176,10 +295,6 @@ function Editor() {
   };
   const removeSelected = () => {
     if (!map || map.id === "default" || !selected) return;
-    if (selected.startsWith("spawn:")) {
-      setMessage("Spawn points are required; move them instead of deleting them.");
-      return;
-    }
     if (selected.startsWith("interactive:")) {
       setMessage("Required interactive objects are preserved in V1; move them instead.");
       return;
@@ -282,32 +397,12 @@ function Editor() {
               ...object,
               position: { x: snapValue(transform.x), z: snapValue(transform.z) },
               rotation: snapValue(transform.rotation, rotationSnap, snapRotation),
-              scale: snapValue(transform.scale),
+              scale: snapEditorScale(transform.scale, snap),
               y: transform.y,
             }
           : object,
       ),
     };
-    commitDrag(next);
-  };
-  const transformSpawn = (id: string, point: Point2, committed: boolean) => {
-    if (!map || map.id === "default" || !Number.isFinite(point.x) || !Number.isFinite(point.z))
-      return;
-    if (!committed) {
-      if (!dragStartMap.current) dragStartMap.current = structuredClone(map);
-      return;
-    }
-    const next: MapDefinition =
-      id === "spawn:player"
-        ? { ...map, playerSpawn: { x: snapValue(point.x), z: snapValue(point.z) } }
-        : {
-            ...map,
-            runnerSpawns: map.runnerSpawns.map((spawn) =>
-              `spawn:${spawn.id}` === id
-                ? { ...spawn, x: snapValue(point.x), z: snapValue(point.z) }
-                : spawn,
-            ),
-          };
     commitDrag(next);
   };
   const transformInteractive = (id: string, transform: EditorTransform, committed: boolean) => {
@@ -326,17 +421,17 @@ function Editor() {
     }
     const next = {
       ...map,
-      interactiveObjects: map.interactiveObjects.map((object) =>
-        object.id === id
-          ? {
-              ...object,
-              position: { x: snapValue(transform.x), z: snapValue(transform.z) },
-              rotation: snapValue(transform.rotation, rotationSnap, snapRotation),
-              scale: snapValue(transform.scale),
-              y: transform.y,
-            }
-          : object,
-      ),
+      interactiveObjects: map.interactiveObjects.map((object) => {
+        if (object.id !== id) return object;
+        const scale = snapEditorScale(transform.scale, snap);
+        return {
+          ...object,
+          position: { x: snapValue(transform.x), z: snapValue(transform.z) },
+          rotation: snapValue(transform.rotation, rotationSnap, snapRotation),
+          scale,
+          y: interactiveYForScale(object, scale),
+        };
+      }),
     };
     commitDrag(next);
   };
@@ -353,27 +448,105 @@ function Editor() {
       event.preventDefault();
       if (event.shiftKey) redo();
       else undo();
+      return;
     }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "d") {
       event.preventDefault();
       duplicateSelected();
+      return;
     }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "y") {
       event.preventDefault();
       redo();
+      return;
     }
     if (event.key === "Escape") {
       setPlacement(null);
       setSelected(null);
+      return;
     }
+    if (event.ctrlKey || event.metaKey || event.altKey || !map || map.id === "default") return;
     if ((event.key === "Delete" || event.key === "Backspace") && selected) {
       event.preventDefault();
       removeSelected();
     }
-    if (event.key.toLowerCase() === "w") setTool("translate");
-    if (event.key.toLowerCase() === "e") setTool("rotate");
-    if (event.key.toLowerCase() === "r") setTool("scale");
+
+    const key = event.code.startsWith("Key")
+      ? event.code.slice(3).toLowerCase()
+      : event.key.toLowerCase();
+    if (selected && (key === "w" || key === "a" || key === "s" || key === "d")) {
+      event.preventDefault();
+      const step = snap ? snapStep : EDITOR_FREE_MOVE_STEP;
+      if (selected.startsWith("interactive:")) {
+        const id = selected.slice("interactive:".length);
+        const object = map.interactiveObjects.find((item) => item.id === id);
+        if (!object) return;
+        const position = nudgeEditorPoint(object.position, key, step);
+        update({
+          ...map,
+          interactiveObjects: map.interactiveObjects.map((item) =>
+            item.id === id ? { ...item, position } : item,
+          ),
+        });
+        return;
+      }
+      const object = map.objects.find((item) => item.id === selected);
+      if (!object) return;
+      const position = nudgeEditorPoint(object.position, key, step);
+      update({
+        ...map,
+        objects: map.objects.map((item) => (item.id === selected ? { ...item, position } : item)),
+      });
+      return;
+    }
+
+    if (selected && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
+      event.preventDefault();
+      const interactive = selected.startsWith("interactive:");
+      const id = interactive ? selected.slice("interactive:".length) : selected;
+      const object = interactive
+        ? map.interactiveObjects.find((item) => item.id === id)
+        : map.objects.find((item) => item.id === id);
+      if (!object) return;
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        const rotation = nudgeEditorRotation(
+          object.rotation,
+          event.key === "ArrowLeft" ? -1 : 1,
+          snapRotation,
+          rotationSnap,
+        );
+        update(
+          interactive
+            ? {
+                ...map,
+                interactiveObjects: map.interactiveObjects.map((item) =>
+                  item.id === id ? { ...item, rotation } : item,
+                ),
+              }
+            : {
+                ...map,
+                objects: map.objects.map((item) => (item.id === id ? { ...item, rotation } : item)),
+              },
+        );
+      } else {
+        const scale = nudgeEditorScale(object.scale, event.key === "ArrowUp" ? 1 : -1);
+        update(
+          interactive
+            ? {
+                ...map,
+                interactiveObjects: map.interactiveObjects.map((item) =>
+                  item.id === id ? { ...item, scale, y: interactiveYForScale(item, scale) } : item,
+                ),
+              }
+            : {
+                ...map,
+                objects: map.objects.map((item) => (item.id === id ? { ...item, scale } : item)),
+              },
+        );
+      }
+    }
   };
+  keyHandler.current = handleKeyDown;
   const exportMap = () => {
     if (!map) return;
     try {
@@ -389,31 +562,39 @@ function Editor() {
       setMessage(error instanceof Error ? error.message : "Could not export map.");
     }
   };
+  const drawerOpen = drawerPinned || drawerHovered;
+  const libraryMaps = map && !maps.some((saved) => saved.id === map.id) ? [...maps, map] : maps;
   return (
-    <main
-      tabIndex={-1}
-      onKeyDown={handleKeyDown}
-      className="min-h-screen overflow-auto bg-[#bfe3ff] p-3 text-catchy-ink md:p-4"
-    >
+    <main className="min-h-screen overflow-auto bg-[#bfe3ff] p-3 text-catchy-ink md:p-4">
       <header className="mx-auto flex max-w-[1700px] flex-wrap items-center gap-3 rounded-2xl bg-white/75 p-3 shadow-lg">
-        <Link to="/" className="font-bold">
-          ← Back to Maps
+        <Link
+          to="/"
+          aria-label="Back to Maps"
+          title="Back to Maps"
+          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-black/10 bg-white/80 transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-catchy-ink"
+        >
+          <ArrowLeft aria-hidden="true" size={19} strokeWidth={2.4} />
         </Link>
         <input
           aria-label="Map name"
-          className="min-w-48 flex-1 rounded-xl border-black/10 bg-white px-3 py-2 text-xl font-bold"
+          className="min-w-40 flex-1 rounded-xl border-black/10 bg-white px-3 py-2 text-xl font-bold"
           value={map?.name ?? "Map editor"}
           disabled={!map || map.id === "default"}
           onChange={(event) => map && update({ ...map, name: event.target.value })}
         />
         <span
           className={`rounded-full px-3 py-1 text-sm font-bold ${validation?.valid ? "bg-lime-200" : "bg-amber-200"}`}
+          role="status"
+          aria-label={
+            map
+              ? validation?.valid
+                ? "Map valid"
+                : `Map invalid: ${validation?.errors.length} errors`
+              : "No map selected"
+          }
+          title={validation?.errors.map((error) => error.message).join("\n") || "Map is valid"}
         >
-          {map
-            ? validation?.valid
-              ? "VALID"
-              : `${validation?.errors.length} errors`
-            : "Choose a map"}
+          {map ? (validation?.valid ? "Valid" : `! ${validation?.errors.length}`) : "Choose a map"}
         </span>
         <span
           className="rounded-full bg-white/70 px-3 py-1 text-sm font-bold"
@@ -422,66 +603,63 @@ function Editor() {
         >
           {dirty ? "Unsaved changes" : "Saved"}
         </span>
-        <button
-          className="rounded-xl bg-catchy-accent px-4 py-2 font-bold"
-          disabled={!map || !validation?.valid || !dirty}
-          onClick={save}
-        >
-          SAVE
-        </button>
-        <button
-          className="rounded-xl bg-catchy-ink px-4 py-2 font-bold text-white"
-          onClick={duplicate}
-          disabled={!map || !validation?.valid}
-        >
-          DUPLICATE
-        </button>
-        <button
-          className="rounded-xl border-black/10 bg-white px-4 py-2 font-bold"
-          onClick={create}
-        >
-          NEW MAP
-        </button>
-        <button
-          type="button"
-          aria-label="Undo"
-          className="rounded-xl border-black/10 bg-white px-3 py-2 font-bold"
-          onClick={undo}
-          disabled={history.length === 0}
-        >
-          UNDO
-        </button>
-        <button
-          type="button"
-          aria-label="Redo"
-          className="rounded-xl border-black/10 bg-white px-3 py-2 font-bold"
-          onClick={redo}
-          disabled={future.length === 0}
-        >
-          REDO
-        </button>
-        <button
-          className="rounded-xl border-black/10 bg-white px-4 py-2 font-bold"
-          onClick={exportMap}
-          disabled={!map || map.id === "default" || !validation?.valid}
-        >
-          EXPORT JSON
-        </button>
-        <button
-          className="rounded-xl bg-red-100 px-4 py-2 font-bold text-red-700"
-          onClick={deleteMap}
-          disabled={!map || map.id === "default"}
-        >
-          DELETE MAP
-        </button>
-        <button
-          type="button"
-          aria-label="Import JSON"
-          className="rounded-xl border-black/10 bg-white px-4 py-2 font-bold"
-          onClick={() => importInput.current?.click()}
-        >
-          IMPORT JSON
-        </button>
+        <div role="toolbar" aria-label="Map actions" className="ml-auto flex items-center gap-2">
+          <div className="flex gap-1">
+            <ToolbarIconButton label="New map" icon={Plus} onClick={create} />
+            <ToolbarIconButton
+              label="Duplicate map"
+              icon={Copy}
+              onClick={duplicate}
+              disabled={!map || !validation?.valid}
+            />
+          </div>
+          <span aria-hidden="true" className="h-8 border-l border-black/15" />
+          <div className="flex gap-1">
+            <ToolbarIconButton
+              label="Undo"
+              icon={Undo2}
+              onClick={undo}
+              disabled={history.length === 0}
+            />
+            <ToolbarIconButton
+              label="Redo"
+              icon={Redo2}
+              onClick={redo}
+              disabled={future.length === 0}
+            />
+          </div>
+          <span aria-hidden="true" className="h-8 border-l border-black/15" />
+          <div className="flex gap-1">
+            <ToolbarIconButton
+              label="Import JSON"
+              icon={Upload}
+              onClick={() => importInput.current?.click()}
+            />
+            <ToolbarIconButton
+              label="Export JSON"
+              icon={Download}
+              onClick={exportMap}
+              disabled={!map || map.id === "default" || !validation?.valid}
+            />
+          </div>
+          <span aria-hidden="true" className="h-8 border-l border-black/15" />
+          <div className="flex gap-1">
+            <ToolbarIconButton
+              label="Save map"
+              icon={Save}
+              onClick={save}
+              disabled={!map || !validation?.valid || !dirty}
+              prominent
+            />
+            <ToolbarIconButton
+              label="Delete map"
+              icon={Trash2}
+              onClick={deleteMap}
+              disabled={!map || map.id === "default"}
+              destructive
+            />
+          </div>
+        </div>
         <input
           ref={importInput}
           type="file"
@@ -499,26 +677,14 @@ function Editor() {
           </span>
         )}
       </header>
-      <div className="mx-auto mt-3 grid max-w-[1700px] gap-3 lg:h-[calc(100vh-135px)] lg:grid-rows-[minmax(0,1fr)_190px]">
-        <div className="grid min-h-[620px] gap-3 lg:min-h-0 lg:grid-cols-[220px_minmax(0,1fr)_280px]">
-          <aside className="rounded-2xl bg-white/75 p-3 shadow-lg lg:overflow-auto">
-            <h2 className="mb-3 font-display text-xl">Map library</h2>
-            {maps.map((item) => (
-              <button
-                key={item.id}
-                className={`mb-2 w-full rounded-xl p-3 text-left ${map?.id === item.id ? "bg-catchy-accent/70" : "bg-white/70"}`}
-                onClick={() => open(item)}
-              >
-                {item.name}
-                <small className="block opacity-60">
-                  {item.id === "default" ? "Protected built-in" : "Saved on this device"}
-                </small>
-              </button>
-            ))}
-          </aside>
+      <div className="mx-auto mt-3 grid max-w-[1700px] gap-3 lg:h-[calc(100vh-125px)]">
+        <div className="grid min-h-[620px] gap-3 lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_280px]">
           <section
             className="relative min-h-[420px] overflow-hidden rounded-2xl bg-[#e9b766] shadow-lg lg:min-h-0"
             data-testid="editor-viewport"
+            data-viewport-x={viewport.x}
+            data-viewport-z={viewport.z}
+            data-viewport-zoom={viewport.zoom}
           >
             {map ? (
               <EditorViewport
@@ -535,7 +701,7 @@ function Editor() {
                 onSelect={setSelected}
                 onTransform={transformObject}
                 onInteractiveTransform={transformInteractive}
-                onSpawnTransform={transformSpawn}
+                onViewportChange={setViewport}
                 onPlace={(point) => {
                   if (!placement) {
                     setSelected(null);
@@ -543,6 +709,11 @@ function Editor() {
                   }
                   if (Math.hypot(point.x, point.z) >= map.arena.radius - 1) {
                     setMessage("Place props inside the arena boundary.");
+                    return;
+                  }
+                  if (placement.startsWith("interactive:")) {
+                    const kind = placement.slice("interactive:".length) as InteractiveKind;
+                    placeInteractive(kind, point);
                     return;
                   }
                   add(placement, point);
@@ -554,14 +725,171 @@ function Editor() {
                 Create or open a map to start editing.
               </div>
             )}
-            <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/80 px-3 py-2 text-xs font-bold">
-              Click to select · drag gizmo to edit · wheel zoom · middle drag pan · W/E/R tools ·
-              Delete removes selected
-            </div>
-            <div className="pointer-events-none absolute right-3 top-3 rounded-xl bg-white/85 px-3 py-2 text-xs font-bold">
-              <span className="text-blue-600">● Player spawn</span>
-              <span className="ml-3 text-rose-600">● Runner spawns</span>
-              <span className="ml-3 text-emerald-700">● Interactive areas</span>
+            <div
+              className={`absolute inset-y-0 left-0 z-20 flex transition-transform duration-200 ${drawerOpen ? "translate-x-0" : "-translate-x-[calc(100%-2.75rem)]"}`}
+              onPointerEnter={(event) => {
+                if (event.pointerType !== "touch" && window.matchMedia("(hover: hover)").matches) {
+                  setDrawerHovered(true);
+                }
+              }}
+              onPointerLeave={(event) => {
+                if (!event.currentTarget.contains(document.activeElement)) setDrawerHovered(false);
+              }}
+            >
+              <aside
+                id="editor-drawer-content"
+                aria-label="Map library and asset palette"
+                inert={!drawerOpen}
+                onFocusCapture={() => setDrawerPinned(true)}
+                onBlurCapture={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                    setDrawerPinned(false);
+                    setDrawerHovered(false);
+                  }
+                }}
+                className="h-full w-72 overflow-y-auto rounded-l-2xl bg-white/95 p-3 shadow-xl backdrop-blur"
+              >
+                <section aria-labelledby="map-library-heading" className="mb-3">
+                  <h2
+                    id="map-library-heading"
+                    className="mb-2 font-display text-sm font-extrabold uppercase tracking-wider"
+                  >
+                    Map Library
+                  </h2>
+                  <div className="max-h-40 space-y-1 overflow-y-auto">
+                    {libraryMaps.map((item) => {
+                      const isSelected = map?.id === item.id;
+                      const isDraft = isSelected && !maps.some((saved) => saved.id === item.id);
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          aria-label={`Select ${item.name} map${item.id === "default" ? ", protected" : isDraft ? ", unsaved draft" : ", custom"}`}
+                          aria-pressed={isSelected}
+                          title={item.name}
+                          onClick={() => {
+                            if (!isSelected) open(item);
+                          }}
+                          className={`flex w-full min-w-0 items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-catchy-ink ${isSelected ? "border-catchy-accent bg-catchy-accent/55" : "border-black/10 bg-white/70 hover:bg-white"}`}
+                        >
+                          <span className="truncate font-bold">{item.name}</span>
+                          <span
+                            className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wide ${item.id === "default" ? "bg-catchy-ink text-white" : "bg-black/5 text-catchy-ink-soft"}`}
+                          >
+                            {item.id === "default" ? "Built in" : isDraft ? "Draft" : "Custom"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+                <section
+                  aria-labelledby="asset-palette-heading"
+                  className="border-t border-black/10 pt-3"
+                >
+                  <div className="mb-2 flex items-center justify-between">
+                    <h2
+                      id="asset-palette-heading"
+                      className="font-display text-sm font-extrabold uppercase tracking-wider"
+                    >
+                      Asset Palette
+                    </h2>
+                    <span className="max-w-36 text-right text-[10px] leading-tight text-catchy-ink-soft">
+                      {placement
+                        ? "Click inside the arena to place · Esc to cancel"
+                        : "Choose an asset, then place it in the arena"}
+                    </span>
+                  </div>
+                  <div className="grid gap-2">
+                    {ASSET_GROUPS.map((group) => (
+                      <div key={group.label} className="min-w-0">
+                        <h3 className="mb-1 text-xs font-extrabold uppercase tracking-wider text-catchy-ink-soft">
+                          {group.label}
+                        </h3>
+                        <div className="flex flex-wrap gap-1.5">
+                          {ASSET_CATALOG.filter((asset) =>
+                            (group.categories as readonly string[]).includes(asset.category),
+                          ).map((asset) => (
+                            <button
+                              key={asset.id}
+                              type="button"
+                              title={asset.displayName}
+                              aria-label={`Place ${asset.displayName}`}
+                              aria-pressed={placement === asset.id}
+                              className={`min-w-[105px] rounded-lg border px-2 py-1.5 text-left text-xs font-bold ${placement === asset.id ? "border-catchy-accent bg-catchy-accent/60" : "border-black/10 bg-white/70 hover:bg-white"}`}
+                              disabled={!map || map.id === "default"}
+                              onClick={() =>
+                                setPlacement((current) => (current === asset.id ? null : asset.id))
+                              }
+                            >
+                              <span aria-hidden="true" className="mr-1 text-catchy-accent">
+                                ＋
+                              </span>
+                              {asset.displayName}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <section
+                    aria-labelledby="interactive-objects-heading"
+                    className="mt-3 border-t border-black/10 pt-3"
+                  >
+                    <h3
+                      id="interactive-objects-heading"
+                      className="mb-1 text-xs font-extrabold uppercase tracking-wider text-catchy-ink-soft"
+                    >
+                      Interactive Objects
+                    </h3>
+                    <div className="flex flex-wrap gap-1.5">
+                      {INTERACTIVE_KINDS.map((kind) => {
+                        const existing = map?.interactiveObjects.find((item) => item.kind === kind);
+                        const label = INTERACTIVE_LABELS[kind];
+                        const selectedInteractive = selected === `interactive:${existing?.id}`;
+                        const activePlacement = placement === `interactive:${kind}`;
+                        return (
+                          <button
+                            key={kind}
+                            type="button"
+                            aria-label={`${existing ? "Select" : "Place"} ${label}`}
+                            aria-pressed={selectedInteractive || activePlacement}
+                            className={`rounded-lg border px-2 py-1.5 text-left text-xs font-bold ${activePlacement || selectedInteractive ? "border-catchy-accent bg-catchy-accent/60" : "border-black/10 bg-white/70 hover:bg-white"}`}
+                            disabled={!map}
+                            onClick={() => selectOrPlaceInteractive(kind)}
+                          >
+                            <span className="block">{label}</span>
+                            <small className="block font-normal opacity-65">
+                              {existing
+                                ? selectedInteractive
+                                  ? "Selected"
+                                  : "Already placed"
+                                : "Click to place"}
+                            </small>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                </section>
+              </aside>
+              <button
+                type="button"
+                data-drawer-toggle
+                aria-label="Toggle editor drawer"
+                aria-controls="editor-drawer-content"
+                aria-expanded={drawerOpen}
+                title={drawerOpen ? "Close editor drawer" : "Open editor drawer"}
+                className="my-3 flex h-12 w-11 shrink-0 items-center justify-center rounded-r-xl border border-l-0 border-black/10 bg-white/95 text-catchy-ink shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-catchy-ink"
+                onClick={() => {
+                  if (drawerPinned) {
+                    setDrawerPinned(false);
+                    setDrawerHovered(false);
+                  } else setDrawerPinned(true);
+                }}
+              >
+                <PanelLeftOpen aria-hidden="true" size={19} />
+              </button>
             </div>
           </section>
           <aside className="rounded-2xl bg-white/75 p-3 shadow-lg lg:overflow-auto">
@@ -577,12 +905,6 @@ function Editor() {
                     onChange={(event) => setSelected(event.target.value || null)}
                   >
                     <option value="">Nothing selected</option>
-                    <option value="spawn:player">Player spawn</option>
-                    {map.runnerSpawns.map((spawn) => (
-                      <option key={spawn.id} value={`spawn:${spawn.id}`}>
-                        Runner spawn · {spawn.id}
-                      </option>
-                    ))}
                     {map.interactiveObjects.map((object) => (
                       <option key={object.id} value={`interactive:${object.id}`}>
                         Interactive · {object.kind}
@@ -626,12 +948,24 @@ function Editor() {
                   Arena radius
                   <input
                     type="number"
-                    min="12"
-                    max="80"
+                    min={MAP_LIMITS.minRadius}
+                    max={MAP_LIMITS.maxRadius}
                     className="mt-1 w-full rounded-lg border p-2"
                     value={map.arena.radius}
                     disabled={map.id === "default"}
-                    onChange={(e) => update({ ...map, arena: { radius: Number(e.target.value) } })}
+                    onChange={(e) => {
+                      const radius = Number(e.target.value);
+                      if (!Number.isFinite(radius)) return;
+                      update({
+                        ...map,
+                        arena: {
+                          radius: Math.max(
+                            MAP_LIMITS.minRadius,
+                            Math.min(MAP_LIMITS.maxRadius, radius),
+                          ),
+                        },
+                      });
+                    }}
                   />
                 </label>
                 <label className="mb-3 flex items-center gap-2 text-sm">
@@ -701,61 +1035,11 @@ function Editor() {
                           (item) => item.id === selected.slice("interactive:".length),
                         )
                       : undefined;
-                    const spawn = selected.startsWith("spawn:")
-                      ? selected === "spawn:player"
-                        ? { id: "player", x: map.playerSpawn.x, z: map.playerSpawn.z }
-                        : map.runnerSpawns.find(
-                            (item) => item.id === selected.slice("spawn:".length),
-                          )
-                      : undefined;
-                    if (!object && !interactive && !spawn) return null;
-                    if (spawn)
-                      return (
-                        <div>
-                          <h3 className="font-bold">
-                            {spawn.id === "player" ? "Player spawn" : `Runner ${spawn.id}`}
-                          </h3>
-                          <label className="mt-3 block text-sm">
-                            X
-                            <input
-                              type="number"
-                              className="mt-1 w-full rounded-lg border p-2"
-                              value={spawn.x}
-                              disabled={map.id === "default"}
-                              onChange={(e) =>
-                                transformSpawn(
-                                  selected,
-                                  { x: Number(e.target.value), z: spawn.z },
-                                  true,
-                                )
-                              }
-                            />
-                          </label>
-                          <label className="mt-3 block text-sm">
-                            Z
-                            <input
-                              type="number"
-                              className="mt-1 w-full rounded-lg border p-2"
-                              value={spawn.z}
-                              disabled={map.id === "default"}
-                              onChange={(e) =>
-                                transformSpawn(
-                                  selected,
-                                  { x: spawn.x, z: Number(e.target.value) },
-                                  true,
-                                )
-                              }
-                            />
-                          </label>
-                          <p className="mt-3 text-xs opacity-70">
-                            Spawn points are required and cannot be deleted.
-                          </p>
-                        </div>
-                      );
+                    if (!object && !interactive) return null;
                     if (interactive)
                       return (
                         <div>
-                          <h3 className="font-bold">{interactive.kind}</h3>
+                          <h3 className="font-bold">{INTERACTIVE_LABELS[interactive.kind]}</h3>
                           <label className="mt-3 block text-sm">
                             X
                             <input
@@ -1008,48 +1292,6 @@ function Editor() {
             )}
           </aside>
         </div>
-        <section className="rounded-2xl bg-white/75 p-3 shadow-lg" aria-label="Asset palette">
-          <div className="mb-2 flex items-center justify-between">
-            <h2 className="font-display text-lg">Asset palette</h2>
-            <span className="text-xs text-catchy-ink-soft">
-              {placement
-                ? "Click inside the arena to place · Esc to cancel"
-                : "Choose an asset, then place it in the arena"}
-            </span>
-          </div>
-          <div className="grid gap-2 md:grid-cols-3">
-            {ASSET_GROUPS.map((group) => (
-              <div key={group.label} className="min-w-0">
-                <h3 className="mb-1 text-xs font-extrabold uppercase tracking-wider text-catchy-ink-soft">
-                  {group.label}
-                </h3>
-                <div className="flex flex-wrap gap-1.5">
-                  {ASSET_CATALOG.filter((asset) =>
-                    (group.categories as readonly string[]).includes(asset.category),
-                  ).map((asset) => (
-                    <button
-                      key={asset.id}
-                      type="button"
-                      title={asset.modelPath}
-                      aria-label={`Place ${asset.displayName}`}
-                      aria-pressed={placement === asset.id}
-                      className={`min-w-[105px] rounded-lg border px-2 py-1.5 text-left text-xs font-bold ${placement === asset.id ? "border-catchy-accent bg-catchy-accent/60" : "border-black/10 bg-white/70 hover:bg-white"}`}
-                      disabled={!map || map.id === "default"}
-                      onClick={() =>
-                        setPlacement((current) => (current === asset.id ? null : asset.id))
-                      }
-                    >
-                      <span aria-hidden="true" className="mr-1 text-catchy-accent">
-                        ＋
-                      </span>
-                      {asset.displayName}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
       </div>
     </main>
   );

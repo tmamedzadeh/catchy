@@ -126,12 +126,6 @@ export const mapRepository = {
       name,
       description: "A clean Catchy map.",
       arena: { radius: 30 },
-      playerSpawn: { x: -4, z: 12 },
-      runnerSpawns: [
-        { id: "pink", x: -13, z: -2 },
-        { id: "purple", x: 9, z: -12 },
-        { id: "orange", x: 17, z: 6 },
-      ],
       objects: [],
       interactiveObjects: cloneMap(DEFAULT_MAP).interactiveObjects,
     };

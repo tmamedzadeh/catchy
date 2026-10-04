@@ -287,6 +287,8 @@ test.describe("landscape coarse-pointer controls", () => {
       { id: 1, x: stickX, y: stickY - stickBounds!.height * 0.32 },
       { id: 2, x: cameraX + 36, y: cameraY },
     ]);
+    // CDP acknowledges native touch dispatch before the page necessarily handles its pointermove.
+    await page.waitForFunction(() => window.__CATCHY_E2E__!.isCameraDragActive());
     await page.evaluate(() => window.__CATCHY_E2E__!.step(180));
     await page.evaluate(() => window.__CATCHY_E2E__!.step(20));
     const moved = await readPlayer(page);
@@ -362,6 +364,42 @@ test.describe("landscape coarse-pointer controls", () => {
         const player = window.__CATCHY_E2E__!.getPlayer();
         return Math.hypot(camera.x - player.x, camera.z - player.z);
       });
+    const waitForStableCameraDistance = async (
+      direction: "closer" | "farther",
+      referenceDistance: number,
+    ) => {
+      await page.evaluate(() => {
+        delete (window as Window & { __cameraDistanceProbe?: unknown }).__cameraDistanceProbe;
+      });
+      await page.waitForFunction(
+        ({
+          direction,
+          referenceDistance,
+        }: {
+          direction: "closer" | "farther";
+          referenceDistance: number;
+        }) => {
+          const camera = window.__CATCHY_E2E__!.getRenderedCamera();
+          if (!camera) return false;
+          const player = window.__CATCHY_E2E__!.getPlayer();
+          const distance = Math.hypot(camera.x - player.x, camera.z - player.z);
+          const probeWindow = window as Window & {
+            __cameraDistanceProbe?: { distance: number; stableFrames: number };
+          };
+          const previous = probeWindow.__cameraDistanceProbe;
+          const movedInExpectedDirection =
+            direction === "closer" ? distance < referenceDistance : distance > referenceDistance;
+          const stableFrames =
+            movedInExpectedDirection && previous && Math.abs(previous.distance - distance) < 0.015
+              ? previous.stableFrames + 1
+              : 0;
+          probeWindow.__cameraDistanceProbe = { distance, stableFrames };
+          return stableFrames >= 3;
+        },
+        { direction, referenceDistance },
+        { timeout: 10_000 },
+      );
+    };
     const pinchStart = await cameraDistanceFromPlayer();
     const pinchStartWorld = await readWorld(page);
     const initialYaw = pinchStartWorld.cameraYaw as number;
@@ -380,14 +418,7 @@ test.describe("landscape coarse-pointer controls", () => {
     ]);
     await page.evaluate(() => window.__CATCHY_E2E__!.step(80));
     const pinchOutWorld = await readWorld(page);
-    await page.waitForFunction((startDistance) => {
-      const camera = window.__CATCHY_E2E__!.getRenderedCamera();
-      const player = window.__CATCHY_E2E__!.getPlayer();
-      return (
-        camera !== null &&
-        Math.hypot(camera.x - player.x, camera.z - player.z) < startDistance - 0.5
-      );
-    }, pinchStart);
+    await waitForStableCameraDistance("closer", pinchStart - 0.5);
     const pinchOutRendered = await cameraDistanceFromPlayer();
     expect(pinchOutWorld.cameraDistance).toBeLessThan(initialCameraDistance);
     expect(pinchOutRendered).toBeLessThan(pinchStart - 0.5);
@@ -409,14 +440,7 @@ test.describe("landscape coarse-pointer controls", () => {
     const pinchInWorld = await readWorld(page);
     expect(pinchInWorld.cameraDistance).toBeGreaterThan(pinchOutWorld.cameraDistance as number);
     expect(pinchInWorld.cameraYaw).toBeCloseTo(initialYaw, 2);
-    await page.waitForFunction((startDistance) => {
-      const camera = window.__CATCHY_E2E__!.getRenderedCamera();
-      const player = window.__CATCHY_E2E__!.getPlayer();
-      return (
-        camera !== null &&
-        Math.hypot(camera.x - player.x, camera.z - player.z) > startDistance + 0.5
-      );
-    }, pinchOutRendered);
+    await waitForStableCameraDistance("farther", pinchOutRendered + 0.5);
     expect(await cameraDistanceFromPlayer()).toBeGreaterThan(pinchOutRendered + 0.5);
     await dispatchTouch("touchEnd", [{ id: 41, x: cameraX - 30, y: cameraY }]);
     expect((await owners()).filter((owner) => owner === "camera")).toHaveLength(1);
@@ -459,11 +483,21 @@ test.describe("landscape coarse-pointer controls", () => {
     await page.evaluate(() => window.__CATCHY_E2E__!.step(80));
     const pitchedWorld = await readWorld(page);
     expect(pitchedWorld.cameraPitch).toBeLessThan(0);
-    await page.waitForFunction(
-      (startY) => window.__CATCHY_E2E__!.getRenderedCamera()!.forwardY > startY + 0.02,
-      pitchStart.forwardY,
-      { timeout: 10_000 },
-    );
+    await expect
+      .poll(
+        () =>
+          page.evaluate((initialForwardY) => {
+            const game = window.__CATCHY_E2E__!;
+            const camera = game.getRenderedCamera()!;
+            return {
+              movedInExpectedDirection: camera.forwardY > initialForwardY + 0.02,
+              cameraPitch: game.getWorld().cameraPitch,
+              forwardY: camera.forwardY,
+            };
+          }, pitchStart.forwardY),
+        { timeout: 10_000 },
+      )
+      .toMatchObject({ movedInExpectedDirection: true });
     await dispatchTouch("touchEnd", []);
     expect(await owners()).toEqual([]);
 

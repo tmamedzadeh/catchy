@@ -9,6 +9,7 @@ import {
 import { GAME_CONFIG } from "./config";
 import { getActiveMap } from "./maps";
 import {
+  cameraDrag,
   clearInput,
   getTouchPointerOwners,
   requestPlayerDash,
@@ -40,6 +41,7 @@ type E2EPlayer = Pick<
   | "vz"
   | "heading"
   | "speed"
+  | "radius"
   | "dashState"
   | "boostEffectRemaining"
   | "playerBoostCooldownRemaining"
@@ -48,7 +50,7 @@ type E2EPlayer = Pick<
   | "jumpActivationId"
   | "slowMultiplier"
 > & { boostState: BoostState };
-type E2ERunner = Pick<Agent, "id" | "x" | "z" | "hidden" | "state" | "respawns">;
+type E2ERunner = Pick<Agent, "id" | "x" | "z" | "radius" | "hidden" | "state" | "respawns">;
 type E2EWorld = {
   barrierClosed: boolean;
   barrierRemaining: number;
@@ -71,8 +73,6 @@ type E2ERenderedCamera = {
 type E2EActiveMap = {
   id: string;
   arenaRadius: number;
-  playerSpawn: { x: number; z: number };
-  runnerSpawns: { id: string; x: number; z: number }[];
   objects: { id: string; model: string; x: number; z: number }[];
 };
 
@@ -87,6 +87,7 @@ export type CatchyE2EApi = {
   getActiveMap: () => E2EActiveMap;
   getRenderedCamera: () => E2ERenderedCamera | null;
   getTouchPointerOwners: () => Array<[number, string]>;
+  isCameraDragActive: () => boolean;
   activateDash: () => void;
   activateBoost: () => void;
   placePlayer: (x: number, z: number, vx?: number, vz?: number) => void;
@@ -154,6 +155,7 @@ export function installCatchyE2EBridge() {
       return {
         x: PLAYER.x,
         z: PLAYER.z,
+        radius: PLAYER.radius,
         vx: PLAYER.vx,
         vz: PLAYER.vz,
         heading: PLAYER.heading,
@@ -173,6 +175,7 @@ export function installCatchyE2EBridge() {
         id: runner.id,
         x: runner.x,
         z: runner.z,
+        radius: runner.radius,
         hidden: runner.hidden,
         state: runner.state,
         respawns: runner.respawns,
@@ -196,8 +199,6 @@ export function installCatchyE2EBridge() {
       return {
         id: map.id,
         arenaRadius: map.arena.radius,
-        playerSpawn: { ...map.playerSpawn },
-        runnerSpawns: map.runnerSpawns.map((spawn) => ({ ...spawn })),
         objects: map.objects.map((object) => ({
           id: object.id,
           model: object.model,
@@ -214,6 +215,9 @@ export function installCatchyE2EBridge() {
     },
     getTouchPointerOwners() {
       return getTouchPointerOwners();
+    },
+    isCameraDragActive() {
+      return cameraDrag.active;
     },
     activateDash() {
       requestPlayerDash();

@@ -1,7 +1,7 @@
 // Mutable simulation state. Nothing here is stored in React at frame rate.
-import { GAME_CONFIG, type Obstacle, type InteractiveMapObject } from "./config";
+import { GAME_CONFIG } from "./config";
 import { getActiveMap, setActiveMap } from "./maps";
-import type { MapDefinition } from "./maps/types";
+import type { InteractiveMapObject, MapDefinition, MapObject } from "./maps/types";
 import { getCameraBasis, NEUTRAL_CAMERA_INPUT, type CameraBasis, type CameraInput } from "./camera";
 
 export type Agent = {
@@ -66,28 +66,32 @@ export type Agent = {
 
 export type DashState = "ready" | "active" | "cooldown";
 export type BoostState = "ready" | "active" | "cooldown";
+type Obstacle = MapObject;
 
-function positionsForMap(map: MapDefinition) {
+function positionsForMap() {
   return [
-    { id: "player", role: "player" as const, ...map.playerSpawn, heading: -1.2, phase: 0 },
+    { id: "player", role: "player" as const, x: 0, z: 0, heading: -1.2, phase: 0 },
     {
-      ...map.runnerSpawns[0]!,
-      id: map.runnerSpawns[0]?.id ?? "pink",
+      id: "pink",
       role: "runner" as const,
+      x: 0,
+      z: 0,
       heading: 1,
       phase: 1.3,
     },
     {
-      ...map.runnerSpawns[1]!,
-      id: map.runnerSpawns[1]?.id ?? "purple",
+      id: "purple",
       role: "runner" as const,
+      x: 0,
+      z: 0,
       heading: 2,
       phase: 2.6,
     },
     {
-      ...map.runnerSpawns[2]!,
-      id: map.runnerSpawns[2]?.id ?? "orange",
+      id: "orange",
       role: "runner" as const,
+      x: 0,
+      z: 0,
       heading: -2,
       phase: 4.1,
     },
@@ -95,7 +99,7 @@ function positionsForMap(map: MapDefinition) {
 }
 
 let activeWorld = getActiveMap();
-let initialPositions = positionsForMap(activeWorld);
+const initialPositions = positionsForMap();
 let OBSTACLES: Obstacle[] = activeWorld.objects;
 let INTERACTIVE_OBJECTS: InteractiveMapObject[] = activeWorld.interactiveObjects;
 
@@ -169,13 +173,16 @@ export const RUNNERS = AGENTS.slice(1);
 
 export function installMapForSimulation(map: MapDefinition) {
   activeWorld = setActiveMap(map);
-  initialPositions = positionsForMap(activeWorld);
   OBSTACLES = activeWorld.objects;
+  obstacleIndex = buildObstacleIndex(OBSTACLES);
   INTERACTIVE_OBJECTS = activeWorld.interactiveObjects;
   SPEED_PAD = INTERACTIVE_OBJECTS.find((item) => item.kind === "speedPad")!;
   SLOW_ZONE = INTERACTIVE_OBJECTS.find((item) => item.kind === "slowZone")!;
   ELASTIC_BOUNCE = INTERACTIVE_OBJECTS.find((item) => item.kind === "elasticBounce")!;
   TEMPORARY_BARRIER = INTERACTIVE_OBJECTS.find((item) => item.kind === "temporaryBarrier")!;
+  WORLD_STATE.barrierClosed = false;
+  delete navigationGraphCache.open;
+  delete navigationGraphCache.closed;
   rebuildNavigationGraph();
   resetSimulation();
 }
@@ -348,7 +355,136 @@ export function cancelPlayerDash() {
 
 const TAU = Math.PI * 2;
 const WALL_MARGIN = GAME_CONFIG.obstacleMargin;
+let spawnRandomSource = Math.random;
 const NAV_SAMPLE_SPACING = 0.3;
+const OBSTACLE_GRID_CELL_SIZE = 8;
+
+type ColliderCache = {
+  cos: number;
+  sin: number;
+  circleRadius: number;
+  halfWidth: number;
+  halfDepth: number;
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+};
+
+type ObstacleIndex = {
+  obstacles: Obstacle[];
+  bounds: ColliderCache[];
+  buckets: Map<string, number[]>;
+  seen: Uint32Array;
+  queryId: number;
+};
+
+type NavigationGraph = {
+  nodes: NavNode[];
+  grid: Int32Array;
+  width: number;
+  extent: number;
+  spacing: number;
+};
+
+const colliderCache = new WeakMap<Obstacle, ColliderCache>();
+let obstacleIndex: ObstacleIndex = buildObstacleIndex(OBSTACLES);
+const obstacleCandidates: number[] = [];
+
+function getColliderCache(obstacle: Obstacle): ColliderCache {
+  let cached = colliderCache.get(obstacle);
+  if (cached) return cached;
+
+  const scale = scaleOf(obstacle);
+  const shape = obstacle.collision;
+  const cos = Math.cos(obstacle.rotation);
+  const sin = Math.sin(obstacle.rotation);
+  const circleRadius = shape.type === "circle" ? shape.radius * scale + WALL_MARGIN : 0;
+  const halfWidth = shape.type === "box" ? (shape.width * scale) / 2 + WALL_MARGIN : 0;
+  const halfDepth = shape.type === "box" ? (shape.depth * scale) / 2 + WALL_MARGIN : 0;
+  const extentX =
+    shape.type === "circle" ? circleRadius : Math.abs(cos) * halfWidth + Math.abs(sin) * halfDepth;
+  const extentZ =
+    shape.type === "circle" ? circleRadius : Math.abs(sin) * halfWidth + Math.abs(cos) * halfDepth;
+  cached = {
+    cos,
+    sin,
+    circleRadius,
+    halfWidth,
+    halfDepth,
+    minX: obstacle.position.x - extentX,
+    maxX: obstacle.position.x + extentX,
+    minZ: obstacle.position.z - extentZ,
+    maxZ: obstacle.position.z + extentZ,
+  };
+  colliderCache.set(obstacle, cached);
+  return cached;
+}
+
+function obstacleCellKey(x: number, z: number) {
+  return `${x},${z}`;
+}
+
+function buildObstacleIndex(obstacles: Obstacle[]): ObstacleIndex {
+  const index: ObstacleIndex = {
+    obstacles,
+    bounds: obstacles.map(getColliderCache),
+    buckets: new Map(),
+    seen: new Uint32Array(obstacles.length),
+    queryId: 0,
+  };
+  obstacles.forEach((_, obstacleId) => {
+    const bounds = index.bounds[obstacleId]!;
+    const minCellX = Math.floor(bounds.minX / OBSTACLE_GRID_CELL_SIZE);
+    const maxCellX = Math.floor(bounds.maxX / OBSTACLE_GRID_CELL_SIZE);
+    const minCellZ = Math.floor(bounds.minZ / OBSTACLE_GRID_CELL_SIZE);
+    const maxCellZ = Math.floor(bounds.maxZ / OBSTACLE_GRID_CELL_SIZE);
+    for (let cellZ = minCellZ; cellZ <= maxCellZ; cellZ++) {
+      for (let cellX = minCellX; cellX <= maxCellX; cellX++) {
+        const key = obstacleCellKey(cellX, cellZ);
+        const bucket = index.buckets.get(key);
+        if (bucket) bucket.push(obstacleId);
+        else index.buckets.set(key, [obstacleId]);
+      }
+    }
+  });
+  return index;
+}
+
+function queryObstacleIndex(minX: number, maxX: number, minZ: number, maxZ: number) {
+  obstacleCandidates.length = 0;
+  if (obstacleIndex.obstacles.length <= 8) {
+    for (let i = 0; i < obstacleIndex.obstacles.length; i++) obstacleCandidates.push(i);
+    return obstacleCandidates;
+  }
+
+  obstacleIndex.queryId = (obstacleIndex.queryId + 1) >>> 0;
+  if (obstacleIndex.queryId === 0) {
+    obstacleIndex.seen.fill(0);
+    obstacleIndex.queryId = 1;
+  }
+  const queryId = obstacleIndex.queryId;
+  const minCellX = Math.floor(minX / OBSTACLE_GRID_CELL_SIZE);
+  const maxCellX = Math.floor(maxX / OBSTACLE_GRID_CELL_SIZE);
+  const minCellZ = Math.floor(minZ / OBSTACLE_GRID_CELL_SIZE);
+  const maxCellZ = Math.floor(maxZ / OBSTACLE_GRID_CELL_SIZE);
+  for (let cellZ = minCellZ; cellZ <= maxCellZ; cellZ++) {
+    for (let cellX = minCellX; cellX <= maxCellX; cellX++) {
+      const bucket = obstacleIndex.buckets.get(obstacleCellKey(cellX, cellZ));
+      if (!bucket) continue;
+      for (const obstacleId of bucket) {
+        if (obstacleIndex.seen[obstacleId] === queryId) continue;
+        obstacleIndex.seen[obstacleId] = queryId;
+        const bounds = obstacleIndex.bounds[obstacleId]!;
+        if (bounds.maxX < minX || bounds.minX > maxX || bounds.maxZ < minZ || bounds.minZ > maxZ)
+          continue;
+        obstacleCandidates.push(obstacleId);
+      }
+    }
+  }
+  obstacleCandidates.sort((a, b) => a - b);
+  return obstacleCandidates;
+}
 
 function scaleOf(obstacle: Obstacle) {
   return Math.abs(obstacle.scale);
@@ -358,18 +494,16 @@ function scaleOf(obstacle: Obstacle) {
 export function overlapsObstacle(x: number, z: number, radius: number, obstacle: Obstacle) {
   const dx = x - obstacle.position.x;
   const dz = z - obstacle.position.z;
-  const scale = scaleOf(obstacle);
+  const cached = getColliderCache(obstacle);
   const shape = obstacle.collision;
   if (shape.type === "circle") {
-    return Math.hypot(dx, dz) < shape.radius * scale + radius + WALL_MARGIN;
+    return dx * dx + dz * dz < (cached.circleRadius + radius) ** 2;
   }
 
-  const c = Math.cos(obstacle.rotation);
-  const s = Math.sin(obstacle.rotation);
-  const localX = dx * c + dz * s;
-  const localZ = -dx * s + dz * c;
-  const halfWidth = (shape.width * scale) / 2 + WALL_MARGIN;
-  const halfDepth = (shape.depth * scale) / 2 + WALL_MARGIN;
+  const localX = dx * cached.cos + dz * cached.sin;
+  const localZ = -dx * cached.sin + dz * cached.cos;
+  const halfWidth = cached.halfWidth;
+  const halfDepth = cached.halfDepth;
   const nearestX = Math.max(-halfWidth, Math.min(halfWidth, localX));
   const nearestZ = Math.max(-halfDepth, Math.min(halfDepth, localZ));
   const ex = localX - nearestX;
@@ -381,29 +515,68 @@ export function overlapsObstacle(x: number, z: number, radius: number, obstacle:
 type NavLink = { node: number; cost: number };
 type NavNode = { x: number; z: number; links: NavLink[] };
 
-export function isWalkablePoint(x: number, z: number, radius: number) {
+function isWalkablePointWithCandidates(
+  x: number,
+  z: number,
+  radius: number,
+  candidates: number[],
+  barrierClosed = WORLD_STATE.barrierClosed,
+) {
   if (Math.hypot(x, z) + radius > activeWorld.arena.radius - WALL_MARGIN) return false;
-  for (const obstacle of OBSTACLES) {
+  for (const obstacleId of candidates) {
+    const obstacle = OBSTACLES[obstacleId]!;
     if (overlapsObstacle(x, z, radius, obstacle)) return false;
   }
   if (overlapsObstacle(x, z, radius, ELASTIC_BOUNCE)) return false;
-  if (WORLD_STATE.barrierClosed && overlapsObstacle(x, z, radius, TEMPORARY_BARRIER)) return false;
+  if (barrierClosed && overlapsObstacle(x, z, radius, TEMPORARY_BARRIER)) return false;
   return true;
 }
 
+export function isWalkablePoint(
+  x: number,
+  z: number,
+  radius: number,
+  barrierClosed = WORLD_STATE.barrierClosed,
+) {
+  const candidates = queryObstacleIndex(x - radius, x + radius, z - radius, z + radius);
+  return isWalkablePointWithCandidates(x, z, radius, candidates, barrierClosed);
+}
+
 /** Check waypoint links with the same body radius and obstacle colliders used by movement. */
-export function isWalkableSegment(x1: number, z1: number, x2: number, z2: number, radius: number) {
+export function isWalkableSegment(
+  x1: number,
+  z1: number,
+  x2: number,
+  z2: number,
+  radius: number,
+  barrierClosed = WORLD_STATE.barrierClosed,
+) {
   const length = Math.hypot(x2 - x1, z2 - z1);
   const samples = Math.max(1, Math.ceil(length / NAV_SAMPLE_SPACING));
+  const candidates = queryObstacleIndex(
+    Math.min(x1, x2) - radius,
+    Math.max(x1, x2) + radius,
+    Math.min(z1, z2) - radius,
+    Math.max(z1, z2) + radius,
+  );
   for (let i = 1; i < samples; i++) {
     const t = i / samples;
-    if (!isWalkablePoint(x1 + (x2 - x1) * t, z1 + (z2 - z1) * t, radius)) return false;
+    if (
+      !isWalkablePointWithCandidates(
+        x1 + (x2 - x1) * t,
+        z1 + (z2 - z1) * t,
+        radius,
+        candidates,
+        barrierClosed,
+      )
+    )
+      return false;
   }
   return true;
 }
 
 /** Static grid graph: its nodes and edges are admitted only when free under the live colliders. */
-function buildNavigationGraph() {
+function buildNavigationGraph(barrierClosed: boolean): NavigationGraph {
   const spacing = GAME_CONFIG.npc.navigation.gridSpacing;
   const extent = Math.floor(
     (activeWorld.arena.radius - GAME_CONFIG.npc.radius - WALL_MARGIN) / spacing,
@@ -417,7 +590,7 @@ function buildNavigationGraph() {
     const z = (row - extent) * spacing;
     for (let column = 0; column < width; column++) {
       const x = (column - extent) * spacing;
-      if (!isWalkablePoint(x, z, GAME_CONFIG.npc.radius)) continue;
+      if (!isWalkablePoint(x, z, GAME_CONFIG.npc.radius, barrierClosed)) continue;
       const node = nodes.length;
       grid[row * width + column] = node;
       nodes.push({ x, z, links: [] });
@@ -443,7 +616,10 @@ function buildNavigationGraph() {
         const nextId = grid[nextRow * width + nextColumn]!;
         if (nextId < 0) continue;
         const next = nodes[nextId]!;
-        if (!isWalkableSegment(node.x, node.z, next.x, next.z, GAME_CONFIG.npc.radius)) continue;
+        if (
+          !isWalkableSegment(node.x, node.z, next.x, next.z, GAME_CONFIG.npc.radius, barrierClosed)
+        )
+          continue;
         const cost = Math.hypot(next.x - node.x, next.z - node.z);
         node.links.push({ node: nextId, cost });
         next.links.push({ node: nodeId, cost });
@@ -451,25 +627,44 @@ function buildNavigationGraph() {
     }
   }
 
-  return nodes;
+  return { nodes, grid, width, extent, spacing };
 }
 
 let NAV_NODES: NavNode[] = [];
+let NAV_GRID: Int32Array<ArrayBufferLike> = new Int32Array(0);
+let NAV_GRID_WIDTH = 0;
+let NAV_GRID_EXTENT = 0;
+let NAV_GRID_SPACING: number = GAME_CONFIG.npc.navigation.gridSpacing;
+const navigationGraphCache: { open?: NavigationGraph; closed?: NavigationGraph } = {};
 let navDistance = new Float64Array(0);
 let navPrevious = new Int32Array(0);
 let navFirstStep = new Int32Array(0);
 let navVisited = new Uint8Array(0);
 let navReversePath = new Int32Array(0);
+let navHeapNodes = new Int32Array(0);
+let navHeapCosts = new Float64Array(0);
 const goalSectorBestNode = new Int32Array(GAME_CONFIG.npc.navigation.candidateDirections);
 const goalSectorBestScore = new Float64Array(GAME_CONFIG.npc.navigation.candidateDirections);
 
 function rebuildNavigationGraph() {
-  NAV_NODES = buildNavigationGraph();
+  const key = WORLD_STATE.barrierClosed ? "closed" : "open";
+  let graph = navigationGraphCache[key];
+  if (!graph) {
+    graph = buildNavigationGraph(WORLD_STATE.barrierClosed);
+    navigationGraphCache[key] = graph;
+  }
+  NAV_NODES = graph.nodes;
+  NAV_GRID = graph.grid;
+  NAV_GRID_WIDTH = graph.width;
+  NAV_GRID_EXTENT = graph.extent;
+  NAV_GRID_SPACING = graph.spacing;
   navDistance = new Float64Array(NAV_NODES.length);
   navPrevious = new Int32Array(NAV_NODES.length);
   navFirstStep = new Int32Array(NAV_NODES.length);
   navVisited = new Uint8Array(NAV_NODES.length);
   navReversePath = new Int32Array(NAV_NODES.length);
+  navHeapNodes = new Int32Array(Math.max(1, NAV_NODES.length * 8 + 1));
+  navHeapCosts = new Float64Array(navHeapNodes.length);
   for (const runner of RUNNERS) {
     runner.route.length = 0;
     runner.routeIndex = 0;
@@ -512,8 +707,14 @@ rebuildNavigationGraph();
 
 export function isSafeSpawn(agent: Agent, x: number, z: number) {
   if (Math.hypot(x, z) + agent.radius > activeWorld.arena.radius - WALL_MARGIN) return false;
-  for (const obstacle of OBSTACLES) {
-    if (overlapsObstacle(x, z, agent.radius, obstacle)) return false;
+  const candidates = queryObstacleIndex(
+    x - agent.radius,
+    x + agent.radius,
+    z - agent.radius,
+    z + agent.radius,
+  );
+  for (const obstacleId of candidates) {
+    if (overlapsObstacle(x, z, agent.radius, OBSTACLES[obstacleId]!)) return false;
   }
   if (overlapsObstacle(x, z, agent.radius, ELASTIC_BOUNCE)) return false;
   if (WORLD_STATE.barrierClosed && overlapsObstacle(x, z, agent.radius, TEMPORARY_BARRIER))
@@ -535,32 +736,31 @@ export function isSafeSpawn(agent: Agent, x: number, z: number) {
 /** Finds a clear in-bounds point away from the player and active runners. */
 export function findSafeSpawn(
   agent: Agent,
-  preferred?: { x: number; z: number },
+  random: () => number = spawnRandomSource,
 ): { x: number; z: number } {
-  if (preferred && isSafeSpawn(agent, preferred.x, preferred.z)) return preferred;
-
-  const origin = preferred ?? { x: 0, z: 0 };
-  const phase = agent.respawns * 1.61803398875 + AGENTS.indexOf(agent) * 2.39996322973;
-  for (let i = 0; i < 240; i++) {
-    const ring = i === 0 ? 0 : 3 + (Math.floor((i - 1) / 16) % 8) * 2.35;
-    const angle = phase + i * 2.39996322973;
-    const x = origin.x + Math.cos(angle) * ring;
-    const z = origin.z + Math.sin(angle) * ring;
+  const maxRadius = activeWorld.arena.radius - agent.radius - WALL_MARGIN;
+  for (let i = 0; i < 96; i++) {
+    const angle = random() * Math.PI * 2;
+    const radius = Math.sqrt(random()) * maxRadius;
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
     if (isSafeSpawn(agent, x, z)) return { x, z };
   }
 
-  // Deterministic whole-map fallback; validate every candidate against the
-  // same live collision and separation rules as the normal search.
-  for (let z = -activeWorld.arena.radius + 2; z < activeWorld.arena.radius - 2; z += 1.5) {
-    for (let x = -activeWorld.arena.radius + 2; x < activeWorld.arena.radius - 2; x += 1.5) {
-      if (isSafeSpawn(agent, x, z)) return { x, z };
-    }
+  // The navigation graph already excludes the current solid colliders. Check
+  // its nodes with the same live rules so tight maps still get a safe fallback.
+  const length = NAV_NODES.length;
+  const offset = (Math.max(0, AGENTS.indexOf(agent)) * 137 + agent.respawns * 97) % length;
+  for (let i = 0; i < length; i++) {
+    const node = NAV_NODES[(offset + i) % length]!;
+    if (isSafeSpawn(agent, node.x, node.z)) return { x: node.x, z: node.z };
   }
   throw new Error(`No safe spawn is available for ${agent.id}`);
 }
 
 /** Full mutable-world reset used by the restart UI. */
-export function resetSimulation() {
+export function resetSimulation(random: () => number = Math.random) {
+  spawnRandomSource = random;
   const barrierWasClosed = WORLD_STATE.barrierClosed;
   WORLD_STATE.barrierClosed = false;
   WORLD_STATE.barrierRemaining = GAME_CONFIG.barrier.openSeconds;
@@ -588,7 +788,7 @@ export function resetSimulation() {
   for (let i = 0; i < AGENTS.length; i++) {
     const agent = AGENTS[i]!;
     const initial = initialPositions[i]!;
-    const spawn = findSafeSpawn(agent, { x: initial.x, z: initial.z });
+    const spawn = findSafeSpawn(agent, random);
     agent.x = spawn.x;
     agent.z = spawn.z;
     agent.vx = 0;
@@ -746,12 +946,12 @@ export function resolveObstacle(agent: Agent, obstacle: Obstacle) {
   const dx = agent.x - obstacle.position.x;
   const dz = agent.z - obstacle.position.z;
   const shape = obstacle.collision;
-  const scale = scaleOf(obstacle);
+  const cached = getColliderCache(obstacle);
 
   if (shape.type === "circle") {
-    const minDistance = shape.radius * scale + agent.radius + WALL_MARGIN;
+    const minDistance = cached.circleRadius + agent.radius;
     const d = Math.hypot(dx, dz);
-    const isElasticBounce = obstacle.kind === "elasticBounce";
+    const isElasticBounce = "kind" in obstacle && obstacle.kind === "elasticBounce";
     const bounceReleaseDistance = GAME_CONFIG.elasticBounce.releaseDistance;
     if (d >= minDistance) {
       if (isElasticBounce && d >= minDistance + bounceReleaseDistance)
@@ -793,12 +993,12 @@ export function resolveObstacle(agent: Agent, obstacle: Obstacle) {
     return true;
   }
 
-  const c = Math.cos(obstacle.rotation);
-  const s = Math.sin(obstacle.rotation);
+  const c = cached.cos;
+  const s = cached.sin;
   const localX = dx * c + dz * s;
   const localZ = -dx * s + dz * c;
-  const halfWidth = (shape.width * scale) / 2 + WALL_MARGIN;
-  const halfDepth = (shape.depth * scale) / 2 + WALL_MARGIN;
+  const halfWidth = cached.halfWidth;
+  const halfDepth = cached.halfDepth;
   const nearestX = Math.max(-halfWidth, Math.min(halfWidth, localX));
   const nearestZ = Math.max(-halfDepth, Math.min(halfDepth, localZ));
   let nx = localX - nearestX;
@@ -835,7 +1035,13 @@ export function resolveObstacle(agent: Agent, obstacle: Obstacle) {
 
 export function resolveWorld(agent: Agent) {
   for (let pass = 0; pass < 2; pass++) {
-    for (const obstacle of OBSTACLES) resolveObstacle(agent, obstacle);
+    const candidates = queryObstacleIndex(
+      agent.x - agent.radius,
+      agent.x + agent.radius,
+      agent.z - agent.radius,
+      agent.z + agent.radius,
+    );
+    for (const obstacleId of candidates) resolveObstacle(agent, OBSTACLES[obstacleId]!);
     resolveObstacle(agent, ELASTIC_BOUNCE);
     if (WORLD_STATE.barrierClosed) resolveObstacle(agent, TEMPORARY_BARRIER);
   }
@@ -857,19 +1063,37 @@ export function resolveWorld(agent: Agent) {
 
 function nearestReachableNode(agent: Agent) {
   let bestNode = -1;
-  let bestDistance = GAME_CONFIG.npc.navigation.gridSpacing * 2.4;
-  for (let i = 0; i < NAV_NODES.length; i++) {
-    const node = NAV_NODES[i]!;
-    const distance = Math.hypot(node.x - agent.x, node.z - agent.z);
-    if (distance >= bestDistance) continue;
-    if (!isWalkableSegment(agent.x, agent.z, node.x, node.z, agent.radius)) continue;
-    bestNode = i;
-    bestDistance = distance;
+  const localDistance = NAV_GRID_SPACING * 2.4;
+  let bestDistanceSquared = localDistance * localDistance;
+  const centerColumn = Math.round(agent.x / NAV_GRID_SPACING) + NAV_GRID_EXTENT;
+  const centerRow = Math.round(agent.z / NAV_GRID_SPACING) + NAV_GRID_EXTENT;
+  const cellRadius = Math.ceil(localDistance / NAV_GRID_SPACING);
+  for (
+    let row = Math.max(0, centerRow - cellRadius);
+    row <= Math.min(NAV_GRID_WIDTH - 1, centerRow + cellRadius);
+    row++
+  ) {
+    for (
+      let column = Math.max(0, centerColumn - cellRadius);
+      column <= Math.min(NAV_GRID_WIDTH - 1, centerColumn + cellRadius);
+      column++
+    ) {
+      const nodeId = NAV_GRID[row * NAV_GRID_WIDTH + column]!;
+      if (nodeId < 0) continue;
+      const node = NAV_NODES[nodeId]!;
+      const dx = node.x - agent.x;
+      const dz = node.z - agent.z;
+      const distanceSquared = dx * dx + dz * dz;
+      if (distanceSquared >= bestDistanceSquared) continue;
+      if (!isWalkableSegment(agent.x, agent.z, node.x, node.z, agent.radius)) continue;
+      bestNode = nodeId;
+      bestDistanceSquared = distanceSquared;
+    }
   }
   if (bestNode >= 0) return bestNode;
 
-  // Fall back to the nearest visible node when a runner is pushed outside the local grid neighborhood.
-  bestDistance = Infinity;
+  // Recovery fallback for bodies pushed out of the local navigation neighborhood.
+  let bestDistance = Infinity;
   for (let i = 0; i < NAV_NODES.length; i++) {
     const node = NAV_NODES[i]!;
     const distance = Math.hypot(node.x - agent.x, node.z - agent.z);
@@ -879,6 +1103,59 @@ function nearestReachableNode(agent: Agent) {
     bestDistance = distance;
   }
   return bestNode;
+}
+
+function heapLess(costA: number, nodeA: number, costB: number, nodeB: number) {
+  return costA < costB || (costA === costB && nodeA < nodeB);
+}
+
+function pushNavigationHeap(node: number, cost: number, heapSize: number) {
+  let index = heapSize++;
+  while (index > 0) {
+    const parent = (index - 1) >>> 1;
+    const parentCost = navHeapCosts[parent]!;
+    const parentNode = navHeapNodes[parent]!;
+    if (!heapLess(cost, node, parentCost, parentNode)) break;
+    navHeapCosts[index] = parentCost;
+    navHeapNodes[index] = parentNode;
+    index = parent;
+  }
+  navHeapCosts[index] = cost;
+  navHeapNodes[index] = node;
+  return heapSize;
+}
+
+function popNavigationHeap(heapSize: number) {
+  const node = navHeapNodes[0]!;
+  const cost = navHeapCosts[0]!;
+  const lastNode = navHeapNodes[--heapSize]!;
+  const lastCost = navHeapCosts[heapSize]!;
+  if (heapSize > 0) {
+    let index = 0;
+    while (true) {
+      const left = index * 2 + 1;
+      if (left >= heapSize) break;
+      const right = left + 1;
+      let child = left;
+      if (
+        right < heapSize &&
+        heapLess(
+          navHeapCosts[right]!,
+          navHeapNodes[right]!,
+          navHeapCosts[left]!,
+          navHeapNodes[left]!,
+        )
+      )
+        child = right;
+      if (!heapLess(navHeapCosts[child]!, navHeapNodes[child]!, lastCost, lastNode)) break;
+      navHeapCosts[index] = navHeapCosts[child]!;
+      navHeapNodes[index] = navHeapNodes[child]!;
+      index = child;
+    }
+    navHeapCosts[index] = lastCost;
+    navHeapNodes[index] = lastNode;
+  }
+  return { node, cost, heapSize };
 }
 
 /** Dijkstra on the collision-checked graph, then score one reachable goal per escape sector. */
@@ -913,15 +1190,13 @@ function chooseNavigationRoute(agent: Agent, avoidPreviousFirstStep: boolean) {
   const escapeZ = (agent.z - PLAYER.z) / (currentPlayerDistance || 1);
   const previousFirstStep = agent.routeFirstStep;
 
-  for (let iteration = 0; iteration < NAV_NODES.length; iteration++) {
-    let current = -1;
-    let currentCost = Infinity;
-    for (let i = 0; i < NAV_NODES.length; i++) {
-      if (navVisited[i] || navDistance[i]! >= currentCost) continue;
-      current = i;
-      currentCost = navDistance[i]!;
-    }
-    if (current < 0) break;
+  let heapSize = pushNavigationHeap(start, 0, 0);
+  while (heapSize > 0) {
+    const popped = popNavigationHeap(heapSize);
+    heapSize = popped.heapSize;
+    const current = popped.node;
+    const currentCost = popped.cost;
+    if (navVisited[current] || currentCost !== navDistance[current]) continue;
     navVisited[current] = 1;
 
     const node = NAV_NODES[current]!;
@@ -1014,6 +1289,7 @@ function chooseNavigationRoute(agent: Agent, avoidPreviousFirstStep: boolean) {
       navDistance[link.node] = nextCost;
       navPrevious[link.node] = current;
       navFirstStep[link.node] = current === start ? link.node : navFirstStep[current]!;
+      heapSize = pushNavigationHeap(link.node, nextCost, heapSize);
     }
   }
 

@@ -30,7 +30,9 @@ import {
   updateSpeedPad,
   type Agent,
 } from "./agents";
-import { GAME_CONFIG, INTERACTIVE_OBJECTS, OBSTACLES, type Obstacle } from "./config";
+import { GAME_CONFIG } from "./config";
+import { DEFAULT_MAP } from "./maps/defaultMap";
+import type { MapObject as Obstacle } from "./maps/types";
 import { getCameraRelativeBearing, NEUTRAL_CAMERA_INPUT } from "./camera";
 import {
   addCameraDrag,
@@ -46,10 +48,12 @@ import {
 
 const DT = 1 / GAME_CONFIG.simulation.tickHz;
 const noCommands = { dash: false, speedBoost: false, jump: false };
+const OBSTACLES = DEFAULT_MAP.objects;
+const INTERACTIVE_OBJECTS = DEFAULT_MAP.interactiveObjects;
 
 function obstacle(type: "box" | "circle", x = 0, z = 0, rotation = 0): Obstacle {
   return {
-    kind: "prop",
+    id: "test-obstacle",
     model: "test",
     position: { x, z },
     rotation,
@@ -119,11 +123,11 @@ describe("collision resolution", () => {
   });
 
   it("keeps a body within the arena boundary and removes outward velocity", () => {
-    put(PLAYER, GAME_CONFIG.arenaRadius + 10, 0);
+    put(PLAYER, DEFAULT_MAP.arena.radius + 10, 0);
     PLAYER.vx = 8;
     resolveWorld(PLAYER);
     expect(Math.hypot(PLAYER.x, PLAYER.z)).toBeLessThanOrEqual(
-      GAME_CONFIG.arenaRadius - PLAYER.radius,
+      DEFAULT_MAP.arena.radius - PLAYER.radius,
     );
     expect(PLAYER.vx).toBeCloseTo(0, 8);
   });
@@ -234,44 +238,56 @@ describe("player jump simulation", () => {
 });
 
 describe("safe spawning", () => {
-  it("accepts a valid preferred point and rejects points in obstacles or outside the arena", () => {
+  it("uses bounded random candidates inside safe arena space", () => {
     const runner = RUNNERS[0]!;
-    const valid = { x: -13, z: -2 };
-    expect(isSafeSpawn(runner, valid.x, valid.z)).toBe(true);
-    expect(findSafeSpawn(runner, valid)).toEqual(valid);
+    for (const other of AGENTS) if (other !== runner) other.hidden = 1;
+    put(PLAYER, 0, 25);
+    const samples = [0.5, 0.5];
+    let index = 0;
+    const spawn = findSafeSpawn(runner, () => samples[index++ % samples.length]!);
+    expect(spawn.x).toBeCloseTo(
+      -Math.sqrt(0.5) * (DEFAULT_MAP.arena.radius - runner.radius - GAME_CONFIG.obstacleMargin),
+    );
+    expect(spawn.z).toBeCloseTo(0);
+    expect(isSafeSpawn(runner, spawn.x, spawn.z)).toBe(true);
     expect(isSafeSpawn(runner, OBSTACLES[0]!.position.x, OBSTACLES[0]!.position.z)).toBe(false);
     expect(isSafeSpawn(runner, 100, 100)).toBe(false);
   });
 
-  it("rejects points that are too close to the player or another active runner", () => {
-    const [first, second] = RUNNERS;
-    expect(isSafeSpawn(first!, PLAYER.x + 1, PLAYER.z)).toBe(false);
-    put(first!, -20, 0);
-    put(second!, -19, 0);
-    expect(isSafeSpawn(first!, -19.1, 0)).toBe(false);
-  });
-
-  it("searches for a safe fallback when the preferred spawn is blocked", () => {
+  it("falls back to a safe navigation node after its bounded random attempts", () => {
     const runner = RUNNERS[0]!;
-    const blocked = OBSTACLES[0]!.position;
-    const spawn = findSafeSpawn(runner, blocked);
-    expect(spawn).not.toEqual(blocked);
+    for (const other of AGENTS) if (other !== runner) other.hidden = 1;
+    put(PLAYER, 0, 25);
+    let samples = 0;
+    const spawn = findSafeSpawn(runner, () => {
+      samples += 1;
+      return 0;
+    });
+    expect(samples).toBe(192);
+    expect(spawn).not.toEqual(OBSTACLES[0]!.position);
     expect(isSafeSpawn(runner, spawn.x, spawn.z)).toBe(true);
   });
 
-  it("places multiple active runners with configured separation", () => {
-    const active = RUNNERS;
-    for (const runner of active) runner.hidden = 1;
-    for (const runner of active) {
-      const spawn = findSafeSpawn(runner);
-      runner.x = spawn.x;
-      runner.z = spawn.z;
-      runner.hidden = 0;
+  it("places the player and runners with configured separation on reset", () => {
+    const values = [0, 0.16, 0.25, 0.16, 0.5, 0.16, 0.75, 0.16];
+    let index = 0;
+    resetSimulation(() => values[index++ % values.length]!);
+    const agents = [PLAYER, ...RUNNERS];
+    for (const agent of agents) {
+      expect(Math.hypot(agent.x, agent.z) + agent.radius).toBeLessThan(
+        DEFAULT_MAP.arena.radius - GAME_CONFIG.obstacleMargin,
+      );
+      expect(isSafeSpawn(agent, agent.x, agent.z)).toBe(true);
     }
-    for (let i = 0; i < active.length; i++) {
-      for (let j = i + 1; j < active.length; j++) {
-        const a = active[i]!;
-        const b = active[j]!;
+    for (const runner of RUNNERS) {
+      expect(Math.hypot(runner.x - PLAYER.x, runner.z - PLAYER.z)).toBeGreaterThanOrEqual(
+        GAME_CONFIG.npc.minSpawnDistanceFromPlayer,
+      );
+    }
+    for (let i = 0; i < RUNNERS.length; i++) {
+      for (let j = i + 1; j < RUNNERS.length; j++) {
+        const a = RUNNERS[i]!;
+        const b = RUNNERS[j]!;
         expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeGreaterThanOrEqual(
           a.radius + b.radius + GAME_CONFIG.npc.spawnSeparation,
         );
@@ -514,6 +530,8 @@ describe("target hysteresis and capture target lock", () => {
 
 describe("runner respawn", () => {
   it("hides a captured runner, clears its boost state, and restores safe movement after delay", () => {
+    let randomSamples = 0;
+    resetSimulation(() => (randomSamples++ % 4) / 4);
     const runner = RUNNERS[0]!;
     runner.boostEffectRemaining = 2;
     runner.slowMultiplier = 0.55;
@@ -526,6 +544,7 @@ describe("runner respawn", () => {
     for (let i = 0; i < 43; i++) step(DT, null, noCommands, true);
     expect(runner.hidden).toBe(0);
     expect(runner.state).toBe("flee");
+    expect(randomSamples).toBeGreaterThan(0);
     expect(isSafeSpawn(runner, runner.x, runner.z)).toBe(true);
   });
 });

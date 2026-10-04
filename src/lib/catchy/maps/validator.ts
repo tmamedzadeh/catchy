@@ -7,9 +7,13 @@ import type {
 } from "./types";
 import { GAME_CONFIG } from "../config";
 
-const MAX_OBJECTS = 300;
-const MIN_RADIUS = 12;
-const MAX_RADIUS = 80;
+export const MAP_LIMITS = Object.freeze({
+  maxObjects: 300,
+  minRadius: 12,
+  // At the current 1.9m NPC grid spacing, radius 100 is roughly 8,500 walkable
+  // nodes on the default layout. Keep the supported ceiling explicit and measured.
+  maxRadius: 100,
+});
 const MAX_TRANSFORM = 1_000;
 const REQUIRED_INTERACTIVES = [
   "speedPad",
@@ -58,30 +62,6 @@ function collisionExtent(collision: CollisionShape, scale: number): number {
     : Math.hypot(collision.width / 2, collision.depth / 2) * scale;
 }
 
-function overlapsSpawn(
-  point: { x: number; z: number },
-  object: {
-    position: { x: number; z: number };
-    rotation: number;
-    scale: number;
-    collision: CollisionShape;
-  },
-  agentRadius: number,
-): boolean {
-  const dx = point.x - object.position.x;
-  const dz = point.z - object.position.z;
-  if (object.collision.type === "circle")
-    return Math.hypot(dx, dz) < object.collision.radius * object.scale + agentRadius;
-  const cos = Math.cos(object.rotation);
-  const sin = Math.sin(object.rotation);
-  const localX = dx * cos + dz * sin;
-  const localZ = -dx * sin + dz * cos;
-  return (
-    Math.abs(localX) < (object.collision.width * object.scale) / 2 + agentRadius &&
-    Math.abs(localZ) < (object.collision.depth * object.scale) / 2 + agentRadius
-  );
-}
-
 /** Validate untrusted persisted or imported JSON without assuming nested values are well formed. */
 export function validateMap(input: unknown): MapValidationResult {
   const errors: MapValidationIssue[] = [];
@@ -108,82 +88,22 @@ export function validateMap(input: unknown): MapValidationResult {
 
   const arena = record(value["arena"]);
   const radius = arena?.["radius"];
-  if (!finite(radius) || radius < MIN_RADIUS || radius > MAX_RADIUS)
-    errors.push(issue("arena", `Arena radius must be between ${MIN_RADIUS}m and ${MAX_RADIUS}m.`));
+  if (!finite(radius) || radius < MAP_LIMITS.minRadius || radius > MAP_LIMITS.maxRadius)
+    errors.push(
+      issue(
+        "arena",
+        `Arena radius must be between ${MAP_LIMITS.minRadius}m and ${MAP_LIMITS.maxRadius}m.`,
+      ),
+    );
   const safeRadius = finite(radius) ? radius : 0;
 
-  const player = record(value["playerSpawn"]);
-  const playerPoint =
-    player && finite(player["x"]) && finite(player["z"])
-      ? { x: player["x"], z: player["z"] }
-      : null;
-  if (!playerPoint || !isInsideArena(playerPoint.x, playerPoint.z, safeRadius))
-    errors.push(issue("spawn", "Player spawn must be inside the arena."));
-
   const usedIds = new Set<string>();
-  const runnerRaw = value["runnerSpawns"];
-  if (!Array.isArray(runnerRaw) || runnerRaw.length !== 3)
-    errors.push(issue("spawns", "A playable map must have exactly three runner spawns."));
-  const runners = Array.isArray(runnerRaw) ? runnerRaw : [];
-  const validRunners: { id: string; x: number; z: number }[] = [];
-  for (const [index, raw] of runners.entries()) {
-    const runner = record(raw);
-    if (!runner || !validId(runner["id"])) {
-      errors.push(
-        issue(
-          "spawn-id",
-          "Runner spawn IDs must be unique and valid.",
-          `runnerSpawns[${index}].id`,
-        ),
-      );
-      continue;
-    }
-    const id = runner["id"];
-    if (usedIds.has(id)) errors.push(issue("duplicate-id", `Duplicate map object ID: ${id}.`));
-    usedIds.add(id);
-    const x = runner["x"];
-    const z = runner["z"];
-    if (!finite(x) || !finite(z) || !isInsideArena(x, z, safeRadius)) {
-      errors.push(
-        issue("spawn", "Runner spawn must be inside the arena.", `runnerSpawns[${index}]`),
-      );
-      continue;
-    }
-    validRunners.push({ id, x, z });
-  }
-  if (validRunners.length === 3) {
-    for (let i = 0; i < validRunners.length; i++) {
-      for (let j = i + 1; j < validRunners.length; j++) {
-        const first = validRunners[i]!;
-        const second = validRunners[j]!;
-        if (Math.hypot(first.x - second.x, first.z - second.z) < GAME_CONFIG.npc.spawnSeparation)
-          errors.push(issue("spawn-overlap", "Runner spawns must be separated."));
-      }
-    }
-    if (
-      playerPoint &&
-      validRunners.some(
-        (spawn) =>
-          Math.hypot(playerPoint.x - spawn.x, playerPoint.z - spawn.z) <
-          GAME_CONFIG.npc.minSpawnDistanceFromPlayer,
-      )
-    )
-      errors.push(issue("spawn-distance", "Runner spawns must start far enough from the player."));
-  }
 
   const rawObjects = value["objects"];
   if (!Array.isArray(rawObjects)) errors.push(issue("objects", "Map props must be an array."));
   const objects = Array.isArray(rawObjects) ? rawObjects : [];
-  if (objects.length > MAX_OBJECTS)
-    errors.push(issue("size", `Maps may contain at most ${MAX_OBJECTS} props.`));
-  const validObjects: {
-    id: string;
-    model: string;
-    position: { x: number; z: number };
-    rotation: number;
-    scale: number;
-    collision: CollisionShape;
-  }[] = [];
+  if (objects.length > MAP_LIMITS.maxObjects)
+    errors.push(issue("size", `Maps may contain at most ${MAP_LIMITS.maxObjects} props.`));
   for (const [index, raw] of objects.entries()) {
     const object = record(raw);
     if (!object) {
@@ -239,15 +159,6 @@ export function validateMap(input: unknown): MapValidationResult {
           `objects[${index}].position`,
         ),
       );
-    if (validId(id) && typeof model === "string")
-      validObjects.push({
-        id,
-        model,
-        position: point,
-        rotation,
-        scale,
-        collision,
-      });
   }
 
   const rawInteractives = value["interactiveObjects"];
@@ -278,43 +189,78 @@ export function validateMap(input: unknown): MapValidationResult {
     const position = record(object["position"]);
     const collision = object["collision"];
     const kind = object["kind"];
+    const x = position?.["x"];
+    const z = position?.["z"];
+    const rotation = object["rotation"];
+    const scale = object["scale"];
+    const y = object["y"];
+    const triggerRadius = object["triggerRadius"];
+    const triggerOnly = kind === "speedPad" || kind === "slowZone";
     if (
       typeof kind !== "string" ||
       !validKinds.has(kind) ||
       object["model"] !== "" ||
       !position ||
-      !isInsideArena(position["x"], position["z"], safeRadius) ||
-      !finite(object["rotation"]) ||
-      Math.abs(object["rotation"]) > MAX_TRANSFORM ||
-      !finite(object["scale"]) ||
-      object["scale"] <= 0 ||
-      object["scale"] > 12 ||
-      !finite(object["y"]) ||
-      Math.abs(object["y"]) > 20 ||
+      !finite(x) ||
+      !finite(z) ||
+      !finite(rotation) ||
+      Math.abs(rotation) > MAX_TRANSFORM ||
+      !finite(scale) ||
+      scale <= 0 ||
+      scale > 12 ||
+      !finite(y) ||
+      Math.abs(y) > 20 ||
       !validCollision(collision) ||
+      (kind === "elasticBounce" && collision.type !== "circle") ||
+      (kind === "temporaryBarrier" && collision.type !== "box") ||
+      (triggerOnly && collision.type !== "circle") ||
       (object["triggerRadius"] !== undefined &&
-        (!finite(object["triggerRadius"]) ||
-          object["triggerRadius"] <= 0 ||
-          object["triggerRadius"] > 20))
-    )
+        (!finite(triggerRadius) || triggerRadius <= 0 || triggerRadius > 20)) ||
+      (triggerOnly && (!finite(triggerRadius) || triggerRadius <= 0 || triggerRadius > 20))
+    ) {
       errors.push(
         issue(
           "interactive-transform",
-          "Interactive object has an invalid transform or configuration.",
+          "Interactive object has an invalid transform, collider, or configuration.",
           `interactiveObjects[${index}]`,
         ),
       );
-  }
+      continue;
+    }
 
-  if (playerPoint) {
     if (
-      validObjects.some((object) => overlapsSpawn(playerPoint, object, GAME_CONFIG.player.radius))
-    )
-      errors.push(issue("spawn-collider", "Player spawn overlaps a prop collider."));
+      kind === "elasticBounce" &&
+      collision.type === "circle" &&
+      Math.abs(y - collision.radius * scale) > 1e-6
+    ) {
+      errors.push(
+        issue(
+          "interactive-transform",
+          "Bounce Ball must keep its collision sphere grounded at the current scale.",
+          `interactiveObjects[${index}].y`,
+        ),
+      );
+      continue;
+    }
+
+    const solid = kind === "elasticBounce" || kind === "temporaryBarrier";
+    const extent = solid
+      ? collisionExtent(collision, scale)
+      : triggerOnly && finite(triggerRadius)
+        ? triggerRadius * scale
+        : 0;
+    if (!isInsideArena(x, z, safeRadius, extent)) {
+      errors.push(
+        issue(
+          "interactive-bounds",
+          triggerOnly
+            ? "Interactive trigger must remain inside the arena."
+            : "Interactive collider must remain inside the arena.",
+          `interactiveObjects[${index}].position`,
+        ),
+      );
+    }
   }
-  for (const spawn of validRunners)
-    if (validObjects.some((object) => overlapsSpawn(spawn, object, GAME_CONFIG.npc.radius)))
-      errors.push(issue("spawn-collider", "Runner spawn overlaps a prop collider."));
 
   const rawDecorations = value["decorations"];
   if (rawDecorations !== undefined && !Array.isArray(rawDecorations))
@@ -338,7 +284,7 @@ export function validateMap(input: unknown): MapValidationResult {
       !isInsideArena(position["x"], position["z"], safeRadius, decoration["radius"]) ||
       !finite(decoration["y"]) ||
       typeof decoration["color"] !== "string" ||
-      !/^#[0-9a-f]{3,8}$/i.test(decoration["color"])
+      !/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(decoration["color"])
     ) {
       errors.push(
         issue(

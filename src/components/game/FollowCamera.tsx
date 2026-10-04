@@ -2,7 +2,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useRef } from "react";
 import * as THREE from "three";
 import { PLAYER, WORLD_STATE } from "@/lib/catchy/agents";
-import { getCameraBasis, type CameraBasis } from "@/lib/catchy/camera";
+import { getCameraBasis, getCameraRenderDistance, type CameraBasis } from "@/lib/catchy/camera";
 import { GAME_CONFIG } from "@/lib/catchy/config";
 import { useGameStore } from "@/store/gameStore";
 
@@ -19,7 +19,7 @@ export function FollowCamera() {
   const cameraOffset = useRef(new THREE.Vector3());
   const composedLookAt = useRef(new THREE.Vector3());
   const renderedDirection = useRef(new THREE.Vector3());
-  const currentDistance = useRef(GAME_CONFIG.camera.distance * 0.9);
+  const currentDistance = useRef(GAME_CONFIG.camera.distance);
   const currentAngle = useRef(GAME_CONFIG.camera.pitch);
   const currentLookAhead = useRef(GAME_CONFIG.camera.lookAhead);
   const currentCompositionOffset = useRef(GAME_CONFIG.camera.compositionOffset);
@@ -32,9 +32,11 @@ export function FollowCamera() {
       useGameStore.getState();
     const blend = 1 - Math.exp(-3.2 * dt);
     const aspect = (camera as THREE.PerspectiveCamera).aspect ?? 1.6;
-    const portrait = aspect < 1 ? 1.42 : aspect < 1.4 ? 1.14 : 1;
-    const captureZoom = state === "capture" || state === "after" ? 0.78 : 1;
-    const targetDistance = WORLD_STATE.cameraDistance * 0.9 * portrait * captureZoom;
+    const targetDistance = getCameraRenderDistance(
+      WORLD_STATE.cameraDistance,
+      aspect,
+      state === "capture" || state === "after",
+    );
     const targetAngle = camPitch;
     const targetLookAhead = camLookAhead;
     const targetComposition = camCompositionOffset;

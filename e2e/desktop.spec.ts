@@ -174,7 +174,6 @@ test("mouse drag and arrows rotate the camera while WASD stays movement-only", a
   expect(bounds).not.toBeNull();
   const x = bounds!.x + bounds!.width / 2;
   const y = bounds!.y + bounds!.height / 2;
-
   await page.evaluate(() => {
     const game = window.__CATCHY_E2E__!;
     game.reset();
@@ -194,6 +193,8 @@ test("mouse drag and arrows rotate the camera while WASD stays movement-only", a
   await page.evaluate(() => window.__CATCHY_E2E__!.step(40));
   await page.evaluate(() => window.__CATCHY_E2E__!.step(20));
   await page.waitForFunction(() => window.__CATCHY_E2E__!.getWorld().cameraYaw > 0.2);
+  // Let the independently smoothed R3F camera publish this simulation step before sampling it.
+  await page.waitForTimeout(500);
   await page.waitForFunction(
     (startX) => window.__CATCHY_E2E__!.getRenderedCamera()!.x < startX - 0.5,
     leftStart.x,
@@ -218,6 +219,7 @@ test("mouse drag and arrows rotate the camera while WASD stays movement-only", a
   await page.evaluate(() => window.__CATCHY_E2E__!.step(40));
   await page.evaluate(() => window.__CATCHY_E2E__!.step(20));
   await page.waitForFunction(() => window.__CATCHY_E2E__!.getWorld().cameraYaw < -0.2);
+  await page.waitForTimeout(500);
   await page.waitForFunction(
     (startX) => window.__CATCHY_E2E__!.getRenderedCamera()!.x > startX + 0.5,
     rightStart.x,
@@ -226,45 +228,80 @@ test("mouse drag and arrows rotate the camera while WASD stays movement-only", a
   const afterRight = (await page.evaluate(() => window.__CATCHY_E2E__!.getRenderedCamera()))!;
   expect(afterRight.x).toBeGreaterThan(rightStart.x + 0.5);
 
-  await page.evaluate(() => {
-    const game = window.__CATCHY_E2E__!;
-    game.reset();
-    game.turnCamera(0);
-  });
-  await page.waitForFunction(() => window.__CATCHY_E2E__!.getRenderedCamera() !== null);
-  await page.waitForTimeout(450);
-  const verticalStart = (await page.evaluate(() => window.__CATCHY_E2E__!.getRenderedCamera()))!;
+  const verticalStartForwardY = (await page.evaluate(() =>
+    window.__CATCHY_E2E__!.getRenderedCamera(),
+  ))!.forwardY;
   await page.mouse.move(x, y);
   await page.mouse.down();
-  await page.mouse.move(x, y - 48, { steps: 4 });
+  await page.mouse.move(x, y - 96, { steps: 4 });
   await page.mouse.up();
   await page.evaluate(() => window.__CATCHY_E2E__!.step(40));
   await page.evaluate(() => window.__CATCHY_E2E__!.step(20));
   await page.waitForFunction(() => window.__CATCHY_E2E__!.getWorld().cameraPitch < -1);
-  await page.waitForFunction(
-    (startY) => window.__CATCHY_E2E__!.getRenderedCamera()!.forwardY > startY + 0.02,
-    verticalStart.forwardY,
-  );
+  await page.waitForTimeout(500);
+  await expect
+    .poll(
+      () =>
+        page.evaluate((initialForwardY) => {
+          const game = window.__CATCHY_E2E__!;
+          const camera = game.getRenderedCamera()!;
+          return {
+            movedInExpectedDirection: camera.forwardY > initialForwardY + 0.02,
+            cameraPitch: game.getWorld().cameraPitch,
+            forwardY: camera.forwardY,
+          };
+        }, verticalStartForwardY),
+      { timeout: 5_000 },
+    )
+    .toMatchObject({ movedInExpectedDirection: true });
 
-  await page.evaluate(() => {
-    const game = window.__CATCHY_E2E__!;
-    game.reset();
-    game.turnCamera(0);
-  });
-  await page.waitForFunction(() => window.__CATCHY_E2E__!.getRenderedCamera() !== null);
-  await page.waitForTimeout(450);
-  const verticalReset = (await page.evaluate(() => window.__CATCHY_E2E__!.getRenderedCamera()))!;
+  await page.mouse.move(x, y - 96);
+  await page.mouse.down();
+  await page.mouse.move(x, y, { steps: 4 });
+  await page.mouse.up();
+  await page.evaluate(() => window.__CATCHY_E2E__!.step(40));
+  await page.evaluate(() => window.__CATCHY_E2E__!.step(20));
+  await expect
+    .poll(() => page.evaluate(() => Math.abs(window.__CATCHY_E2E__!.getWorld().cameraPitch)), {
+      timeout: 5_000,
+    })
+    .toBeLessThan(0.1);
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          (startY) => Math.abs(window.__CATCHY_E2E__!.getRenderedCamera()!.forwardY - startY),
+          verticalStartForwardY,
+        ),
+      { timeout: 10_000 },
+    )
+    .toBeLessThan(0.01);
+  const verticalResetForwardY = (await page.evaluate(() =>
+    window.__CATCHY_E2E__!.getRenderedCamera(),
+  ))!.forwardY;
   await page.mouse.move(x, y);
   await page.mouse.down();
-  await page.mouse.move(x, y + 48, { steps: 4 });
+  await page.mouse.move(x, y + 96, { steps: 4 });
   await page.mouse.up();
   await page.evaluate(() => window.__CATCHY_E2E__!.step(40));
   await page.evaluate(() => window.__CATCHY_E2E__!.step(20));
   await page.waitForFunction(() => window.__CATCHY_E2E__!.getWorld().cameraPitch > 1);
-  await page.waitForFunction(
-    (startY) => window.__CATCHY_E2E__!.getRenderedCamera()!.forwardY < startY - 0.02,
-    verticalReset.forwardY,
-  );
+  await page.waitForTimeout(500);
+  await expect
+    .poll(
+      () =>
+        page.evaluate((initialForwardY) => {
+          const game = window.__CATCHY_E2E__!;
+          const camera = game.getRenderedCamera()!;
+          return {
+            movedInExpectedDirection: camera.forwardY < initialForwardY - 0.02,
+            cameraPitch: game.getWorld().cameraPitch,
+            forwardY: camera.forwardY,
+          };
+        }, verticalResetForwardY),
+      { timeout: 5_000 },
+    )
+    .toMatchObject({ movedInExpectedDirection: true });
 
   await page.evaluate(() => {
     const game = window.__CATCHY_E2E__!;
@@ -273,6 +310,10 @@ test("mouse drag and arrows rotate the camera while WASD stays movement-only", a
     game.placePlayer(-4, 12);
   });
   await page.waitForFunction(() => window.__CATCHY_E2E__!.getRenderedCamera() !== null);
+  await page.waitForFunction(() => {
+    const camera = window.__CATCHY_E2E__!.getRenderedCamera();
+    return camera !== null && Math.abs(camera.x + 4) < 0.75 && Math.abs(camera.forwardX) < 0.04;
+  });
   const cameraBeforeFollow = (await page.evaluate(() =>
     window.__CATCHY_E2E__!.getRenderedCamera(),
   ))!;
@@ -280,6 +321,7 @@ test("mouse drag and arrows rotate the camera while WASD stays movement-only", a
   await page.waitForFunction(
     (startX) => window.__CATCHY_E2E__!.getRenderedCamera()!.x > startX + 2,
     cameraBeforeFollow.x,
+    { timeout: 10_000 },
   );
 
   await page.evaluate(() => {
