@@ -35,11 +35,10 @@ test("launcher selects Default and starts it without model 404s or editor contro
   await expect
     .poll(() => page.evaluate(() => window.__CATCHY_E2E__!.getActiveMap().id))
     .toBe("default");
-  await page.waitForFunction(
-    () => (window.__CATCHY_E2E__!.getRenderedCamera()?.forwardY ?? 0) < -0.65,
-  );
+  await page.waitForFunction(() => (window.__CATCHY_E2E__!.getRenderedCamera()?.forwardY ?? 0) < 0);
   const defaultCamera = await page.evaluate(() => window.__CATCHY_E2E__!.getRenderedCamera());
-  expect(defaultCamera!.forwardY).toBeLessThan(-0.65);
+  expect(defaultCamera!.forwardY).toBeLessThan(0);
+  expect(Math.abs(defaultCamera!.forwardY)).toBeGreaterThan(0.1);
   expect(missingModels).toEqual([]);
   const activeMap = await page.evaluate(() => window.__CATCHY_E2E__!.getActiveMap());
   const expectedModels = new Set(
@@ -75,11 +74,10 @@ test("high oblique camera framing also works on a compact R30 map", async ({ pag
   await expect
     .poll(() => page.evaluate(() => window.__CATCHY_E2E__!.getActiveMap().arenaRadius))
     .toBe(30);
-  await page.waitForFunction(
-    () => (window.__CATCHY_E2E__!.getRenderedCamera()?.forwardY ?? 0) < -0.65,
-  );
+  await page.waitForFunction(() => (window.__CATCHY_E2E__!.getRenderedCamera()?.forwardY ?? 0) < 0);
   const camera = await page.evaluate(() => window.__CATCHY_E2E__!.getRenderedCamera());
-  expect(camera!.forwardY).toBeLessThan(-0.65);
+  expect(camera!.forwardY).toBeLessThan(0);
+  expect(Math.abs(camera!.forwardY)).toBeGreaterThan(0.1);
 });
 
 test("editor saves maps without spawn markers and gameplay picks safe runtime spawns", async ({

@@ -107,7 +107,7 @@ function StoneRim() {
   }, [count, radius]);
 
   return (
-    <instancedMesh ref={ref} args={[undefined, undefined, count]} castShadow receiveShadow>
+    <instancedMesh ref={ref} args={[undefined, undefined, count]} receiveShadow>
       <boxGeometry args={[1, 1, 1]} />
       <meshStandardMaterial color={STONE} roughness={0.72} metalness={0.02} />
     </instancedMesh>
@@ -166,7 +166,7 @@ export function Arena() {
       ))}
 
       {/* thin boundary wall */}
-      <mesh position={[0, ARENA.rimHeight / 2, 0]} castShadow receiveShadow>
+      <mesh position={[0, ARENA.rimHeight / 2, 0]} receiveShadow>
         <cylinderGeometry args={[R + 0.05, R + 0.05, ARENA.rimHeight, rimSegments, 1, true]} />
         <meshStandardMaterial
           map={textures.stone}

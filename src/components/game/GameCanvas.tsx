@@ -62,16 +62,18 @@ function AdaptiveQuality({
 
   return (
     <>
-      <PerformanceMonitor
-        iterations={6}
-        ms={600}
-        threshold={0.8}
-        flipflops={4}
-        bounds={(refreshRate) => (refreshRate > 100 ? [48, 78] : [42, 58])}
-        onDecline={onDecline}
-        onIncline={onIncline}
-        onFallback={onFallback}
-      />
+      {import.meta.env.MODE !== "e2e" && (
+        <PerformanceMonitor
+          iterations={6}
+          ms={600}
+          threshold={0.8}
+          flipflops={4}
+          bounds={(refreshRate) => (refreshRate > 100 ? [48, 78] : [42, 58])}
+          onDecline={onDecline}
+          onIncline={onIncline}
+          onFallback={onFallback}
+        />
+      )}
       <Scene qualityTier={tier} gameReady={gameReady} onSceneReady={onSceneReady} />
     </>
   );

@@ -158,17 +158,20 @@ test("desktop movement, camera holds, Jump, Dash, and Speed Boost use the approv
     game.turnCamera(0);
   });
   const yawBeforeKeys = (await readWorld(page)).cameraYaw as number;
+  const pitchBeforeUp = (await readWorld(page)).cameraPitch as number;
   await page.keyboard.down("ArrowUp");
   await page.evaluate(() => window.__CATCHY_E2E__!.step(120));
   await page.keyboard.up("ArrowUp");
-  expect((await readWorld(page)).cameraPitch).toBeLessThan(0);
+  const pitchAfterUp = (await readWorld(page)).cameraPitch as number;
+  expect(pitchAfterUp).toBeGreaterThan(pitchBeforeUp);
   const yawAfterUp = (await readWorld(page)).cameraYaw as number;
   expect(yawAfterUp).toBeCloseTo(yawBeforeKeys, 6);
 
   await page.keyboard.down("ArrowDown");
   await page.evaluate(() => window.__CATCHY_E2E__!.step(240));
   await page.keyboard.up("ArrowDown");
-  expect((await readWorld(page)).cameraPitch).toBeGreaterThan(0);
+  const pitchAfterDown = (await readWorld(page)).cameraPitch as number;
+  expect(pitchAfterDown).toBeLessThan(pitchAfterUp);
 
   await page.keyboard.down("ArrowLeft");
   await page.evaluate(() => window.__CATCHY_E2E__!.step(300));

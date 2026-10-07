@@ -4,10 +4,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build --mode production && node scripts/verify-production-build.mjs",
+    "build": "node scripts/clean-build-output.mjs && vite build --mode production && node scripts/verify-production-build.mjs",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
-    "build:e2e": "vite build --mode e2e",
+    "build:e2e": "node scripts/clean-build-output.mjs && vite build --mode e2e",
     "preview:e2e": "wrangler dev --config .output/server/wrangler.json --ip 127.0.0.1 --port 4173 --no-bundle --show-interactive-dev-session=false",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
