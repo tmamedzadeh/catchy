@@ -90,8 +90,8 @@ describe("shared camera input", () => {
   it.each([
     { code: "ArrowLeft", yaw: 1, pitch: 0 },
     { code: "ArrowRight", yaw: -1, pitch: 0 },
-    { code: "ArrowUp", yaw: 0, pitch: -1 },
-    { code: "ArrowDown", yaw: 0, pitch: 1 },
+    { code: "ArrowUp", yaw: 0, pitch: 1 },
+    { code: "ArrowDown", yaw: 0, pitch: -1 },
   ])("maps held $code into a continuous camera delta", ({ code, yaw, pitch }) => {
     pressInputKey(code);
     const first = { ...consumeCameraInput(DT) };

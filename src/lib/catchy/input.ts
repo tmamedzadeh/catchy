@@ -173,7 +173,7 @@ export function addCameraZoom(deltaDistance: number) {
 /** Merge pointer deltas and held arrows into one camera-control stream per tick. */
 export function consumeCameraInput(dt: number) {
   const leftRight = opposedKeyInput("ArrowLeft", "ArrowRight");
-  const upDown = opposedKeyInput("ArrowDown", "ArrowUp");
+  const upDown = opposedKeyInput("ArrowUp", "ArrowDown");
   sampledCameraInput.yawDelta =
     -pendingCameraDrag.x * 0.012 + leftRight * GAME_CONFIG.camera.manualYawSpeed * dt;
   sampledCameraInput.pitchDelta =

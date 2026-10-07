@@ -1366,8 +1366,8 @@ describe("camera-relative movement and reset", () => {
   it.each([
     { key: "ArrowLeft", axis: "yaw", expectedSign: 1 },
     { key: "ArrowRight", axis: "yaw", expectedSign: -1 },
-    { key: "ArrowUp", axis: "pitch", expectedSign: -1 },
-    { key: "ArrowDown", axis: "pitch", expectedSign: 1 },
+    { key: "ArrowUp", axis: "pitch", expectedSign: 1 },
+    { key: "ArrowDown", axis: "pitch", expectedSign: -1 },
   ] as const)("maps $key through the shared input pipeline", ({ key, axis, expectedSign }) => {
     WORLD_STATE.cameraYaw = 0;
     WORLD_STATE.previousCameraYaw = 0;
