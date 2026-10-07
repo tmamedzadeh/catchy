@@ -4,6 +4,7 @@ export * from "./defaultMap";
 export * from "./validator";
 export * from "./repository";
 export * from "./interactiveGeometry";
+export * from "./islandGeometry";
 
 import { DEFAULT_MAP, cloneMap } from "./defaultMap";
 import type { MapDefinition } from "./types";

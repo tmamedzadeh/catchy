@@ -1,4 +1,8 @@
+import { useFrame } from "@react-three/fiber";
+import { useMemo, useRef } from "react";
+import * as THREE from "three";
 import { Lightformer } from "@react-three/drei";
+import { PLAYER } from "@/lib/catchy/agents";
 import { EnvironmentCapture } from "./EnvironmentCapture";
 import { Arena, SkyDome } from "./Arena";
 import { Props } from "./Prop";
@@ -9,12 +13,52 @@ import { FollowCamera } from "./FollowCamera";
 import { Director } from "./Director";
 import { QUALITY_LEVELS, type QualityTier } from "./quality";
 
+/** Keep the high quality shadow window around the active play area on R100. */
+function FollowSunLight({ qualityTier }: { qualityTier: QualityTier }) {
+  const light = useRef<THREE.DirectionalLight>(null);
+  const target = useMemo(() => new THREE.Object3D(), []);
+  const mapSize = QUALITY_LEVELS[qualityTier].shadowMapSize;
+  const texelSize = 80 / mapSize;
+
+  useFrame(() => {
+    const focusX = Math.round(PLAYER.x / texelSize) * texelSize;
+    const focusZ = Math.round(PLAYER.z / texelSize) * texelSize;
+    target.position.set(focusX, 0, focusZ);
+    light.current?.position.set(focusX + 24, 30, focusZ + 12);
+  });
+
+  return (
+    <>
+      <primitive object={target} />
+      <directionalLight
+        ref={light}
+        target={target}
+        position={[24, 30, 12]}
+        intensity={3.55}
+        color="#ffdca3"
+        castShadow
+        shadow-mapSize-width={mapSize}
+        shadow-mapSize-height={mapSize}
+        shadow-bias={-0.00045}
+        shadow-camera-left={-40}
+        shadow-camera-right={40}
+        shadow-camera-top={40}
+        shadow-camera-bottom={-40}
+        shadow-camera-near={1}
+        shadow-camera-far={110}
+      />
+    </>
+  );
+}
+
 export function Scene({
   qualityTier,
   gameReady,
+  onSceneReady,
 }: {
   qualityTier: QualityTier;
   gameReady: boolean;
+  onSceneReady: () => void;
 }) {
   return (
     <>
@@ -23,21 +67,7 @@ export function Scene({
 
       <hemisphereLight args={["#a9dcff", "#bd743e", 0.52]} />
       <ambientLight intensity={0.14} color="#fff0d2" />
-      <directionalLight
-        position={[24, 30, 12]}
-        intensity={3.55}
-        color="#ffdca3"
-        castShadow
-        shadow-mapSize-width={QUALITY_LEVELS[qualityTier].shadowMapSize}
-        shadow-mapSize-height={QUALITY_LEVELS[qualityTier].shadowMapSize}
-        shadow-bias={-0.00045}
-        shadow-camera-left={-38}
-        shadow-camera-right={38}
-        shadow-camera-top={38}
-        shadow-camera-bottom={-38}
-        shadow-camera-near={1}
-        shadow-camera-far={110}
-      />
+      <FollowSunLight qualityTier={qualityTier} />
       {/* cool bounce from the opposite side */}
       <directionalLight position={[-20, 15, -24]} intensity={0.46} color="#8fd4ff" />
 
@@ -62,7 +92,7 @@ export function Scene({
       <TargetBeacon />
 
       <FollowCamera />
-      <Director gameReady={gameReady} />
+      <Director gameReady={gameReady} onSceneReady={onSceneReady} />
     </>
   );
 }

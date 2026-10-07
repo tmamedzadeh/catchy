@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { ARENA } from "@/lib/catchy/config";
 import { getActiveMap } from "@/lib/catchy/maps";
+import { createIslandGeometry } from "@/lib/catchy/maps";
 import { createTerrainTexture } from "@/lib/catchy/textures";
 
 const SAND = "#edb75f";
@@ -59,38 +60,26 @@ function IrregularIsland({
   radius,
   color,
   y = 0.09,
+  rotation = 0,
 }: {
   position: [number, number];
   radius: number;
   color: string;
   y?: number;
+  rotation?: number;
 }) {
   const geometry = useMemo(() => {
-    const shape = new THREE.Shape();
-    const steps = 20;
-    for (let i = 0; i < steps; i++) {
-      const angle = (i / steps) * Math.PI * 2;
-      const wobble = 1 + Math.sin(i * 2.37 + radius) * 0.09 + Math.cos(i * 1.17) * 0.05;
-      const x = Math.cos(angle) * radius * wobble;
-      const z = Math.sin(angle) * radius * wobble;
-      if (i === 0) shape.moveTo(x, z);
-      else shape.lineTo(x, z);
-    }
-    shape.closePath();
-    return new THREE.ShapeGeometry(shape);
+    return createIslandGeometry(radius);
   }, [radius]);
 
   useEffect(() => () => geometry.dispose(), [geometry]);
 
   return (
-    <mesh
-      geometry={geometry}
-      rotation-x={-Math.PI / 2}
-      position={[position[0], y, position[1]]}
-      receiveShadow
-    >
-      <meshStandardMaterial color={color} roughness={0.78} />
-    </mesh>
+    <group position={[position[0], y, position[1]]} rotation-y={rotation}>
+      <mesh geometry={geometry} rotation-x={-Math.PI / 2} receiveShadow>
+        <meshStandardMaterial color={color} roughness={0.78} />
+      </mesh>
+    </group>
   );
 }
 
@@ -172,6 +161,7 @@ export function Arena() {
           radius={decoration.radius}
           color={decoration.color}
           y={decoration.y}
+          rotation={decoration.rotation ?? 0}
         />
       ))}
 

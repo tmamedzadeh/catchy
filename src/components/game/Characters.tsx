@@ -56,6 +56,26 @@ const PALETTES: Palette[] = [
     hairStyle: "spiky",
     build: 1.1,
   },
+  {
+    shirt: "#46d17b",
+    pants: "#258d57",
+    shoes: "#176341",
+    skin: "#efc7a2",
+    hair: "#315642",
+    accent: "#b2ffac",
+    hairStyle: "ponytail",
+    build: 0.94,
+  },
+  {
+    shirt: "#ffd34d",
+    pants: "#d9981e",
+    shoes: "#986010",
+    skin: "#f1b990",
+    hair: "#59431f",
+    accent: "#fff1a2",
+    hairStyle: "bun",
+    build: 1.02,
+  },
 ];
 
 function Hair({ p }: { p: Palette }) {

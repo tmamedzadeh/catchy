@@ -1,6 +1,6 @@
 # Catchy
 
-Catchy is a browser based 3D tag arena. One player chases three runners in a five minute round. Catching a runner removes them briefly, then they return at a safe spawn point.
+Catchy is a browser based 3D tag arena. One player chases five runners in a five minute round. Catching a runner removes them briefly, then they return at a safe spawn point.
 
 ## Controls
 

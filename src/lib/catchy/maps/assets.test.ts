@@ -1,7 +1,13 @@
 import { existsSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ASSET_CATALOG, DEFAULT_MAP, validateMap } from "./index";
+import {
+  ASSET_CATALOG,
+  DEFAULT_MAP,
+  fitColliderToAsset,
+  getAssetHeight,
+  validateMap,
+} from "./index";
 
 describe("bundled model catalog", () => {
   it("maps every palette asset to one real public GLB", () => {
@@ -16,6 +22,9 @@ describe("bundled model catalog", () => {
       const filePath = resolve(process.cwd(), "public", asset.modelPath.slice(1));
       expect(filePath.startsWith(`${resolve(process.cwd(), "public")}${sep}`)).toBe(true);
       expect(existsSync(filePath), `${asset.id} must resolve to ${asset.modelPath}`).toBe(true);
+      expect(asset.bounds.width).toBeGreaterThan(0);
+      expect(asset.bounds.height).toBeGreaterThan(0);
+      expect(asset.bounds.depth).toBeGreaterThan(0);
     }
   });
 
@@ -27,5 +36,19 @@ describe("bundled model catalog", () => {
     }
     expect(validateMap(DEFAULT_MAP).valid).toBe(true);
     expect(new Set(DEFAULT_MAP.objects.map((object) => object.model)).size).toBeGreaterThan(1);
+  });
+
+  it("fits to canonical bounds while preserving the existing collider shape", () => {
+    expect(fitColliderToAsset("wall-block", { type: "box", width: 0.4, depth: 0.3 })).toEqual({
+      type: "box",
+      width: 1,
+      depth: 1,
+    });
+    expect(fitColliderToAsset("barrel", { type: "circle", radius: 0.2 })).toEqual({
+      type: "circle",
+      radius: 0.668,
+    });
+    expect(getAssetHeight("wall-block", 0.82)).toBeCloseTo(0.82);
+    expect(getAssetHeight("missing", 1)).toBe(Infinity);
   });
 });

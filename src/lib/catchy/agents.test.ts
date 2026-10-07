@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   AGENTS,
   PLAYER,
@@ -14,9 +14,11 @@ import {
   findSafeSpawn,
   getPlayerBoostState,
   getNavigationSummary,
+  getArenaNavigationTuning,
   isSafeSpawn,
   isWalkablePoint,
   isWalkableSegment,
+  installMapForSimulation,
   overlapsObstacle,
   resetSimulation,
   resolveCameraRelativeInput,
@@ -83,6 +85,11 @@ function activeRunners() {
 }
 
 beforeEach(() => {
+  const openTestMap = structuredClone(DEFAULT_MAP);
+  openTestMap.id = "open-simulation-test";
+  openTestMap.objects = [];
+  openTestMap.decorations = [];
+  installMapForSimulation(openTestMap);
   resetSimulation();
   setGameplayInputEnabled(true);
   clearInput();
@@ -145,6 +152,7 @@ describe("collision resolution", () => {
   });
 
   it("stops a Dash at a solid obstacle without tunneling", () => {
+    installMapForSimulation(DEFAULT_MAP);
     const fountain = OBSTACLES.find((item) => item.model === "fountain-round")!;
     const minDistance =
       fountain.collision.type === "circle"
@@ -239,6 +247,7 @@ describe("player jump simulation", () => {
 
 describe("safe spawning", () => {
   it("uses bounded random candidates inside safe arena space", () => {
+    installMapForSimulation(DEFAULT_MAP);
     const runner = RUNNERS[0]!;
     for (const other of AGENTS) if (other !== runner) other.hidden = 1;
     put(PLAYER, 0, 25);
@@ -255,6 +264,7 @@ describe("safe spawning", () => {
   });
 
   it("falls back to a safe navigation node after its bounded random attempts", () => {
+    installMapForSimulation(DEFAULT_MAP);
     const runner = RUNNERS[0]!;
     for (const other of AGENTS) if (other !== runner) other.hidden = 1;
     put(PLAYER, 0, 25);
@@ -298,6 +308,7 @@ describe("safe spawning", () => {
 
 describe("runner navigation and temporary barrier", () => {
   it("builds a connected graph with collision-blocked links omitted", () => {
+    installMapForSimulation(DEFAULT_MAP);
     const open = getNavigationSummary();
     expect(open.nodes).toBeGreaterThan(500);
     expect(open.directedLinks).toBeGreaterThan(open.nodes);
@@ -333,17 +344,20 @@ describe("runner navigation and temporary barrier", () => {
     expect(routeBefore).not.toHaveLength(0);
   });
 
-  it("steers an edge runner inward and spreads three escape goals", () => {
+  it("steers edge runners inward and spreads five escape goals", () => {
     activeRunners();
     put(PLAYER, 0, 0);
-    put(RUNNERS[0]!, 26, 0);
-    put(RUNNERS[1]!, 0, 17);
-    put(RUNNERS[2]!, -17, 0);
+    const radius = DEFAULT_MAP.arena.radius;
+    put(RUNNERS[0]!, radius * 0.95, 0);
+    put(RUNNERS[1]!, 0, radius * 0.86);
+    put(RUNNERS[2]!, -radius * 0.86, 0);
+    put(RUNNERS[3]!, 0, -radius * 0.95);
+    put(RUNNERS[4]!, radius * 0.69, radius * 0.69);
     for (const runner of RUNNERS) runner.routeTimer = 0;
 
     step(DT, null, noCommands, true);
 
-    const navigation = GAME_CONFIG.npc.navigation;
+    const navigation = getArenaNavigationTuning();
     const edgeGoal = RUNNERS[0]!;
     expect(Math.hypot(edgeGoal.routeGoalX, edgeGoal.routeGoalZ)).toBeLessThan(
       navigation.preferredRunnerRadius + 1,
@@ -352,7 +366,7 @@ describe("runner navigation and temporary barrier", () => {
     for (let i = 0; i < goals.length; i++) {
       for (let j = i + 1; j < goals.length; j++) {
         expect(Math.hypot(goals[i]!.x - goals[j]!.x, goals[i]!.z - goals[j]!.z)).toBeGreaterThan(
-          navigation.preferredGoalSeparation * 0.5,
+          GAME_CONFIG.npc.navigation.preferredGoalSeparation * 0.5,
         );
       }
     }
@@ -365,23 +379,35 @@ describe("runner navigation and temporary barrier", () => {
     const runner = RUNNERS[0]!;
     put(runner, 16, 0);
     for (const other of RUNNERS.slice(1)) other.hidden = 10;
+    const navigation = getArenaNavigationTuning();
     runner.routeTimer = 0;
     step(DT, null, noCommands, true);
     const preferredGoalDistance = Math.hypot(runner.routeGoalX, runner.routeGoalZ);
-    expect(preferredGoalDistance).toBeGreaterThan(GAME_CONFIG.npc.navigation.minFleeDistance);
-    expect(preferredGoalDistance).toBeLessThan(GAME_CONFIG.npc.navigation.maxFleeDistance);
+    expect(preferredGoalDistance).toBeGreaterThan(navigation.minFleeDistance);
+    expect(preferredGoalDistance).toBeLessThan(navigation.maxFleeDistance);
 
     put(runner, 8, 0);
     runner.routeTimer = 0;
     step(DT, null, noCommands, true);
     const urgentGoalDistance = Math.hypot(runner.routeGoalX, runner.routeGoalZ);
-    expect(urgentGoalDistance).toBeGreaterThan(GAME_CONFIG.npc.navigation.minFleeDistance - 1);
+    expect(urgentGoalDistance).toBeGreaterThan(navigation.minFleeDistance - 1);
     expect(urgentGoalDistance).toBeGreaterThan(8);
-    expect(urgentGoalDistance).toBeLessThan(GAME_CONFIG.npc.navigation.maxFleeDistance + 2);
+    expect(urgentGoalDistance).toBeLessThan(navigation.maxFleeDistance + 2);
   });
 
   it("keeps runners roaming around the player without sustained wall camping", () => {
     activeRunners();
+    put(PLAYER, 0, 0);
+    const startingRadius = getArenaNavigationTuning().preferredRunnerRadius * 0.35;
+    for (let index = 0; index < RUNNERS.length; index++) {
+      const runner = RUNNERS[index]!;
+      const angle = (index / RUNNERS.length) * Math.PI * 2;
+      put(runner, Math.cos(angle) * startingRadius, Math.sin(angle) * startingRadius);
+      runner.route.length = 0;
+      runner.routeIndex = 0;
+      runner.routeTimer = 0;
+      runner.routeDecisionCount = 0;
+    }
     const lastPositions = RUNNERS.map((runner) => ({ x: runner.x, z: runner.z }));
     const traveled = RUNNERS.map(() => 0);
     const samples: Array<{
@@ -405,15 +431,20 @@ describe("runner navigation and temporary barrier", () => {
         samples.push({
           distances: RUNNERS.map((runner) => Math.hypot(runner.x - PLAYER.x, runner.z - PLAYER.z)),
           radii: RUNNERS.map((runner) => Math.hypot(runner.x, runner.z)),
-          pairwise: [
-            Math.hypot(RUNNERS[0]!.x - RUNNERS[1]!.x, RUNNERS[0]!.z - RUNNERS[1]!.z),
-            Math.hypot(RUNNERS[0]!.x - RUNNERS[2]!.x, RUNNERS[0]!.z - RUNNERS[2]!.z),
-            Math.hypot(RUNNERS[1]!.x - RUNNERS[2]!.x, RUNNERS[1]!.z - RUNNERS[2]!.z),
-          ],
+          pairwise: RUNNERS.flatMap((runner, firstIndex) =>
+            RUNNERS.slice(firstIndex + 1).map((other) =>
+              Math.hypot(runner.x - other.x, runner.z - other.z),
+            ),
+          ),
           goalSeparation: Math.min(
-            Math.hypot(goals[0]!.x - goals[1]!.x, goals[0]!.z - goals[1]!.z),
-            Math.hypot(goals[0]!.x - goals[2]!.x, goals[0]!.z - goals[2]!.z),
-            Math.hypot(goals[1]!.x - goals[2]!.x, goals[1]!.z - goals[2]!.z),
+            ...RUNNERS.flatMap((runner, firstIndex) =>
+              RUNNERS.slice(firstIndex + 1).map((other) =>
+                Math.hypot(
+                  runner.routeGoalX - other.routeGoalX,
+                  runner.routeGoalZ - other.routeGoalZ,
+                ),
+              ),
+            ),
           ),
         });
       }
@@ -423,14 +454,14 @@ describe("runner navigation and temporary barrier", () => {
     expect(traveled.every((distance) => distance > 80)).toBe(true);
     const mean = (values: number[]) =>
       values.reduce((sum, value) => sum + value, 0) / values.length;
+    const arenaTuning = getArenaNavigationTuning();
     for (let index = 0; index < RUNNERS.length; index++) {
       const averageDistance = mean(samples.map((sample) => sample.distances[index]!));
-      expect(averageDistance).toBeGreaterThan(GAME_CONFIG.npc.navigation.minFleeDistance - 2);
-      expect(averageDistance).toBeLessThan(GAME_CONFIG.npc.navigation.maxFleeDistance + 3);
+      expect(averageDistance).toBeGreaterThan(arenaTuning.minFleeDistance - 2);
+      expect(averageDistance).toBeLessThan(arenaTuning.maxFleeDistance + 3);
       const wallOccupancy =
-        samples.filter(
-          (sample) => sample.radii[index]! > GAME_CONFIG.npc.navigation.boundarySteeringFullRadius,
-        ).length / samples.length;
+        samples.filter((sample) => sample.radii[index]! > arenaTuning.boundarySteeringFullRadius)
+          .length / samples.length;
       expect(wallOccupancy).toBeLessThan(0.25);
     }
     expect(mean(samples.map((sample) => mean(sample.pairwise)))).toBeGreaterThan(5);
@@ -441,6 +472,7 @@ describe("runner navigation and temporary barrier", () => {
 
   it("steers clustered runners apart with a local separation field", () => {
     activeRunners();
+    for (const runner of RUNNERS.slice(3)) runner.hidden = 1;
     put(PLAYER, 0, -20);
     put(RUNNERS[0]!, 1, 8);
     put(RUNNERS[1]!, 3, 8);
@@ -459,6 +491,35 @@ describe("runner navigation and temporary barrier", () => {
       Math.hypot(RUNNERS[1]!.x - RUNNERS[2]!.x, RUNNERS[1]!.z - RUNNERS[2]!.z),
     );
     expect(minimumAfter).toBeGreaterThan(minimumBefore);
+  });
+
+  it("lets the player clear the low ruins wall only while airborne and resolves landing safely", () => {
+    installMapForSimulation(DEFAULT_MAP);
+    const jumpStep = OBSTACLES.find((item) => item.id === "jumpable-ruin-step")!;
+    put(PLAYER, jumpStep.position.x, jumpStep.position.z);
+    expect(resolveObstacle(PLAYER, jumpStep)).toBe(true);
+    expect(isWalkablePoint(PLAYER.x, PLAYER.z, PLAYER.radius)).toBe(true);
+
+    put(PLAYER, jumpStep.position.x, jumpStep.position.z);
+    PLAYER.jumpHeight = 0.9;
+    expect(resolveObstacle(PLAYER, jumpStep)).toBe(false);
+    expect(PLAYER.x).toBe(jumpStep.position.x);
+    expect(PLAYER.z).toBe(jumpStep.position.z);
+
+    clearPlayerJump();
+    expect(resolveObstacle(PLAYER, jumpStep)).toBe(true);
+    expect(isWalkablePoint(PLAYER.x, PLAYER.z, PLAYER.radius)).toBe(true);
+
+    put(PLAYER, jumpStep.position.x - 2.8, jumpStep.position.z);
+    WORLD_STATE.cameraYaw = 0;
+    PLAYER.vx = GAME_CONFIG.player.speed;
+    PLAYER.speed = GAME_CONFIG.player.speed;
+    for (let tick = 0; tick < Math.ceil(GAME_CONFIG.player.jump.durationSeconds / DT) + 8; tick++) {
+      step(DT, { x: -1, z: 0 }, { ...noCommands, jump: tick === 0 }, false);
+    }
+    expect(PLAYER.jumpHeight).toBe(0);
+    expect(PLAYER.x).toBeGreaterThan(jumpStep.position.x + 1);
+    expect(isWalkablePoint(PLAYER.x, PLAYER.z, PLAYER.radius)).toBe(true);
   });
 
   it("removes stale runner routes when a barrier closes and restores graph access when open", () => {
@@ -496,6 +557,7 @@ describe("runner navigation and temporary barrier", () => {
 describe("target hysteresis and capture target lock", () => {
   it("selects the nearest active runner and ignores inactive runners", () => {
     activeRunners();
+    for (const runner of RUNNERS.slice(3)) runner.hidden = 1;
     put(PLAYER, 0, 0);
     put(RUNNERS[0]!, 8, 0);
     put(RUNNERS[1]!, 5, 0);
@@ -506,6 +568,7 @@ describe("target hysteresis and capture target lock", () => {
 
   it("keeps the current target until the nearer runner passes the hysteresis threshold", () => {
     activeRunners();
+    for (const runner of RUNNERS.slice(3)) runner.hidden = 1;
     put(PLAYER, 0, 0);
     put(RUNNERS[0]!, 10, 0);
     put(RUNNERS[1]!, 8, 0);
@@ -705,6 +768,67 @@ describe("Speed Pad and Slow Zone", () => {
     expect(runner.slowMultiplier).toBe(0.55);
   });
 });
+
+describe("arena-aware runner behavior", () => {
+  it("selects scaled flee routes from R30 through R100 and roams beyond the center on R100", () => {
+    expect(RUNNERS).toHaveLength(5);
+    try {
+      for (const radius of [30, 60, 80, 100]) {
+        const map = structuredClone(DEFAULT_MAP);
+        map.id = `npc-radius-${radius}`;
+        map.arena.radius = radius;
+        if (radius < 100) {
+          map.objects = [];
+          map.decorations = [];
+          const offset = radius * 0.24;
+          for (const item of map.interactiveObjects) {
+            if (item.kind === "speedPad") item.position = { x: -offset, z: 0 };
+            else if (item.kind === "slowZone") item.position = { x: offset, z: 0 };
+            else if (item.kind === "elasticBounce") item.position = { x: 0, z: -offset };
+            else item.position = { x: 0, z: offset };
+          }
+        }
+        installMapForSimulation(map);
+        activeRunners();
+        for (const runner of RUNNERS.slice(1)) runner.hidden = 100;
+        put(PLAYER, 0, 0);
+        const runner = RUNNERS[0]!;
+        put(runner, radius * 0.2, 0);
+        runner.routeTimer = 0;
+
+        step(DT, null, noCommands, true);
+
+        const firstGoalDistance = Math.hypot(
+          runner.routeGoalX - PLAYER.x,
+          runner.routeGoalZ - PLAYER.z,
+        );
+        expect(firstGoalDistance, `R${radius} route should escape into mid-map`).toBeGreaterThan(
+          radius === 100 ? radius * 0.5 : radius * 0.3,
+        );
+        expect(firstGoalDistance).toBeLessThan(radius * 0.9);
+        const navigation = getArenaNavigationTuning();
+        expect(navigation.preferredFleeDistance).toBeCloseTo(radius * 0.6);
+
+        let furthestFromPlayer = 0;
+        const seconds = radius === 100 ? 12 : 3;
+        for (let tick = 0; tick < seconds * GAME_CONFIG.simulation.tickHz; tick++) {
+          step(DT, null, noCommands, true);
+          const distance = Math.hypot(runner.x - PLAYER.x, runner.z - PLAYER.z);
+          furthestFromPlayer = Math.max(furthestFromPlayer, distance);
+          expect(Math.hypot(runner.x, runner.z) + runner.radius).toBeLessThan(radius);
+        }
+        if (radius === 100) {
+          expect(furthestFromPlayer).toBeGreaterThan(50);
+          expect(Math.hypot(runner.routeGoalX, runner.routeGoalZ)).toBeGreaterThan(40);
+        }
+      }
+    } finally {
+      installMapForSimulation(DEFAULT_MAP);
+    }
+  }, 30_000);
+});
+
+afterAll(() => installMapForSimulation(DEFAULT_MAP));
 
 describe("Elastic Bounce", () => {
   const bounce = INTERACTIVE_OBJECTS.find((item) => item.kind === "elasticBounce")!;

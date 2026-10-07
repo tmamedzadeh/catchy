@@ -1,5 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import type { CatchyE2EApi } from "../src/lib/catchy/e2eBridge";
+import { DEFAULT_MAP } from "../src/lib/catchy/maps/defaultMap";
 
 declare global {
   interface Window {
@@ -52,6 +53,28 @@ export async function startGame(page: Page) {
   await page.waitForFunction(() => window.__CATCHY_E2E__?.isReady() === true);
   await expect(page.getByRole("group", { name: "Game status" })).toBeVisible();
   await page.evaluate(() => window.__CATCHY_E2E__!.reset());
+}
+
+export async function startCompactGame(page: Page) {
+  await openStartScreen(page);
+  const compactMap = structuredClone(DEFAULT_MAP);
+  compactMap.id = "compact-controls";
+  compactMap.name = "Compact Controls";
+  compactMap.arena.radius = 30;
+  compactMap.objects = [];
+  compactMap.decorations = [];
+  for (const item of compactMap.interactiveObjects) {
+    if (item.kind === "speedPad") item.position = { x: -8, z: 0 };
+    else if (item.kind === "slowZone") item.position = { x: 8, z: 0 };
+    else if (item.kind === "elasticBounce") item.position = { x: 0, z: -8 };
+    else item.position = { x: 0, z: 8 };
+  }
+  await page.evaluate((map) => {
+    localStorage.setItem("catchy.maps.v1", JSON.stringify({ schemaVersion: 1, maps: [map] }));
+  }, compactMap);
+  await page.reload();
+  await page.getByRole("button", { name: /Compact Controls/ }).click();
+  await startGame(page);
 }
 
 export async function readPlayer(page: Page) {

@@ -5,7 +5,13 @@ import * as THREE from "three";
 import { Scene } from "./Scene";
 import { detectInitialQualityTier, getTierDpr, type QualityTier } from "./quality";
 
-export function GameCanvas({ gameReady }: { gameReady: boolean }) {
+export function GameCanvas({
+  gameReady,
+  onSceneReady,
+}: {
+  gameReady: boolean;
+  onSceneReady: () => void;
+}) {
   const initialTier = detectInitialQualityTier();
 
   return (
@@ -21,7 +27,11 @@ export function GameCanvas({ gameReady }: { gameReady: boolean }) {
         scene.background = new THREE.Color("#a9ddff");
       }}
     >
-      <AdaptiveQuality initialTier={initialTier} gameReady={gameReady} />
+      <AdaptiveQuality
+        initialTier={initialTier}
+        gameReady={gameReady}
+        onSceneReady={onSceneReady}
+      />
     </Canvas>
   );
 }
@@ -29,9 +39,11 @@ export function GameCanvas({ gameReady }: { gameReady: boolean }) {
 function AdaptiveQuality({
   initialTier,
   gameReady,
+  onSceneReady,
 }: {
   initialTier: QualityTier;
   gameReady: boolean;
+  onSceneReady: () => void;
 }) {
   const [tier, setTier] = useState(initialTier);
   const setDpr = useThree((state) => state.setDpr);
@@ -60,7 +72,7 @@ function AdaptiveQuality({
         onIncline={onIncline}
         onFallback={onFallback}
       />
-      <Scene qualityTier={tier} gameReady={gameReady} />
+      <Scene qualityTier={tier} gameReady={gameReady} onSceneReady={onSceneReady} />
     </>
   );
 }

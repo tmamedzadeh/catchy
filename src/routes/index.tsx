@@ -20,7 +20,7 @@ const GameCanvas = lazy(() =>
 
 const title = "Catchy — Fast chase/tag browser game";
 const description =
-  "Chase three runners around a bright 3D arena in Catchy, a fast browser tag game.";
+  "Chase five runners around a handcrafted 3D island in Catchy, a fast browser tag game.";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -45,10 +45,12 @@ function Game() {
     return saved && mapRepository.hasMap(saved) ? saved : "default";
   });
   const [gameReady, setGameReady] = useState(false);
+  const [sceneReady, setSceneReady] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<DeferredInstallPrompt | null>(null);
   const [installedMode, setInstalledMode] = useState(() => isStandaloneOrFullscreen());
   const [showInstallHelp, setShowInstallHelp] = useState(false);
   const markReady = useCallback(() => setGameReady(true), []);
+  const markSceneReady = useCallback(() => setSceneReady(true), []);
 
   useLayoutEffect(() => {
     setGameplayInputEnabled(started && gameReady);
@@ -126,11 +128,11 @@ function Game() {
       {started ? (
         <>
           <Suspense fallback={null}>
-            <GameCanvas gameReady={gameReady} />
+            <GameCanvas gameReady={gameReady} onSceneReady={markSceneReady} />
           </Suspense>
           <HUD gameReady={gameReady} />
           <GameFeedback />
-          <LoadingScreen ready={gameReady} onReady={markReady} />
+          <LoadingScreen ready={gameReady} sceneReady={sceneReady} onReady={markReady} />
         </>
       ) : (
         <StartScreen
@@ -262,15 +264,18 @@ function MapCard({
   );
 }
 
-function isAssetQueueComplete() {
-  const { active, errors, loaded, progress, total } = useProgress.getState();
-  return progress >= 100 || (!active && total > 0 && loaded + errors.length >= total);
-}
-
-function LoadingScreen({ ready, onReady }: { ready: boolean; onReady: () => void }) {
+function LoadingScreen({
+  ready,
+  sceneReady,
+  onReady,
+}: {
+  ready: boolean;
+  sceneReady: boolean;
+  onReady: () => void;
+}) {
   const { active, errors, loaded, progress, total } = useProgress();
-  const [layerVisible, setLayerVisible] = useState(() => !isAssetQueueComplete());
-  const complete = progress >= 100 || (!active && total > 0 && loaded + errors.length >= total);
+  const [layerVisible, setLayerVisible] = useState(true);
+  const complete = sceneReady && !active && (progress >= 100 || loaded + errors.length >= total);
 
   useEffect(() => {
     if (complete) onReady();

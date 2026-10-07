@@ -6,6 +6,7 @@ export const EDITOR_FREE_ROTATION_STEP = (5 * Math.PI) / 180;
 export const EDITOR_SCALE_STEP = 0.1;
 export const EDITOR_MIN_SCALE = 0.1;
 export const EDITOR_MAX_SCALE = 12;
+export const EDITOR_MIN_DECORATION_RADIUS = 0.5;
 
 export type EditorMoveKey = "w" | "a" | "s" | "d";
 
@@ -43,6 +44,21 @@ export function nudgeEditorScale(scale: number, direction: -1 | 1) {
 export function snapEditorScale(scale: number, snap: boolean) {
   const value = snap ? Math.round(scale / EDITOR_SCALE_STEP) * EDITOR_SCALE_STEP : scale;
   return Math.max(EDITOR_MIN_SCALE, Math.min(EDITOR_MAX_SCALE, Number(value.toFixed(4))));
+}
+
+export function nudgeEditorRadius(
+  radius: number,
+  direction: -1 | 1,
+  step: number,
+  snap: boolean,
+  maxRadius = 100,
+) {
+  return snapEditorRadius(radius + direction * step, step, snap, maxRadius);
+}
+
+export function snapEditorRadius(radius: number, step: number, snap: boolean, maxRadius = 100) {
+  const value = snap && step > 0 ? Math.round(radius / step) * step : radius;
+  return Math.max(EDITOR_MIN_DECORATION_RADIUS, Math.min(maxRadius, Number(value.toFixed(4))));
 }
 
 export function writeUniformScale(target: Vector3, scale: number) {

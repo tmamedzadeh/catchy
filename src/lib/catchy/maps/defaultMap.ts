@@ -8,86 +8,116 @@ function add(
   z: number,
   rotation: number,
   scale: number,
-  y: number,
   collision: MapObject["collision"],
+  id?: string,
 ) {
   props.push({
-    id: `default-prop-${props.length + 1}`,
+    id: id ?? `default-prop-${props.length + 1}`,
     model,
     position: { x, z },
     rotation,
     scale,
-    y,
+    y: 0,
     collision,
   });
 }
 
-const STONE_WALL: MapObject["collision"] = { type: "box", width: 0.98, depth: 0.52 };
+const PALM_TRUNK: MapObject["collision"] = { type: "circle", radius: 0.2 };
+const WALL: MapObject["collision"] = { type: "box", width: 0.98, depth: 0.52 };
 
-/** Default's low stone walls share their transform with their colliders. */
-function wallRun(
-  x: number,
-  z: number,
-  angle: number,
-  count: number,
-  scale = 1.9,
-  model = "wall-block",
-) {
+/** Place connected, readable wall sections while leaving broad running gaps. */
+function wallRun(x: number, z: number, angle: number, count: number, scale = 2, idPrefix = "wall") {
   const step = scale * 0.98;
   for (let i = 0; i < count; i++) {
-    const px = x + Math.cos(angle) * step * i;
-    const pz = z + Math.sin(angle) * step * i;
-    add(model, px, pz, -angle, scale, 0, STONE_WALL);
+    add(
+      "wall-block",
+      x + Math.cos(angle) * step * i,
+      z + Math.sin(angle) * step * i,
+      -angle,
+      scale,
+      WALL,
+      `default-${idPrefix}-${props.length + 1}`,
+    );
   }
 }
 
-// The original layout stays entirely inside Default's MapDefinition.
-add("fountain-round", 2, -1, 0, 3.1, 0, { type: "circle", radius: 1.3 });
-add("lantern", 6.6, 1.8, 0, 2.2, 0, { type: "circle", radius: 0.24 });
-add("lantern", -2.6, -4.4, 0, 2.2, 0, { type: "circle", radius: 0.24 });
+// Central fountain plaza and its small lantern ring form the main orientation point.
+add("fountain-round", 0, 0, 0, 4.5, { type: "circle", radius: 1.3 }, "fountain-plaza");
+for (const [id, x, z] of [
+  ["plaza-lantern-north", 0, 8],
+  ["plaza-lantern-east", 8, 0],
+  ["plaza-lantern-south", 0, -8],
+  ["plaza-lantern-west", -8, 0],
+] as const) {
+  add("lantern", x, z, 0, 2.2, { type: "circle", radius: 0.24 }, id);
+}
 
-// Choke point: two wall stubs east of the fountain.
-wallRun(11.5, -7.5, Math.PI / 2, 4);
-wallRun(11.5, 3.4, Math.PI / 2, 3);
-add("lantern", 13.4, -1.6, 0, 2.2, 0, { type: "circle", radius: 0.24 });
+// West Market: two open-ended wall rows, clustered cargo and a clear plaza entrance.
+wallRun(-62, -10, 0, 5, 2, "market-south-wall");
+wallRun(-62, 10, 0, 5, 2, "market-north-wall");
+add("crate", -58, -3.2, 0.2, 1.45, { type: "box", width: 0.72, depth: 0.72 });
+add("crate-bottles", -55.9, -3.1, -0.25, 1.4, { type: "box", width: 0.72, depth: 0.72 });
+add("crate", -58.2, 0.1, 0.4, 1.4, { type: "box", width: 0.72, depth: 0.72 });
+add("barrel", -54.6, 2.2, 0.1, 1.3, { type: "circle", radius: 0.38 });
+add("barrel", -55.8, 3.5, 0.6, 1.3, { type: "circle", radius: 0.38 });
+add("cart", -47.8, 4.6, 1.9, 2, { type: "box", width: 0.82, depth: 0.52 });
+add("lantern", -51, -11.8, 0, 2.2, { type: "circle", radius: 0.24 });
+add("lantern", -45, -7.2, 0, 2.2, { type: "circle", radius: 0.24 });
 
-// Loop wall north-west.
-wallRun(-14, -9, 0, 5);
-wallRun(-14, -9, Math.PI / 2, 3);
-add("crate", -10.4, -5.3, 0.5, 1.35, 0, { type: "box", width: 0.72, depth: 0.72 });
-add("barrel", -8.9, -5.9, -0.2, 1.15, 0, { type: "circle", radius: 0.38 });
-
-// Short south-east lane framed by crates and barrels.
-add("crate", 15.5, 9.5, 0.3, 1.5, 0, { type: "box", width: 0.72, depth: 0.72 });
-add("crate", 16.8, 10.6, -0.4, 1.5, 0, { type: "box", width: 0.72, depth: 0.72 });
-add("crate-bottles", 15.2, 11.4, 0.9, 1.5, 0, { type: "box", width: 0.72, depth: 0.72 });
-add("barrel", 12.2, 13.4, 0, 1.3, 0, { type: "circle", radius: 0.38 });
-add("barrel", 13.4, 14.1, 0.6, 1.3, 0, { type: "circle", radius: 0.38 });
-add("cart", 8.6, 12.4, 2.1, 2, 0, { type: "box", width: 0.82, depth: 0.52 });
-add("lantern", 11, 9, 0, 2.2, 0, { type: "circle", radius: 0.24 });
-
-// Loose rocks and stone spines remain real obstacles.
-add("rock-large", 20.5, -10.5, 0.7, 2.1, 0, { type: "circle", radius: 0.42 });
-add("rock-wide", 19, -13.2, 2.2, 1.8, 0, { type: "circle", radius: 0.48 });
-add("rock-small", 22.2, -7.6, 1.1, 1.7, 0, { type: "circle", radius: 0.36 });
-add("stone_tallD", -21.5, -13.5, 0.4, 2.6, 0, { type: "circle", radius: 0.4 });
-add("stone_largeC", -19.2, -15.6, 1.9, 2.4, 0, { type: "circle", radius: 0.46 });
-
-// Palm trunks around the rim provide silhouette depth and small round colliders.
-const palmSpots: [number, number, string, number][] = [
-  [-24, 9, "tree_palmDetailedTall", 3.4],
-  [-21, 17, "tree_palmBend", 3.1],
-  [-4, 24, "tree_palmDetailedTall", 3.2],
-  [9, 22, "tree_palmDetailedShort", 3],
-  [21, 14, "tree_palmBend", 3.3],
-  [25, -3, "tree_palmDetailedTall", 3.4],
-  [17, -20, "tree_palmDetailedShort", 3],
-  [-2, -25, "tree_palmDetailedTall", 3.2],
-  [-16, -21, "tree_palmBend", 3.1],
-  [-26, -4, "tree_palmDetailedTall", 3.3],
+// North-east Palm Grove: grouped silhouettes around a broad, open interior loop.
+const grovePalms: [string, number, number, number][] = [
+  ["tree_palmDetailedTall", 34, 42, 3.8],
+  ["tree_palmBend", 41, 34, 3.6],
+  ["tree_palmDetailedShort", 53, 36, 3.5],
+  ["tree_palmDetailedTall", 61, 45, 3.8],
+  ["tree_palmBend", 55, 57, 3.7],
+  ["tree_palmDetailedShort", 42, 59, 3.5],
 ];
-for (const [x, z, model, scale] of palmSpots) {
-  add(model, x, z, (x + z) * 0.3, scale, 0, { type: "circle", radius: 0.2 });
+for (const [model, x, z, scale] of grovePalms) add(model, x, z, (x + z) * 0.17, scale, PALM_TRUNK);
+add("rock-wide", 48, 45, 0.6, 1.9, { type: "circle", radius: 0.48 });
+add("rock-small", 50.4, 47.1, 1.1, 1.6, { type: "circle", radius: 0.36 });
+add("lantern", 31, 48, -0.3, 2.2, { type: "circle", radius: 0.24 });
+
+// South-west Ruins: broken walls and stones shape two ways through the zone.
+wallRun(-62, -57, 0, 4, 2.05, "ruin-west-wall");
+wallRun(-62, -57, Math.PI / 2, 3, 2.05, "ruin-south-wall");
+wallRun(-52, -57, 0, 3, 2.05, "ruin-east-wall");
+add("stone_tallD", -56, -47, 0.6, 2.8, { type: "circle", radius: 0.4 });
+add("stone_largeC", -51.3, -51.8, 1.2, 2.5, { type: "circle", radius: 0.46 });
+add("rock-large", -44, -54, 2.1, 2, { type: "circle", radius: 0.42 });
+add("rock-small", -44.5, -40, 0.3, 1.6, { type: "circle", radius: 0.36 });
+// This low wall block is a real collider and is short enough to clear with Jump.
+add(
+  "wall-block",
+  -49,
+  -41.5,
+  0.2,
+  0.55,
+  { type: "box", width: 0.9, depth: 0.56 },
+  "jumpable-ruin-step",
+);
+add("lantern", -42.4, -47, 0, 2.2, { type: "circle", radius: 0.24 });
+
+// South-east Sun Garden: the warm open route carries the Slow Down field.
+for (const [model, x, z, scale] of [
+  ["tree_palmDetailedTall", 40, -39, 3.5],
+  ["tree_palmBend", 57, -40, 3.4],
+  ["tree_palmDetailedShort", 59, -55, 3.3],
+  ["tree_palmDetailedTall", 43, -59, 3.5],
+] as const)
+  add(model, x, z, (x - z) * 0.13, scale, PALM_TRUNK);
+add("rock-large", 51, -51, 1.1, 1.9, { type: "circle", radius: 0.42 });
+add("rock-wide", 38, -49, 2.3, 1.7, { type: "circle", radius: 0.48 });
+add("lantern", 65, -47, 0.2, 2.2, { type: "circle", radius: 0.24 });
+
+// A light perimeter rhythm makes the outer ring easy to read without closing the route.
+for (const [index, angle] of [0, 45, 90, 135, 180, 225, 270, 315].entries()) {
+  const radians = (angle * Math.PI) / 180;
+  const radius = 82;
+  const x = Math.cos(radians) * radius;
+  const z = Math.sin(radians) * radius;
+  const model = index % 2 === 0 ? "tree_palmDetailedTall" : "tree_palmBend";
+  add(model, x, z, -radians, 3.2, PALM_TRUNK, `outer-palm-${index + 1}`);
 }
 
 const interactiveObjects: InteractiveMapObject[] = [
@@ -95,7 +125,7 @@ const interactiveObjects: InteractiveMapObject[] = [
     id: "speed-pad",
     kind: "speedPad",
     model: "",
-    position: { x: -16, z: 12 },
+    position: { x: -43, z: -1 },
     rotation: -0.45,
     scale: 1,
     y: 0.035,
@@ -106,7 +136,7 @@ const interactiveObjects: InteractiveMapObject[] = [
     id: "slow-zone",
     kind: "slowZone",
     model: "",
-    position: { x: 5, z: -20 },
+    position: { x: 49, z: -46 },
     rotation: 0,
     scale: 1,
     y: 0.018,
@@ -117,7 +147,7 @@ const interactiveObjects: InteractiveMapObject[] = [
     id: "elastic-bounce",
     kind: "elasticBounce",
     model: "",
-    position: { x: -19, z: 3 },
+    position: { x: -40, z: -43 },
     rotation: 0,
     scale: 1,
     y: 1.35,
@@ -127,7 +157,7 @@ const interactiveObjects: InteractiveMapObject[] = [
     id: "temporary-barrier",
     kind: "temporaryBarrier",
     model: "",
-    position: { x: 11.5, z: 0.8 },
+    position: { x: 4, z: 43 },
     rotation: 0,
     scale: 1,
     y: 0,
@@ -143,41 +173,73 @@ function freezeTree<T>(value: T): T {
   return value;
 }
 
-/** The protected V1 layout; its geometry is defined only by this MapDefinition. */
+/** Authored R100 world: plaza, market, palm grove, ruins, sun garden, and outer loop. */
 export const DEFAULT_MAP: MapDefinition = freezeTree({
   version: 1,
   schemaVersion: 1,
   id: "default",
   name: "Default",
   description:
-    "The original Catchy arena: an open running plain with a fountain loop and eastern choke point.",
-  arena: { radius: 30 },
+    "An R100 island with a fountain plaza, west market, palm grove, old ruins, and a sun-warmed outer route.",
+  arena: { radius: 100 },
   objects: props,
   interactiveObjects,
   decorations: [
     {
-      id: "wear-mark-north-west",
+      id: "plaza-stonework",
       kind: "island",
-      position: { x: -12, z: 9 },
-      radius: 5.4,
-      color: "#d88f43",
+      position: { x: 0, z: 0 },
+      radius: 16,
+      color: "#d5a45f",
       y: 0.062,
     },
     {
-      id: "wear-mark-north-east",
+      id: "market-earth",
       kind: "island",
-      position: { x: 10, z: 11 },
-      radius: 4.8,
-      color: "#f1c875",
+      position: { x: -52, z: 0 },
+      radius: 19,
+      color: "#d2914b",
       y: 0.063,
     },
     {
-      id: "wear-mark-south",
+      id: "palm-grove-ground",
       kind: "island",
-      position: { x: -2, z: -15 },
-      radius: 4.2,
-      color: "#e4a552",
+      position: { x: 46, z: 47 },
+      radius: 21,
+      color: "#9cb36a",
       y: 0.064,
+    },
+    {
+      id: "ruin-ground",
+      kind: "island",
+      position: { x: -48, z: -47 },
+      radius: 22,
+      color: "#aa987d",
+      y: 0.065,
+    },
+    {
+      id: "sun-garden-ground",
+      kind: "island",
+      position: { x: 50, z: -47 },
+      radius: 22,
+      color: "#e3b76b",
+      y: 0.066,
+    },
+    {
+      id: "north-route-wear",
+      kind: "island",
+      position: { x: 0, z: 38 },
+      radius: 9,
+      color: "#ddb56d",
+      y: 0.061,
+    },
+    {
+      id: "east-route-wear",
+      kind: "island",
+      position: { x: 42, z: 0 },
+      radius: 8,
+      color: "#dfb56b",
+      y: 0.061,
     },
   ],
 });

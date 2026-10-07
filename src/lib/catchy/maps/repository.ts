@@ -119,6 +119,13 @@ export const mapRepository = {
     return copy;
   },
   newMap(name = "New Map"): MapDefinition {
+    const interactiveObjects = cloneMap(DEFAULT_MAP).interactiveObjects;
+    for (const item of interactiveObjects) {
+      if (item.kind === "speedPad") item.position = { x: -8, z: 0 };
+      else if (item.kind === "slowZone") item.position = { x: 8, z: 0 };
+      else if (item.kind === "elasticBounce") item.position = { x: 0, z: -8 };
+      else item.position = { x: 0, z: 8 };
+    }
     return {
       version: 1,
       schemaVersion: 1,
@@ -127,7 +134,7 @@ export const mapRepository = {
       description: "A clean Catchy map.",
       arena: { radius: 30 },
       objects: [],
-      interactiveObjects: cloneMap(DEFAULT_MAP).interactiveObjects,
+      interactiveObjects,
     };
   },
   getLastSelectedId() {

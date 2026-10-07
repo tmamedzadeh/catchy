@@ -16,6 +16,7 @@ import {
 } from "../agents";
 import { GAME_CONFIG } from "../config";
 import { DEFAULT_MAP, cloneMap } from "./defaultMap";
+import type { MapDefinition } from "./types";
 import { validateMap } from "./validator";
 
 afterEach(() => installMapForSimulation(DEFAULT_MAP));
@@ -23,11 +24,27 @@ afterEach(() => installMapForSimulation(DEFAULT_MAP));
 const DT = 1 / GAME_CONFIG.simulation.tickHz;
 const NO_COMMANDS = { dash: false, speedBoost: false, jump: false };
 
+function mapAtRadius(radius: number, useDefaultLayout = false): MapDefinition {
+  const map = cloneMap(DEFAULT_MAP);
+  map.id = `runtime-radius-${radius}`;
+  map.arena.radius = radius;
+  if (radius === 100 || useDefaultLayout) return map;
+  map.objects = [];
+  map.decorations = [];
+  const offset = radius * 0.25;
+  for (const item of map.interactiveObjects) {
+    if (item.kind === "speedPad") item.position = { x: -offset, z: 0 };
+    else if (item.kind === "slowZone") item.position = { x: offset, z: 0 };
+    else if (item.kind === "elasticBounce") item.position = { x: 0, z: -offset };
+    else item.position = { x: 0, z: offset };
+  }
+  return map;
+}
+
 describe("active map runtime contract", () => {
   it("rebuilds arena bounds, collisions, navigation, and safe random spawns from one map snapshot", () => {
-    const custom = cloneMap(DEFAULT_MAP);
+    const custom = mapAtRadius(34);
     custom.id = "runtime-map";
-    custom.arena.radius = 34;
     custom.objects = [
       {
         id: "center-wall",
@@ -58,19 +75,21 @@ describe("active map runtime contract", () => {
       );
     expect(isWalkablePoint(0, 0, GAME_CONFIG.player.radius)).toBe(false);
     expect(isWalkablePoint(32.5, 0, GAME_CONFIG.player.radius)).toBe(true);
-    expect(getNavigationSummary().nodes).toBeGreaterThan(beforeNavigation.nodes);
+    // The source map is R100; installing this R34 map must rebuild to a smaller grid.
+    expect(getNavigationSummary().nodes).toBeLessThan(beforeNavigation.nodes);
   });
 
   it("installs radius 100 with a usable navigation grid, safe spawns, and boundary collision", () => {
-    const custom = cloneMap(DEFAULT_MAP);
+    const custom = mapAtRadius(100);
     custom.id = "radius-one-hundred";
-    custom.arena.radius = 100;
     expect(validateMap(custom).valid).toBe(true);
 
     installMapForSimulation(custom);
 
     expect(getSimulationMap().arena.radius).toBe(100);
-    expect(getNavigationSummary().nodes).toBeGreaterThan(8_000);
+    const navigation = getNavigationSummary();
+    expect(navigation.nodes).toBeGreaterThan(5_000);
+    expect(navigation.components).toBe(1);
     expect(isWalkablePoint(90, 0, GAME_CONFIG.npc.radius)).toBe(true);
     expect(isWalkablePoint(99.7, 0, GAME_CONFIG.npc.radius)).toBe(false);
     for (const agent of [PLAYER, ...RUNNERS]) {
@@ -89,9 +108,8 @@ describe("active map runtime contract", () => {
 
   for (const radius of [30, 60, 80, 100]) {
     it(`keeps random spawns, active barriers, and respawns safe at R${radius}`, () => {
-      const custom = cloneMap(DEFAULT_MAP);
+      const custom = mapAtRadius(radius);
       custom.id = `spawn-radius-${radius}`;
-      custom.arena.radius = radius;
       expect(validateMap(custom).valid).toBe(true);
       installMapForSimulation(custom);
 

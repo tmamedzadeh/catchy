@@ -29,6 +29,24 @@ describe("map domain", () => {
     expect(mapRepository.getMap("default")!.name).toBe("Default");
     expect(mapRepository.deleteMap("default")).toBe(false);
   });
+  it("creates a valid small clean map with its required interactives inside bounds", () => {
+    const fresh = mapRepository.newMap();
+    expect(fresh.arena.radius).toBe(30);
+    expect(fresh.objects).toEqual([]);
+    expect(fresh.decorations).toBeUndefined();
+    expect(validateMap(fresh).valid).toBe(true);
+  });
+  it("keeps Default as an authored R100 world with all V1 interactives and a real jump obstacle", () => {
+    expect(DEFAULT_MAP.arena.radius).toBe(100);
+    expect(DEFAULT_MAP.objects.length).toBeLessThan(120);
+    expect(DEFAULT_MAP.decorations).toHaveLength(7);
+    expect(new Set(DEFAULT_MAP.interactiveObjects.map((item) => item.kind))).toEqual(
+      new Set(["speedPad", "slowZone", "elasticBounce", "temporaryBarrier"]),
+    );
+    const jumpStep = DEFAULT_MAP.objects.find((item) => item.id === "jumpable-ruin-step");
+    expect(jumpStep).toMatchObject({ model: "wall-block", scale: 0.55 });
+    expect(validateMap(DEFAULT_MAP).valid).toBe(true);
+  });
   it("round trips, duplicates, and deletes custom maps", () => {
     const custom = cloneMap(DEFAULT_MAP);
     custom.id = "custom-map";
@@ -92,6 +110,30 @@ describe("map domain", () => {
     expect(mapRepository.getMap(custom.id)?.arena.radius).toBe(100);
     const imported = mapRepository.importMap(mapRepository.exportMap(custom));
     expect(imported.arena.radius).toBe(100);
+  });
+
+  it("persists and imports decoration transforms in the existing schema", () => {
+    const custom = cloneMap(DEFAULT_MAP);
+    custom.id = "editable-decoration";
+    custom.decorations![0]!.position = { x: 3, z: 4 };
+    custom.decorations![0]!.rotation = 0.65;
+    custom.decorations![0]!.radius = 17.5;
+    expect(validateMap(custom).valid).toBe(true);
+    mapRepository.saveMap(custom);
+
+    const restored = mapRepository.importMap(mapRepository.exportMap(custom));
+    expect(restored.decorations?.[0]).toMatchObject({
+      position: { x: 3, z: 4 },
+      rotation: 0.65,
+      radius: 17.5,
+    });
+    expect(validateMap(restored).valid).toBe(true);
+  });
+
+  it("rejects non-finite decoration rotations", () => {
+    const custom = cloneMap(DEFAULT_MAP);
+    custom.decorations![0]!.rotation = Number.NaN;
+    expect(validateMap(custom).errors.some((entry) => entry.code === "decoration")).toBe(true);
   });
 
   it("never allocates a custom id that can shadow Default", () => {
@@ -283,9 +325,14 @@ describe("map domain", () => {
   it("updates navigation and collisions when installing a custom map", () => {
     const custom = cloneMap(DEFAULT_MAP);
     custom.id = "custom-obstacles";
-    // Ensure decorations are still within the arena if arena radius is adjusted
     custom.arena.radius = 28;
     custom.decorations = [];
+    for (const item of custom.interactiveObjects) {
+      if (item.kind === "speedPad") item.position = { x: -12, z: 0 };
+      else if (item.kind === "slowZone") item.position = { x: 12, z: 0 };
+      else if (item.kind === "elasticBounce") item.position = { x: 0, z: -12 };
+      else item.position = { x: 0, z: 12 };
+    }
     custom.objects = [
       {
         id: "center-rock",

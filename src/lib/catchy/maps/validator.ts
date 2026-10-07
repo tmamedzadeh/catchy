@@ -283,6 +283,7 @@ export function validateMap(input: unknown): MapValidationResult {
       decoration["radius"] > safeRadius ||
       !isInsideArena(position["x"], position["z"], safeRadius, decoration["radius"]) ||
       !finite(decoration["y"]) ||
+      (decoration["rotation"] !== undefined && !finite(decoration["rotation"])) ||
       typeof decoration["color"] !== "string" ||
       !/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(decoration["color"])
     ) {

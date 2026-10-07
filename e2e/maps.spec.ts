@@ -35,6 +35,11 @@ test("launcher selects Default and starts it without model 404s or editor contro
   await expect
     .poll(() => page.evaluate(() => window.__CATCHY_E2E__!.getActiveMap().id))
     .toBe("default");
+  await page.waitForFunction(
+    () => (window.__CATCHY_E2E__!.getRenderedCamera()?.forwardY ?? 0) < -0.65,
+  );
+  const defaultCamera = await page.evaluate(() => window.__CATCHY_E2E__!.getRenderedCamera());
+  expect(defaultCamera!.forwardY).toBeLessThan(-0.65);
   expect(missingModels).toEqual([]);
   const activeMap = await page.evaluate(() => window.__CATCHY_E2E__!.getActiveMap());
   const expectedModels = new Set(
@@ -44,6 +49,37 @@ test("launcher selects Default and starts it without model 404s or editor contro
   );
   expect(requestedModels).toEqual(expectedModels);
   expect(runtimeErrors).toEqual([]);
+});
+
+test("high oblique camera framing also works on a compact R30 map", async ({ page }) => {
+  await openStartScreen(page);
+  const smallMap = structuredClone(DEFAULT_MAP);
+  smallMap.id = "compact-camera";
+  smallMap.name = "Compact Camera";
+  smallMap.arena.radius = 30;
+  smallMap.objects = [];
+  smallMap.decorations = [];
+  for (const item of smallMap.interactiveObjects) {
+    if (item.kind === "speedPad") item.position = { x: -8, z: 0 };
+    else if (item.kind === "slowZone") item.position = { x: 8, z: 0 };
+    else if (item.kind === "elasticBounce") item.position = { x: 0, z: -8 };
+    else item.position = { x: 0, z: 8 };
+  }
+  await page.evaluate((map) => {
+    localStorage.setItem("catchy.maps.v1", JSON.stringify({ schemaVersion: 1, maps: [map] }));
+  }, smallMap);
+  await page.reload();
+  await page.getByRole("button", { name: /Compact Camera/ }).click();
+  await startGame(page);
+  await expect(page.locator(".game-loading-screen")).toBeHidden();
+  await expect
+    .poll(() => page.evaluate(() => window.__CATCHY_E2E__!.getActiveMap().arenaRadius))
+    .toBe(30);
+  await page.waitForFunction(
+    () => (window.__CATCHY_E2E__!.getRenderedCamera()?.forwardY ?? 0) < -0.65,
+  );
+  const camera = await page.evaluate(() => window.__CATCHY_E2E__!.getRenderedCamera());
+  expect(camera!.forwardY).toBeLessThan(-0.65);
 });
 
 test("editor saves maps without spawn markers and gameplay picks safe runtime spawns", async ({
@@ -59,7 +95,7 @@ test("editor saves maps without spawn markers and gameplay picks safe runtime sp
     runners: window.__CATCHY_E2E__!.getRunners(),
   }));
   expect(defaultRuntime.map.id).toBe("default");
-  expect(defaultRuntime.runners).toHaveLength(3);
+  expect(defaultRuntime.runners).toHaveLength(5);
   expect(Math.hypot(defaultRuntime.player.x, defaultRuntime.player.z)).toBeLessThan(
     defaultRuntime.map.arenaRadius - defaultRuntime.player.radius,
   );
@@ -135,6 +171,10 @@ test("editor saves maps without spawn markers and gameplay picks safe runtime sp
   expect(bounds).not.toBeNull();
   await page.mouse.click(bounds!.x + bounds!.width / 2, bounds!.y + bounds!.height / 2);
   await expect(page.getByRole("heading", { name: "rock-large" })).toBeVisible();
+  await page.getByRole("button", { name: "Fit collider to asset" }).click();
+  await expect(page.getByRole("combobox", { name: "Collider shape" })).toHaveValue("circle");
+  await expect(page.getByText("Circle (r=0.84)", { exact: true })).toBeVisible();
+  await expect(page.getByRole("spinbutton", { name: "Scale" })).toHaveValue("2.1");
 
   const xField = page.getByRole("spinbutton", { name: "X" });
   await xField.fill("3");
@@ -379,7 +419,8 @@ test("map lifecycle protects Default, blocks invalid saves, and round trips radi
   await page.getByRole("button", { name: "Duplicate map" }).click();
   const radius = page.getByRole("spinbutton", { name: "Arena radius" });
   await radius.fill("101");
-  await expect(page.getByRole("button", { name: "Save map" })).toBeDisabled();
+  await expect(radius).toHaveValue("100");
+  await expect(page.getByRole("button", { name: "Save map" })).toBeEnabled();
   await radius.fill("100");
   await expect(page.getByRole("button", { name: "Save map" })).toBeEnabled();
   await page.getByRole("button", { name: "Save map" }).click();
@@ -435,6 +476,56 @@ test("map lifecycle protects Default, blocks invalid saves, and round trips radi
     () => JSON.parse(localStorage.getItem("catchy.maps.v1") ?? "{}").maps,
   );
   expect(maps).toHaveLength(1);
+});
+
+test("decorations can be selected, transformed, undone, saved, and restored", async ({ page }) => {
+  await openStartScreen(page);
+  await page.goto("/editor");
+  await page.getByRole("button", { name: "Duplicate map" }).click();
+  const selection = page.getByRole("combobox", { name: "Select map element" });
+  await selection.selectOption("decoration:plaza-stonework");
+  await expect(page.getByRole("heading", { name: "Decoration · plaza-stonework" })).toBeVisible();
+  const x = page.getByRole("spinbutton", { name: "X" });
+  const z = page.getByRole("spinbutton", { name: "Z" });
+  const rotation = page.getByRole("spinbutton", { name: "Rotation (radians)" });
+  const radius = page.getByRole("spinbutton", { name: "Decoration radius" });
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("w");
+  await page.keyboard.press("a");
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowUp");
+  await expect(x).toHaveValue("-0.5");
+  await expect(z).toHaveValue("-0.5");
+  await expect(rotation).toHaveValue(String(-Math.PI / 12));
+  await expect(radius).toHaveValue("16.5");
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(radius).toHaveValue("16");
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(radius).toHaveValue("16.5");
+  await page.getByRole("button", { name: "Save map" }).click();
+  await expect(page.getByTestId("dirty-status")).toHaveText("Saved");
+
+  const saved = await page.evaluate(
+    () => JSON.parse(localStorage.getItem("catchy.maps.v1") ?? "{}").maps[0],
+  );
+  expect(
+    saved.decorations.find((item: { id: string }) => item.id === "plaza-stonework"),
+  ).toMatchObject({
+    position: { x: -0.5, z: -0.5 },
+    rotation: -Math.PI / 12,
+    radius: 16.5,
+  });
+
+  await page.reload();
+  await selection.selectOption("decoration:plaza-stonework");
+  await expect(x).toHaveValue("-0.5");
+  await expect(z).toHaveValue("-0.5");
+  await expect(rotation).toHaveValue(String(-Math.PI / 12));
+  await expect(radius).toHaveValue("16.5");
+  await page.getByRole("button", { name: "DELETE DECORATION" }).click();
+  await expect(selection.locator('option[value="decoration:plaza-stonework"]')).toHaveCount(0);
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(selection.locator('option[value="decoration:plaza-stonework"]')).toHaveCount(1);
 });
 
 test.describe("touch editor drawer", () => {

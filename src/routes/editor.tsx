@@ -24,6 +24,7 @@ import {
   MAP_LIMITS,
   mapRepository,
   validateMap,
+  fitColliderToAsset,
   type CollisionShape,
   type InteractiveKind,
   type MapDefinition,
@@ -32,10 +33,13 @@ import {
 } from "@/lib/catchy/maps";
 import {
   EDITOR_FREE_MOVE_STEP,
+  EDITOR_SCALE_STEP,
   nudgeEditorPoint,
+  nudgeEditorRadius,
   nudgeEditorRotation,
   nudgeEditorScale,
   snapEditorScale,
+  snapEditorRadius,
 } from "@/lib/catchy/maps/editorTransforms";
 
 export const Route = createFileRoute("/editor")({ ssr: false, component: Editor });
@@ -97,6 +101,10 @@ function ToolbarIconButton({
       </span>
     </span>
   );
+}
+
+function formatColliderDimension(value: number) {
+  return (Math.round((value + Number.EPSILON) * 100) / 100).toFixed(2);
 }
 
 function Editor() {
@@ -272,6 +280,15 @@ function Editor() {
       ),
     });
   };
+  const fitSelectedCollider = (object: MapDefinition["objects"][number]) => {
+    const fitted = fitColliderToAsset(object.model, object.collision);
+    if (!fitted) {
+      setMessage("This asset has no canonical bounds to fit.");
+      return;
+    }
+    setObjectCollider(object.id, fitted);
+    setMessage("Collider fitted to the asset footprint. The current object scale is preserved.");
+  };
   const duplicateSelected = () => {
     if (!map || map.id === "default" || !selected || selected.startsWith("interactive:")) return;
     const source = map.objects.find((object) => object.id === selected);
@@ -295,6 +312,15 @@ function Editor() {
   };
   const removeSelected = () => {
     if (!map || map.id === "default" || !selected) return;
+    if (selected.startsWith("decoration:")) {
+      const id = selected.slice("decoration:".length);
+      update({
+        ...map,
+        decorations: (map.decorations ?? []).filter((item) => item.id !== id),
+      });
+      setSelected(null);
+      return;
+    }
     if (selected.startsWith("interactive:")) {
       setMessage("Required interactive objects are preserved in V1; move them instead.");
       return;
@@ -435,6 +461,35 @@ function Editor() {
     };
     commitDrag(next);
   };
+  const transformDecoration = (id: string, transform: EditorTransform, committed: boolean) => {
+    if (
+      !map ||
+      map.id === "default" ||
+      !Number.isFinite(transform.x) ||
+      !Number.isFinite(transform.z) ||
+      !Number.isFinite(transform.rotation) ||
+      !Number.isFinite(transform.scale)
+    )
+      return;
+    if (!committed) {
+      if (!dragStartMap.current) dragStartMap.current = structuredClone(map);
+      return;
+    }
+    const next = {
+      ...map,
+      decorations: (map.decorations ?? []).map((decoration) =>
+        decoration.id === id
+          ? {
+              ...decoration,
+              position: { x: snapValue(transform.x), z: snapValue(transform.z) },
+              rotation: snapValue(transform.rotation, rotationSnap, snapRotation),
+              radius: snapEditorRadius(transform.scale, EDITOR_SCALE_STEP, snap, map.arena.radius),
+            }
+          : decoration,
+      ),
+    };
+    commitDrag(next);
+  };
   const handleKeyDown = (event: KeyboardEvent) => {
     const target = event.target as HTMLElement;
     if (
@@ -490,6 +545,19 @@ function Editor() {
         });
         return;
       }
+      if (selected.startsWith("decoration:")) {
+        const id = selected.slice("decoration:".length);
+        const decoration = map.decorations?.find((item) => item.id === id);
+        if (!decoration) return;
+        const position = nudgeEditorPoint(decoration.position, key, step);
+        update({
+          ...map,
+          decorations: (map.decorations ?? []).map((item) =>
+            item.id === id ? { ...item, position } : item,
+          ),
+        });
+        return;
+      }
       const object = map.objects.find((item) => item.id === selected);
       if (!object) return;
       const position = nudgeEditorPoint(object.position, key, step);
@@ -502,6 +570,37 @@ function Editor() {
 
     if (selected && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
       event.preventDefault();
+      if (selected.startsWith("decoration:")) {
+        const id = selected.slice("decoration:".length);
+        const decoration = map.decorations?.find((item) => item.id === id);
+        if (!decoration) return;
+        const decorations = (map.decorations ?? []).map((item) => {
+          if (item.id !== id) return item;
+          if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+            return {
+              ...item,
+              rotation: nudgeEditorRotation(
+                item.rotation ?? 0,
+                event.key === "ArrowLeft" ? -1 : 1,
+                snapRotation,
+                rotationSnap,
+              ),
+            };
+          }
+          return {
+            ...item,
+            radius: nudgeEditorRadius(
+              item.radius,
+              event.key === "ArrowUp" ? 1 : -1,
+              snap ? snapStep : EDITOR_FREE_MOVE_STEP,
+              snap,
+              map.arena.radius,
+            ),
+          };
+        });
+        update({ ...map, decorations });
+        return;
+      }
       const interactive = selected.startsWith("interactive:");
       const id = interactive ? selected.slice("interactive:".length) : selected;
       const object = interactive
@@ -701,6 +800,7 @@ function Editor() {
                 onSelect={setSelected}
                 onTransform={transformObject}
                 onInteractiveTransform={transformInteractive}
+                onDecorationTransform={transformDecoration}
                 onViewportChange={setViewport}
                 onPlace={(point) => {
                   if (!placement) {
@@ -916,6 +1016,11 @@ function Editor() {
                           object.model}
                       </option>
                     ))}
+                    {(map.decorations ?? []).map((decoration) => (
+                      <option key={decoration.id} value={`decoration:${decoration.id}`}>
+                        Decoration · {decoration.id}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <div className="mb-3 flex gap-2">
@@ -1035,7 +1140,12 @@ function Editor() {
                           (item) => item.id === selected.slice("interactive:".length),
                         )
                       : undefined;
-                    if (!object && !interactive) return null;
+                    const decoration = selected.startsWith("decoration:")
+                      ? map.decorations?.find(
+                          (item) => item.id === selected.slice("decoration:".length),
+                        )
+                      : undefined;
+                    if (!object && !interactive && !decoration) return null;
                     if (interactive)
                       return (
                         <div>
@@ -1088,6 +1198,119 @@ function Editor() {
                             Required interactive objects cannot be deleted. Trigger radius:{" "}
                             {interactive.triggerRadius ?? "—"}
                           </p>
+                        </div>
+                      );
+                    if (decoration)
+                      return (
+                        <div>
+                          <h3 className="font-bold">Decoration · {decoration.id}</h3>
+                          <label className="mt-3 block text-sm">
+                            X
+                            <input
+                              type="number"
+                              className="mt-1 w-full rounded-lg border p-2"
+                              value={decoration.position.x}
+                              disabled={map.id === "default"}
+                              onChange={(event) => {
+                                const x = Number(event.target.value);
+                                if (!Number.isFinite(x)) return;
+                                update({
+                                  ...map,
+                                  decorations: (map.decorations ?? []).map((item) =>
+                                    item.id === decoration.id
+                                      ? { ...item, position: { ...item.position, x: snapValue(x) } }
+                                      : item,
+                                  ),
+                                });
+                              }}
+                            />
+                          </label>
+                          <label className="mt-3 block text-sm">
+                            Z
+                            <input
+                              type="number"
+                              className="mt-1 w-full rounded-lg border p-2"
+                              value={decoration.position.z}
+                              disabled={map.id === "default"}
+                              onChange={(event) => {
+                                const z = Number(event.target.value);
+                                if (!Number.isFinite(z)) return;
+                                update({
+                                  ...map,
+                                  decorations: (map.decorations ?? []).map((item) =>
+                                    item.id === decoration.id
+                                      ? { ...item, position: { ...item.position, z: snapValue(z) } }
+                                      : item,
+                                  ),
+                                });
+                              }}
+                            />
+                          </label>
+                          <label className="mt-3 block text-sm">
+                            Rotation (radians)
+                            <input
+                              type="number"
+                              step="0.261799"
+                              className="mt-1 w-full rounded-lg border p-2"
+                              value={decoration.rotation ?? 0}
+                              disabled={map.id === "default"}
+                              onChange={(event) => {
+                                const rotation = Number(event.target.value);
+                                if (!Number.isFinite(rotation)) return;
+                                update({
+                                  ...map,
+                                  decorations: (map.decorations ?? []).map((item) =>
+                                    item.id === decoration.id ? { ...item, rotation } : item,
+                                  ),
+                                });
+                              }}
+                            />
+                          </label>
+                          <label className="mt-3 block text-sm">
+                            Radius
+                            <input
+                              aria-label="Decoration radius"
+                              type="number"
+                              min="0.5"
+                              max={map.arena.radius}
+                              step={snapStep}
+                              className="mt-1 w-full rounded-lg border p-2"
+                              value={decoration.radius}
+                              disabled={map.id === "default"}
+                              onChange={(event) => {
+                                const radius = Number(event.target.value);
+                                if (!Number.isFinite(radius)) return;
+                                update({
+                                  ...map,
+                                  decorations: (map.decorations ?? []).map((item) =>
+                                    item.id === decoration.id
+                                      ? {
+                                          ...item,
+                                          radius: snapEditorRadius(
+                                            radius,
+                                            snapStep,
+                                            snap,
+                                            map.arena.radius,
+                                          ),
+                                        }
+                                      : item,
+                                  ),
+                                });
+                              }}
+                            />
+                          </label>
+                          <p className="mt-3 text-xs opacity-70">
+                            WASD moves; arrows rotate and change radius. Ctrl+Z / Ctrl+Y undo or
+                            redo.
+                          </p>
+                          <button
+                            type="button"
+                            className="mt-4 w-full rounded-xl bg-red-100 p-2 font-bold text-red-700"
+                            onClick={removeSelected}
+                            disabled={map.id === "default"}
+                          >
+                            DELETE DECORATION
+                          </button>
                         </div>
                       );
                     if (!object) return null;
@@ -1160,10 +1383,18 @@ function Editor() {
                           <span className="font-bold">Collider: </span>
                           <span>
                             {object.collision.type === "circle"
-                              ? `Circle (r=${object.collision.radius.toFixed(2)})`
-                              : `Box (${object.collision.width.toFixed(2)} × ${object.collision.depth.toFixed(2)})`}
+                              ? `Circle (r=${formatColliderDimension(object.collision.radius)})`
+                              : `Box (${formatColliderDimension(object.collision.width)} × ${formatColliderDimension(object.collision.depth)})`}
                           </span>
                         </div>
+                        <button
+                          type="button"
+                          className="mt-2 w-full rounded-lg border bg-white p-2 text-sm font-bold"
+                          onClick={() => fitSelectedCollider(object)}
+                          disabled={map.id === "default"}
+                        >
+                          Fit collider to asset
+                        </button>
                         <label className="mt-3 block text-sm">
                           Collider shape
                           <select

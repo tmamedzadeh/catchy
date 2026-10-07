@@ -6,11 +6,12 @@ import {
   useGLTF,
 } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
-import { Suspense } from "react";
+import { Suspense, useEffect } from "react";
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
-import type { MapDefinition, MapObject, Point2 } from "@/lib/catchy/maps";
+import type { MapDecoration, MapDefinition, MapObject, Point2 } from "@/lib/catchy/maps";
 import { ASSET_BY_ID } from "@/lib/catchy/maps";
+import { createIslandGeometry } from "@/lib/catchy/maps";
 import { NonCriticalAssetBoundary } from "../game/NonCriticalAssetBoundary";
 import { EDITOR_SCALE_STEP, writeUniformScale } from "@/lib/catchy/maps/editorTransforms";
 
@@ -31,6 +32,7 @@ type Props = {
   onSelect: (id: string | null) => void;
   onTransform: (id: string, transform: EditorTransform, committed: boolean) => void;
   onInteractiveTransform: (id: string, transform: EditorTransform, committed: boolean) => void;
+  onDecorationTransform: (id: string, transform: EditorTransform, committed: boolean) => void;
   onPlace: (point: Point2) => void;
   onViewportChange?: (position: { x: number; z: number; zoom: number }) => void;
 };
@@ -53,6 +55,90 @@ function EditorProp({ ...props }: EditorPropProps) {
   const asset = ASSET_BY_ID.get(props.object.model);
   if (!asset) return null;
   return <LoadedEditorProp {...props} assetUrl={asset.modelPath} />;
+}
+
+function EditorDecoration({
+  decoration,
+  selected,
+  tool,
+  readOnly,
+  snap,
+  snapRotation,
+  snapStep,
+  rotationSnap,
+  onSelect,
+  onTransform,
+}: {
+  decoration: MapDecoration;
+  selected: boolean;
+  tool: Props["tool"];
+  readOnly: boolean;
+  snap: boolean;
+  snapRotation: boolean;
+  snapStep: number;
+  rotationSnap: number;
+  onSelect: Props["onSelect"];
+  onTransform: Props["onDecorationTransform"];
+}) {
+  const root = useRef<THREE.Group>(null);
+  const geometry = useMemo(() => createIslandGeometry(1), []);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  const read = (committed: boolean) => {
+    const current = root.current;
+    if (!current) return;
+    if (tool === "scale") writeUniformScale(current.scale, current.scale.x);
+    onTransform(
+      decoration.id,
+      {
+        x: current.position.x,
+        y: current.position.y,
+        z: current.position.z,
+        rotation: current.rotation.y,
+        scale: current.scale.x,
+      },
+      committed,
+    );
+  };
+
+  return (
+    <>
+      <group
+        ref={root}
+        position={[decoration.position.x, decoration.y, decoration.position.z]}
+        rotation-y={decoration.rotation ?? 0}
+        scale={decoration.radius}
+        onPointerDown={(event) => {
+          event.stopPropagation();
+          onSelect(`decoration:${decoration.id}`);
+        }}
+        onPointerUp={(event) => event.stopPropagation()}
+      >
+        <mesh geometry={geometry} rotation-x={-Math.PI / 2} receiveShadow>
+          <meshStandardMaterial color={decoration.color} roughness={0.78} />
+        </mesh>
+        {selected && (
+          <mesh rotation-x={-Math.PI / 2} position-y={0.012}>
+            <ringGeometry args={[1.04, 1.09, 40]} />
+            <meshBasicMaterial color="#ffffff" />
+          </mesh>
+        )}
+      </group>
+      {selected && !readOnly && root.current && (
+        <TransformControls
+          object={root.current}
+          mode={tool}
+          showX={tool !== "rotate"}
+          showY={tool === "rotate"}
+          showZ={tool !== "rotate" && tool !== "scale"}
+          onObjectChange={() => read(false)}
+          onMouseUp={() => read(true)}
+          translationSnap={snap ? snapStep : null}
+          rotationSnap={snapRotation ? rotationSnap : null}
+          scaleSnap={snap ? EDITOR_SCALE_STEP : null}
+        />
+      )}
+    </>
+  );
 }
 
 function LoadedEditorProp({
@@ -416,6 +502,21 @@ function EditorScene(props: Props) {
         onTransform={props.onInteractiveTransform}
         readOnly={props.readOnly}
       />
+      {(props.map.decorations ?? []).map((decoration) => (
+        <EditorDecoration
+          key={decoration.id}
+          decoration={decoration}
+          selected={props.selected === `decoration:${decoration.id}`}
+          tool={props.tool}
+          readOnly={props.readOnly}
+          snap={props.snap}
+          snapRotation={props.snapRotation}
+          snapStep={props.snapStep}
+          rotationSnap={props.rotationSnap}
+          onSelect={props.onSelect}
+          onTransform={props.onDecorationTransform}
+        />
+      ))}
     </>
   );
 }

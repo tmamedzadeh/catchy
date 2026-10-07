@@ -34,6 +34,8 @@ export type MapDecoration = {
   radius: number;
   color: string;
   y: number;
+  /** Optional in schema v1 so existing saved maps keep loading unchanged. */
+  rotation?: number;
 };
 
 export type MapDefinition = {

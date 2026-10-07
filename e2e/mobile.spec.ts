@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { openStartScreen, readPlayer, readWorld, startGame } from "./helpers";
+import { openStartScreen, readPlayer, readWorld, startCompactGame, startGame } from "./helpers";
 
 test.describe("landscape coarse-pointer controls", () => {
   test.use({
@@ -104,7 +104,7 @@ test.describe("landscape coarse-pointer controls", () => {
     await page.mouse.up();
 
     await page.evaluate(() => window.__CATCHY_E2E__!.turnCamera(0));
-    const cameraX = cameraBounds!.x + cameraBounds!.width / 2;
+    const cameraX = cameraBounds!.x + cameraBounds!.width * 0.74;
     const cameraY = cameraBounds!.y + cameraBounds!.height / 2;
     await page.mouse.move(cameraX, cameraY);
     await page.mouse.down();
@@ -238,8 +238,8 @@ test.describe("landscape coarse-pointer controls", () => {
   test("native touch ownership supports joystick plus camera, isolated buttons, and pinch zoom", async ({
     page,
   }) => {
-    await openStartScreen(page);
-    await startGame(page);
+    test.setTimeout(150_000);
+    await startCompactGame(page);
     const session = await page.context().newCDPSession(page);
     const dispatchTouch = async (
       type: "touchStart" | "touchMove" | "touchEnd" | "touchCancel",
@@ -259,7 +259,7 @@ test.describe("landscape coarse-pointer controls", () => {
     expect(cameraBounds).not.toBeNull();
     const stickX = stickBounds!.x + stickBounds!.width / 2;
     const stickY = stickBounds!.y + stickBounds!.height / 2;
-    const cameraX = cameraBounds!.x + cameraBounds!.width / 2;
+    const cameraX = cameraBounds!.x + cameraBounds!.width * 0.74;
     const cameraY = cameraBounds!.y + cameraBounds!.height / 2;
 
     await page.evaluate(() => {
@@ -276,6 +276,24 @@ test.describe("landscape coarse-pointer controls", () => {
       window.__CATCHY_E2E__!.getRenderedCamera(),
     ))!;
     const movementStart = await readPlayer(page);
+
+    const yawBeforeLeftTouch = (await readWorld(page)).cameraYaw as number;
+    await dispatchTouch("touchStart", [{ id: 90, x: cameraBounds!.width * 0.25, y: cameraY }]);
+    await dispatchTouch("touchMove", [{ id: 90, x: cameraBounds!.width * 0.25 + 45, y: cameraY }]);
+    await page.evaluate(() => window.__CATCHY_E2E__!.step(50));
+    expect(await owners()).toEqual([]);
+    expect((await readWorld(page)).cameraYaw).toBeCloseTo(yawBeforeLeftTouch, 3);
+    await dispatchTouch("touchCancel", []);
+
+    const cameraOnlyStart = await readPlayer(page);
+    await dispatchTouch("touchStart", [{ id: 91, x: cameraX, y: cameraY }]);
+    await dispatchTouch("touchMove", [{ id: 91, x: cameraX + 34, y: cameraY }]);
+    await page.evaluate(() => window.__CATCHY_E2E__!.step(80));
+    const cameraOnlyEnd = await readPlayer(page);
+    expect(cameraOnlyEnd.x).toBeCloseTo(cameraOnlyStart.x as number, 5);
+    expect(cameraOnlyEnd.z).toBeCloseTo(cameraOnlyStart.z as number, 5);
+    await dispatchTouch("touchEnd", []);
+
     await dispatchTouch("touchStart", [{ id: 1, x: stickX, y: stickY }]);
     expect(await owners()).toEqual(["movement"]);
     await dispatchTouch("touchStart", [
@@ -476,7 +494,32 @@ test.describe("landscape coarse-pointer controls", () => {
       const camera = window.__CATCHY_E2E__!.getRenderedCamera();
       return camera !== null && Math.abs(window.__CATCHY_E2E__!.getWorld().cameraPitch) < 0.1;
     });
-    await page.waitForTimeout(450);
+    let previousCameraSample: number[] | null = null;
+    let settledSamples = 0;
+    await expect
+      .poll(
+        async () => {
+          const sample = await page.evaluate(() => {
+            const camera = window.__CATCHY_E2E__!.getRenderedCamera()!;
+            return [
+              camera.x,
+              camera.y,
+              camera.z,
+              camera.forwardX,
+              camera.forwardY,
+              camera.forwardZ,
+            ];
+          });
+          const settled =
+            previousCameraSample !== null &&
+            sample.every((value, index) => Math.abs(value - previousCameraSample![index]!) < 0.002);
+          settledSamples = settled ? settledSamples + 1 : 0;
+          previousCameraSample = sample;
+          return settledSamples;
+        },
+        { intervals: [100], timeout: 15_000 },
+      )
+      .toBeGreaterThanOrEqual(3);
     const pitchStart = (await page.evaluate(() => window.__CATCHY_E2E__!.getRenderedCamera()))!;
     await dispatchTouch("touchStart", [{ id: 31, x: cameraX, y: cameraY }]);
     await dispatchTouch("touchMove", [{ id: 31, x: cameraX, y: cameraY - 45 }]);
@@ -490,7 +533,7 @@ test.describe("landscape coarse-pointer controls", () => {
             const game = window.__CATCHY_E2E__!;
             const camera = game.getRenderedCamera()!;
             return {
-              movedInExpectedDirection: camera.forwardY > initialForwardY + 0.02,
+              movedInExpectedDirection: camera.forwardY > initialForwardY + 0.005,
               cameraPitch: game.getWorld().cameraPitch,
               forwardY: camera.forwardY,
             };

@@ -49,6 +49,7 @@ export function CameraSurface({ enabled }: { enabled: boolean }) {
       onPointerDown={(event) => {
         if (!enabled) return;
         if (event.pointerType === "mouse" && event.button !== 0) return;
+        if (event.pointerType !== "mouse" && event.clientX < window.innerWidth / 2) return;
         if (!claimTouchPointer(event.pointerId, "camera")) return;
         event.preventDefault();
         pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -89,6 +90,11 @@ export function CameraSurface({ enabled }: { enabled: boolean }) {
         release(event.pointerId);
       }}
       onLostPointerCapture={(event) => release(event.pointerId)}
+      onWheel={(event) => {
+        if (!enabled) return;
+        event.preventDefault();
+        addCameraZoom(-Math.sign(event.deltaY) * 12);
+      }}
       onContextMenu={(event) => event.preventDefault()}
     />
   );

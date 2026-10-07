@@ -1,6 +1,7 @@
 // Mutable simulation state. Nothing here is stored in React at frame rate.
 import { GAME_CONFIG } from "./config";
 import { getActiveMap, setActiveMap } from "./maps";
+import { getAssetHeight } from "./maps/catalog";
 import type { InteractiveMapObject, MapDefinition, MapObject } from "./maps/types";
 import { getCameraBasis, NEUTRAL_CAMERA_INPUT, type CameraBasis, type CameraInput } from "./camera";
 
@@ -94,6 +95,22 @@ function positionsForMap() {
       z: 0,
       heading: -2,
       phase: 4.1,
+    },
+    {
+      id: "green",
+      role: "runner" as const,
+      x: 0,
+      z: 0,
+      heading: 0.6,
+      phase: 5.2,
+    },
+    {
+      id: "yellow",
+      role: "runner" as const,
+      x: 0,
+      z: 0,
+      heading: -0.7,
+      phase: 0.8,
     },
   ];
 }
@@ -189,6 +206,20 @@ export function installMapForSimulation(map: MapDefinition) {
 
 export function getSimulationMap() {
   return activeWorld;
+}
+
+/** Normalized flee and boundary bands scale with arena radius, including small maps. */
+export function getArenaNavigationTuning(radius = activeWorld.arena.radius) {
+  const navigation = GAME_CONFIG.npc.navigation;
+  const arenaScale = radius / 30;
+  return {
+    minFleeDistance: navigation.minFleeDistance * arenaScale,
+    preferredFleeDistance: navigation.preferredFleeDistance * arenaScale,
+    maxFleeDistance: navigation.maxFleeDistance * arenaScale,
+    preferredRunnerRadius: navigation.preferredRunnerRadius * arenaScale,
+    boundarySteeringStartRadius: navigation.boundarySteeringStartRadius * arenaScale,
+    boundarySteeringFullRadius: navigation.boundarySteeringFullRadius * arenaScale,
+  };
 }
 
 export type InteractionKind = "speedPad" | "slowZone" | "elasticBounce" | "dash";
@@ -355,6 +386,7 @@ export function cancelPlayerDash() {
 
 const TAU = Math.PI * 2;
 const WALL_MARGIN = GAME_CONFIG.obstacleMargin;
+const COLLISION_EPSILON = 0.0001;
 let spawnRandomSource = Math.random;
 const NAV_SAMPLE_SPACING = 0.3;
 const OBSTACLE_GRID_CELL_SIZE = 8;
@@ -513,7 +545,7 @@ export function overlapsObstacle(x: number, z: number, radius: number, obstacle:
 }
 
 type NavLink = { node: number; cost: number };
-type NavNode = { x: number; z: number; links: NavLink[] };
+type NavNode = { x: number; z: number; links: NavLink[]; goalCandidate: boolean };
 
 function isWalkablePointWithCandidates(
   x: number,
@@ -575,9 +607,16 @@ export function isWalkableSegment(
   return true;
 }
 
+/** Keep small maps precise, then coarsen the R100 grid modestly to bound route-search cost. */
+function getNavigationGridSpacing(arenaRadius: number) {
+  const navigation = GAME_CONFIG.npc.navigation;
+  const normalizedLargeArena = Math.max(0, Math.min(1, (arenaRadius - 60) / 40));
+  return navigation.gridSpacing * (1 + normalizedLargeArena * 0.2);
+}
+
 /** Static grid graph: its nodes and edges are admitted only when free under the live colliders. */
 function buildNavigationGraph(barrierClosed: boolean): NavigationGraph {
-  const spacing = GAME_CONFIG.npc.navigation.gridSpacing;
+  const spacing = getNavigationGridSpacing(activeWorld.arena.radius);
   const extent = Math.floor(
     (activeWorld.arena.radius - GAME_CONFIG.npc.radius - WALL_MARGIN) / spacing,
   );
@@ -593,7 +632,13 @@ function buildNavigationGraph(barrierClosed: boolean): NavigationGraph {
       if (!isWalkablePoint(x, z, GAME_CONFIG.npc.radius, barrierClosed)) continue;
       const node = nodes.length;
       grid[row * width + column] = node;
-      nodes.push({ x, z, links: [] });
+      nodes.push({
+        x,
+        z,
+        links: [],
+        // Keep full precision on small maps; a checkerboard sample bounds R60+ scoring work.
+        goalCandidate: activeWorld.arena.radius < 60 || (row + column) % 2 === 0,
+      });
     }
   }
 
@@ -643,8 +688,10 @@ let navVisited = new Uint8Array(0);
 let navReversePath = new Int32Array(0);
 let navHeapNodes = new Int32Array(0);
 let navHeapCosts = new Float64Array(0);
+let navRouteCrowding = new Float32Array(0);
 const goalSectorBestNode = new Int32Array(GAME_CONFIG.npc.navigation.candidateDirections);
 const goalSectorBestScore = new Float64Array(GAME_CONFIG.npc.navigation.candidateDirections);
+const poppedNavigationEntry = { node: 0, cost: 0, heapSize: 0 };
 
 function rebuildNavigationGraph() {
   const key = WORLD_STATE.barrierClosed ? "closed" : "open";
@@ -665,6 +712,7 @@ function rebuildNavigationGraph() {
   navReversePath = new Int32Array(NAV_NODES.length);
   navHeapNodes = new Int32Array(Math.max(1, NAV_NODES.length * 8 + 1));
   navHeapCosts = new Float64Array(navHeapNodes.length);
+  navRouteCrowding = new Float32Array(NAV_NODES.length * RUNNERS.length);
   for (const runner of RUNNERS) {
     runner.route.length = 0;
     runner.routeIndex = 0;
@@ -943,6 +991,15 @@ function decreaseTimer(remaining: number, dt: number) {
 
 /** Resolve circle and rotated-box collisions, removing only inward velocity. */
 export function resolveObstacle(agent: Agent, obstacle: Obstacle) {
+  // Jump only clears authored low props; tall obstacles and interactives retain
+  // the existing ground collision behavior.
+  if (
+    agent.role === "player" &&
+    agent.jumpHeight > 0 &&
+    agent.jumpHeight >= getAssetHeight(obstacle.model, obstacle.scale)
+  )
+    return false;
+
   const dx = agent.x - obstacle.position.x;
   const dz = agent.z - obstacle.position.z;
   const shape = obstacle.collision;
@@ -1010,18 +1067,18 @@ export function resolveObstacle(agent: Agent, obstacle: Obstacle) {
     if (d >= agent.radius) return false;
     nx /= d;
     nz /= d;
-    penetration = agent.radius - d;
+    penetration = agent.radius - d + COLLISION_EPSILON;
   } else {
     const faceX = halfWidth - Math.abs(localX);
     const faceZ = halfDepth - Math.abs(localZ);
     if (faceX < faceZ) {
       nx = localX < 0 ? -1 : 1;
       nz = 0;
-      penetration = faceX + agent.radius;
+      penetration = faceX + agent.radius + COLLISION_EPSILON;
     } else {
       nx = 0;
       nz = localZ < 0 ? -1 : 1;
-      penetration = faceZ + agent.radius;
+      penetration = faceZ + agent.radius + COLLISION_EPSILON;
     }
   }
 
@@ -1105,6 +1162,44 @@ function nearestReachableNode(agent: Agent) {
   return bestNode;
 }
 
+/** Cache local route crowding once per decision instead of rescanning every route for every node. */
+function cacheRouteCrowding(agent: Agent) {
+  const nodeCount = NAV_NODES.length;
+  navRouteCrowding.fill(0);
+  if (nodeCount === 0) return;
+
+  const separation = GAME_CONFIG.npc.navigation.preferredGoalSeparation;
+  const cellRadius = Math.ceil(separation / NAV_GRID_SPACING);
+  for (let runnerIndex = 0; runnerIndex < RUNNERS.length; runnerIndex++) {
+    const other = RUNNERS[runnerIndex]!;
+    if (other === agent || other.hidden > 0 || other.routeIndex >= other.route.length) continue;
+
+    const offset = runnerIndex * nodeCount;
+    for (let routeIndex = other.routeIndex; routeIndex < other.route.length; routeIndex++) {
+      const routeNode = NAV_NODES[other.route[routeIndex]!]!;
+      const centerColumn = Math.round(routeNode.x / NAV_GRID_SPACING) + NAV_GRID_EXTENT;
+      const centerRow = Math.round(routeNode.z / NAV_GRID_SPACING) + NAV_GRID_EXTENT;
+      const minRow = Math.max(0, centerRow - cellRadius);
+      const maxRow = Math.min(NAV_GRID_WIDTH - 1, centerRow + cellRadius);
+      const minColumn = Math.max(0, centerColumn - cellRadius);
+      const maxColumn = Math.min(NAV_GRID_WIDTH - 1, centerColumn + cellRadius);
+
+      for (let row = minRow; row <= maxRow; row++) {
+        for (let column = minColumn; column <= maxColumn; column++) {
+          const candidate = NAV_GRID[row * NAV_GRID_WIDTH + column]!;
+          if (candidate < 0) continue;
+          const node = NAV_NODES[candidate]!;
+          const distance = Math.hypot(node.x - routeNode.x, node.z - routeNode.z);
+          if (distance >= separation) continue;
+          const crowding = 1 - distance / separation;
+          const index = offset + candidate;
+          if (crowding > navRouteCrowding[index]!) navRouteCrowding[index] = crowding;
+        }
+      }
+    }
+  }
+}
+
 function heapLess(costA: number, nodeA: number, costB: number, nodeB: number) {
   return costA < costB || (costA === costB && nodeA < nodeB);
 }
@@ -1155,12 +1250,16 @@ function popNavigationHeap(heapSize: number) {
     navHeapCosts[index] = lastCost;
     navHeapNodes[index] = lastNode;
   }
-  return { node, cost, heapSize };
+  poppedNavigationEntry.node = node;
+  poppedNavigationEntry.cost = cost;
+  poppedNavigationEntry.heapSize = heapSize;
+  return poppedNavigationEntry;
 }
 
 /** Dijkstra on the collision-checked graph, then score one reachable goal per escape sector. */
 function chooseNavigationRoute(agent: Agent, avoidPreviousFirstStep: boolean) {
   const navigation = GAME_CONFIG.npc.navigation;
+  const arenaTuning = getArenaNavigationTuning();
   const weights = navigation.goalWeights;
   const directionCount = navigation.candidateDirections;
   const directionStep = TAU / directionCount;
@@ -1184,6 +1283,7 @@ function chooseNavigationRoute(agent: Agent, avoidPreviousFirstStep: boolean) {
   goalSectorBestNode.fill(-1);
   goalSectorBestScore.fill(-Infinity);
   navDistance[start] = 0;
+  cacheRouteCrowding(agent);
 
   const currentPlayerDistance = Math.hypot(agent.x - PLAYER.x, agent.z - PLAYER.z);
   const escapeX = (agent.x - PLAYER.x) / (currentPlayerDistance || 1);
@@ -1201,7 +1301,7 @@ function chooseNavigationRoute(agent: Agent, avoidPreviousFirstStep: boolean) {
 
     const node = NAV_NODES[current]!;
     const playerDistance = Math.hypot(node.x - PLAYER.x, node.z - PLAYER.z);
-    if (current !== start) {
+    if (current !== start && node.goalCandidate) {
       const goalDX = node.x - agent.x;
       const goalDZ = node.z - agent.z;
       const goalDistance = Math.hypot(goalDX, goalDZ) || 1;
@@ -1211,14 +1311,14 @@ function chooseNavigationRoute(agent: Agent, avoidPreviousFirstStep: boolean) {
       let sector = Math.round(relativeAngle / directionStep);
       sector = ((sector % directionCount) + directionCount) % directionCount;
 
-      const distanceError = Math.abs(playerDistance - navigation.preferredFleeDistance);
+      const distanceError = Math.abs(playerDistance - arenaTuning.preferredFleeDistance);
       let distanceGainTarget = 0;
       let fleePressure = 0;
-      if (currentPlayerDistance < navigation.minFleeDistance) {
-        distanceGainTarget = navigation.minFleeDistance - currentPlayerDistance;
+      if (currentPlayerDistance < arenaTuning.minFleeDistance) {
+        distanceGainTarget = arenaTuning.minFleeDistance - currentPlayerDistance;
         fleePressure = weights.urgentFleeDistance;
-      } else if (currentPlayerDistance < navigation.preferredFleeDistance) {
-        distanceGainTarget = navigation.preferredFleeDistance - currentPlayerDistance;
+      } else if (currentPlayerDistance < arenaTuning.preferredFleeDistance) {
+        distanceGainTarget = arenaTuning.preferredFleeDistance - currentPlayerDistance;
         fleePressure = weights.moderateFleeDistance;
       }
       const distanceProgress = Math.min(
@@ -1227,7 +1327,7 @@ function chooseNavigationRoute(agent: Agent, avoidPreviousFirstStep: boolean) {
       );
       let score = -distanceError * weights.distanceBand + distanceProgress * fleePressure;
       score -=
-        Math.max(0, playerDistance - navigation.maxFleeDistance) * weights.maxFleeDistancePenalty;
+        Math.max(0, playerDistance - arenaTuning.maxFleeDistance) * weights.maxFleeDistancePenalty;
       score -= currentCost * weights.routeQuality;
       score -= Math.max(0, currentCost - goalDistance) * weights.routeDetour;
       score += (node.links.length / 8) * weights.openSpace;
@@ -1237,11 +1337,12 @@ function chooseNavigationRoute(agent: Agent, avoidPreviousFirstStep: boolean) {
 
       const boundaryExcess = Math.max(
         0,
-        Math.hypot(node.x, node.z) - navigation.preferredRunnerRadius,
+        Math.hypot(node.x, node.z) - arenaTuning.preferredRunnerRadius,
       );
       score -= boundaryExcess * boundaryExcess * weights.boundaryPenalty;
 
-      for (const other of RUNNERS) {
+      for (let otherIndex = 0; otherIndex < RUNNERS.length; otherIndex++) {
+        const other = RUNNERS[otherIndex]!;
         if (other === agent || other.hidden > 0) continue;
         const runnerDistance = Math.hypot(node.x - other.x, node.z - other.z);
         const separationRatio = Math.min(runnerDistance / navigation.preferredRunnerSeparation, 1);
@@ -1257,17 +1358,9 @@ function chooseNavigationRoute(agent: Agent, avoidPreviousFirstStep: boolean) {
           Math.min(goalSeparation / navigation.preferredGoalSeparation, 1) * weights.goalSeparation;
 
         if (otherHasRoute) {
-          let closestRouteDistance = goalSeparation;
-          for (let routeIndex = other.routeIndex; routeIndex < other.route.length; routeIndex++) {
-            const routeNode = NAV_NODES[other.route[routeIndex]!]!;
-            closestRouteDistance = Math.min(
-              closestRouteDistance,
-              Math.hypot(node.x - routeNode.x, node.z - routeNode.z),
-            );
-          }
           const routeCrowding = Math.max(
-            0,
-            1 - closestRouteDistance / navigation.preferredGoalSeparation,
+            Math.max(0, 1 - goalSeparation / navigation.preferredGoalSeparation),
+            navRouteCrowding[otherIndex * NAV_NODES.length + current]!,
           );
           score -= routeCrowding * routeCrowding * weights.crowdingPenalty;
         }
@@ -1684,13 +1777,14 @@ export function step(
     let steerX = waypointX * 0.84 + (awayX / distance) * 0.16 + separationX;
     let steerZ = waypointZ * 0.84 + (awayZ / distance) * 0.16 + separationZ;
     const runnerRadius = Math.hypot(runner.x, runner.z);
-    if (runnerRadius > navigation.boundarySteeringStartRadius) {
+    const arenaTuning = getArenaNavigationTuning();
+    if (runnerRadius > arenaTuning.boundarySteeringStartRadius) {
       const radialX = runner.x / runnerRadius;
       const radialZ = runner.z / runnerRadius;
       const pressure = Math.min(
         1,
-        (runnerRadius - navigation.boundarySteeringStartRadius) /
-          (navigation.boundarySteeringFullRadius - navigation.boundarySteeringStartRadius),
+        (runnerRadius - arenaTuning.boundarySteeringStartRadius) /
+          (arenaTuning.boundarySteeringFullRadius - arenaTuning.boundarySteeringStartRadius),
       );
       const outwardSteering = steerX * radialX + steerZ * radialZ;
       if (outwardSteering > 0) {
